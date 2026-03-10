@@ -1,9 +1,9 @@
 import {useCallback, useEffect, useRef, useState} from "react";
 import type {AiFeature, TranscriptResponse} from "../types/transcript";
-import {getProvider} from "../lib/ai/providers";
 import {getChatSystemPrompt, promptTemplates} from "../lib/ai/prompts";
 import {getApiKey, getPreferences} from "../lib/storage/preferences";
 import {formatTimestamp} from "../lib/formatTime";
+import {chromeAiSummarize, isChromeAiAvailable} from "../lib/ai/chrome-ai";
 
 interface AiPanelProps {
     transcript: TranscriptResponse | null;
@@ -14,6 +14,9 @@ interface ChatMessage {
     role: "user" | "assistant";
     content: string;
 }
+
+// Features that can use Chrome AI (free, no key required)
+const CHROME_AI_FEATURES: ReadonlySet<AiFeature> = new Set<AiFeature>(["summary"]);
 
 const FEATURES: { id: AiFeature; label: string }[] = [
     {id: "summary", label: "Summarize"},
@@ -42,6 +45,42 @@ function parseTimestamp(ts: string): number {
     return parts.length === 2 ? (parts[0] ?? 0) * 60 + (parts[1] ?? 0) : 0;
 }
 
+interface AiRequestPayload {
+    provider: string;
+    apiKey: string;
+    systemPrompt: string;
+    userMessage: string;
+    maxTokens?: number;
+}
+
+type AiRequestResponse =
+    | {ok: true; result: string}
+    | {ok: false; error: string};
+
+/** Route an AI request through the Chrome extension background worker. */
+function sendAiRequest(payload: AiRequestPayload): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+        chrome.runtime.sendMessage(
+            {type: "ai-request", payload},
+            (response: AiRequestResponse | undefined) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message ?? "Extension error"));
+                    return;
+                }
+                if (!response) {
+                    reject(new Error("No response from background worker"));
+                    return;
+                }
+                if (response.ok) {
+                    resolve(response.result);
+                } else {
+                    reject(new Error(response.error));
+                }
+            },
+        );
+    });
+}
+
 function RenderedContent({text, onSeek}: { text: string; onSeek: (t: number) => void }) {
     const parts = text.split(TIMESTAMP_RE);
     return (
@@ -51,7 +90,7 @@ function RenderedContent({text, onSeek}: { text: string; onSeek: (t: number) => 
                     <button
                         key={i}
                         onClick={() => onSeek(parseTimestamp(part))}
-                        className="mx-0.5 rounded-sm bg-blue-100 px-1 text-xs font-mono text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300"
+                        className="mx-0.5 rounded bg-blue-100 px-1 text-xs font-mono text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300"
                     >
                         {part}
                     </button>
@@ -73,23 +112,36 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
     const [chatLoading, setChatLoading] = useState(false);
     const chatEndRef = useRef<HTMLDivElement>(null);
     const [flippedCards, setFlippedCards] = useState<Set<number>>(new Set());
+    const [chromeAiAvailable, setChromeAiAvailable] = useState(false);
+    const [hasApiKey, setHasApiKey] = useState(false);
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({behavior: "smooth"});
     }, [chatMessages]);
 
-    const getConfiguredProvider = useCallback(async () => {
-        const prefs = await getPreferences();
-        if (!prefs.aiProvider) return null;
-        const key = await getApiKey(prefs.aiProvider);
-        if (!key) return null;
-        return getProvider(prefs.aiProvider, key);
+    // Check Chrome AI and BYOK key availability on mount
+    useEffect(() => {
+        void isChromeAiAvailable().then(setChromeAiAvailable);
+        void (async () => {
+            const prefs = await getPreferences();
+            if (!prefs.aiProvider) return;
+            const key = await getApiKey(prefs.aiProvider);
+            setHasApiKey(key !== null);
+        })();
     }, []);
+
+    /** True if this feature can run (Chrome AI or BYOK key). */
+    const canRunFeature = useCallback(
+        (feature: AiFeature): boolean =>
+            (chromeAiAvailable && CHROME_AI_FEATURES.has(feature)) || hasApiKey,
+        [chromeAiAvailable, hasApiKey],
+    );
+
+    const hasAnyProvider = chromeAiAvailable || hasApiKey;
 
     const runFeature = async (feature: AiFeature) => {
         if (!transcript) return;
-        const provider = await getConfiguredProvider();
-        if (!provider) return;
+        if (!canRunFeature(feature)) return;
 
         setActiveFeature(feature);
         setLoading(true);
@@ -98,9 +150,25 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         setFlippedCards(new Set());
 
         try {
-            const template = promptTemplates[feature];
             const text = transcriptToText(transcript);
-            const response = await provider.sendMessage({
+
+            // Use Chrome AI for summary when available (free, no key needed)
+            if (chromeAiAvailable && CHROME_AI_FEATURES.has(feature)) {
+                const summary = await chromeAiSummarize(text);
+                setResult(summary);
+                return;
+            }
+
+            // Fall back to BYOK provider via extension background worker
+            const prefs = await getPreferences();
+            if (!prefs.aiProvider) throw new Error("No AI provider configured");
+            const apiKey = await getApiKey(prefs.aiProvider);
+            if (!apiKey) throw new Error("No API key configured");
+
+            const template = promptTemplates[feature];
+            const response = await sendAiRequest({
+                provider: prefs.aiProvider,
+                apiKey,
                 systemPrompt: template.system,
                 userMessage: template.user(text),
             });
@@ -114,8 +182,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
     const sendChat = async () => {
         if (!chatInput.trim() || !transcript) return;
-        const provider = await getConfiguredProvider();
-        if (!provider) return;
+        if (!hasApiKey) return; // Chat requires BYOK; Chrome AI doesn't support multi-turn chat
 
         const userMsg: ChatMessage = {role: "user", content: chatInput.trim()};
         setChatMessages((prev) => [...prev, userMsg]);
@@ -123,12 +190,19 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         setChatLoading(true);
 
         try {
+            const prefs = await getPreferences();
+            if (!prefs.aiProvider) throw new Error("No AI provider configured");
+            const apiKey = await getApiKey(prefs.aiProvider);
+            if (!apiKey) throw new Error("No API key configured");
+
             const systemPrompt = getChatSystemPrompt(transcriptToText(transcript));
             const history = [...chatMessages, userMsg]
                 .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
                 .join("\n\n");
 
-            const response = await provider.sendMessage({
+            const response = await sendAiRequest({
+                provider: prefs.aiProvider,
+                apiKey,
                 systemPrompt,
                 userMessage: history,
             });
@@ -144,14 +218,8 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
     };
 
     const copyResult = () => {
-        if (result) navigator.clipboard.writeText(result);
+        if (result) void navigator.clipboard.writeText(result);
     };
-
-    const [hasProvider, setHasProvider] = useState(false);
-
-    useEffect(() => {
-        void getConfiguredProvider().then((p) => setHasProvider(p !== null));
-    }, [getConfiguredProvider]);
 
     if (!transcript) return null;
 
@@ -159,7 +227,17 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         <div className="flex flex-col gap-4 rounded-xl border bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white">AI Analysis</h3>
 
-            {!hasProvider && (
+            {chromeAiAvailable && (
+                <div className="flex items-center gap-2 rounded-lg bg-green-50 p-3 text-sm text-green-800 dark:bg-green-900/20 dark:text-green-300">
+                    <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Chrome AI (Free) available — Summarize runs on-device. Advanced features require an API key.
+                </div>
+            )}
+
+            {!hasAnyProvider && (
                 <div
                     className="flex items-center gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
                     <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -172,20 +250,26 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
             {/* Feature buttons */}
             <div className="flex flex-wrap gap-2">
-                {FEATURES.map((f) => (
-                    <button
-                        key={f.id}
-                        onClick={() => runFeature(f.id)}
-                        disabled={!hasProvider || loading}
-                        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:opacity-40 ${
-                            activeFeature === f.id
-                                ? "bg-blue-600 text-white"
-                                : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
-                        }`}
-                    >
-                        {f.label}
-                    </button>
-                ))}
+                {FEATURES.map((f) => {
+                    const enabled = canRunFeature(f.id);
+                    const isChromeAiFree = chromeAiAvailable && CHROME_AI_FEATURES.has(f.id);
+                    return (
+                        <button
+                            key={f.id}
+                            onClick={() => void runFeature(f.id)}
+                            disabled={!enabled || loading}
+                            title={isChromeAiFree ? "Free via Chrome AI" : undefined}
+                            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:opacity-40 ${
+                                activeFeature === f.id
+                                    ? "bg-blue-600 text-white"
+                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
+                            }`}
+                        >
+                            {f.label}
+                            {isChromeAiFree && <span className="ml-1 text-xs opacity-70">(free)</span>}
+                        </button>
+                    );
+                })}
             </div>
 
             {/* Results */}
@@ -211,12 +295,12 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                     )}
                     <div className="mt-3 flex gap-2">
                         <button onClick={copyResult}
-                                className="rounded-sm bg-gray-200 px-3 py-1 text-xs hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300">
+                                className="rounded bg-gray-200 px-3 py-1 text-xs hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300">
                             Copy
                         </button>
                         <button
-                            onClick={() => activeFeature && runFeature(activeFeature)}
-                            className="rounded-sm bg-gray-200 px-3 py-1 text-xs hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300"
+                            onClick={() => activeFeature && void runFeature(activeFeature)}
+                            className="rounded bg-gray-200 px-3 py-1 text-xs hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300"
                         >
                             Regenerate
                         </button>
@@ -266,14 +350,14 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                     <input
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendChat()}
-                        placeholder={hasProvider ? "Ask a question about this video..." : "Add API key to chat"}
-                        disabled={!hasProvider || chatLoading}
+                        onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && void sendChat()}
+                        placeholder={hasApiKey ? "Ask a question about this video..." : "Add API key to chat"}
+                        disabled={!hasApiKey || chatLoading}
                         className="flex-1 rounded-lg border px-3 py-2 text-sm disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                     />
                     <button
-                        onClick={sendChat}
-                        disabled={!hasProvider || chatLoading || !chatInput.trim()}
+                        onClick={() => void sendChat()}
+                        disabled={!hasApiKey || chatLoading || !chatInput.trim()}
                         className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                     >
                         Send
@@ -318,7 +402,7 @@ function FlashcardView({
                 <button
                     key={i}
                     onClick={() => toggle(i)}
-                    className="rounded-lg border p-3 text-left transition hover:shadow-xs dark:border-gray-600"
+                    className="rounded-lg border p-3 text-left transition hover:shadow dark:border-gray-600"
                 >
                     <p className="text-sm font-medium text-gray-900 dark:text-white">{card.q}</p>
                     {flippedCards.has(i) && (
