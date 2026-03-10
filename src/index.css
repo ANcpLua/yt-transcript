@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@layer base {
+    html {
+        scroll-behavior: smooth;
+        -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+        min-height: 100dvh;
+    }
+
+    ::selection {
+        background-color: #3b82f6;
+        color: white;
+    }
+}
+
+@layer components {
+    .search-highlight {
+        background-color: #fbbf24;
+        color: #1e293b;
+        border-radius: 2px;
+        padding: 0 1px;
+    }
+
+    .dark .search-highlight {
+        background-color: #f59e0b;
+        color: #0f172a;
+    }
+
+    .segment-active {
+        background-color: #eff6ff;
+        border-left: 3px solid #3b82f6;
+    }
+
+    .dark .segment-active {
+        background-color: #1e3a5f;
+        border-left: 3px solid #60a5fa;
+    }
+
+    .segment-selected {
+        background-color: #dbeafe;
+    }
+
+    .dark .segment-selected {
+        background-color: #1e3a5f;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

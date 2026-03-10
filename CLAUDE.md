@@ -2,15 +2,18 @@
 
 ## What this is
 
-Free YouTube transcript extraction tool. Extract, read, search, export, and AI-analyze YouTube transcripts. Zero cost. No accounts. No paid APIs. No tracking.
+Free YouTube transcript extraction tool. Extract, read, search, export, and AI-analyze YouTube transcripts. Zero cost.
+No accounts. No paid APIs. No tracking.
 
 ## Hard constraints
 
 - **Zero recurring cost.** No server-side databases, no paid APIs, no cloud compute beyond Cloudflare free tier.
 - **No accounts.** No signup, no login, no auth. Core features work immediately.
 - **No tracking.** No analytics, no cookies, no telemetry. Network tab must show zero requests to tracking domains.
-- **BYOK for AI.** User provides their own API key (OpenAI, Anthropic, or Google). Key stored in localStorage only. Never sent to our server. AI calls go browser → provider API directly.
-- **Translations via YouTube.** Use YouTube's own auto-translate tracks (`&tlang=` parameter). No third-party translation API.
+- **BYOK for AI.** User provides their own API key (OpenAI, Anthropic, or Google). Key stored in localStorage only.
+  Never sent to our server. AI calls go browser → provider API directly.
+- **Translations via YouTube.** Use YouTube's own auto-translate tracks (`&tlang=` parameter). No third-party
+  translation API.
 
 ## Tech stack
 
@@ -21,7 +24,8 @@ Deploy:     Cloudflare Pages — single `wrangler pages deploy dist/` ships fron
 Node:       25.6.1
 ```
 
-No separate Worker project. No separate deploy. The `functions/` directory is automatically picked up by Cloudflare Pages as serverless functions.
+No separate Worker project. No separate deploy. The `functions/` directory is automatically picked up by Cloudflare
+Pages as serverless functions.
 
 ## Project structure
 
@@ -139,7 +143,9 @@ yt-transcript/
 
 ## How the Innertube API works
 
-This is the core of the product. YouTube has no public API for downloading third-party video captions. The official YouTube Data API v3 `captions.download` requires OAuth and only works for videos the authenticated user owns. Every transcript tool in the market uses YouTube's undocumented Innertube API instead.
+This is the core of the product. YouTube has no public API for downloading third-party video captions. The official
+YouTube Data API v3 `captions.download` requires OAuth and only works for videos the authenticated user owns. Every
+transcript tool in the market uses YouTube's undocumented Innertube API instead.
 
 ### Step 1: Get caption tracks
 
@@ -162,6 +168,7 @@ Body:
 ```
 
 Response includes `captions.playerCaptionsTracklistRenderer.captionTracks[]`, each with:
+
 - `baseUrl` — the URL to fetch that track's transcript
 - `languageCode` — e.g., "en"
 - `kind` — "asr" for auto-generated, absent for manual/uploaded
@@ -176,6 +183,7 @@ GET {baseUrl}&fmt=json3
 For translation, append `&tlang={targetLangCode}` to the baseUrl.
 
 Response:
+
 ```json
 {
   "events": [
@@ -188,7 +196,8 @@ Response:
 }
 ```
 
-Parse: concatenate all `segs[].utf8` per event. `tStartMs / 1000` = start seconds. Skip events with no `segs` (timing markers).
+Parse: concatenate all `segs[].utf8` per event. `tStartMs / 1000` = start seconds. Skip events with no `segs` (timing
+markers).
 
 ### Step 3: Playlists / channels
 
@@ -201,11 +210,16 @@ Returns video list with IDs, titles, durations. Supports pagination via `continu
 
 ### Known risks
 
-- **No CORS headers** — Innertube responses have no `Access-Control-Allow-Origin`. Must proxy through server-side function. Browser cannot call directly.
-- **IP blocking** — YouTube blocks known datacenter IPs. Cloudflare Workers' IPs may get blocked. If this happens, consider browser extension approach where requests come from user's IP.
-- **PO Token** — Some videos require a `po_token` parameter. The `youtube-transcript-api` Python library (v1.2.4) raises `PoTokenRequired` for these. No general solution yet.
-- **Breakage** — YouTube broke all HTML-scraping tools on ~June 9, 2025 by changing authentication. They can change the Innertube API at any time with no notice.
-- **TOS violation** — Using undocumented APIs violates YouTube Developer Policy Section III.D.7. Every competitor does the same. Not a legal defense but establishes market norm.
+- **No CORS headers** — Innertube responses have no `Access-Control-Allow-Origin`. Must proxy through server-side
+  function. Browser cannot call directly.
+- **IP blocking** — YouTube blocks known datacenter IPs. Cloudflare Workers' IPs may get blocked. If this happens,
+  consider browser extension approach where requests come from user's IP.
+- **PO Token** — Some videos require a `po_token` parameter. The `youtube-transcript-api` Python library (v1.2.4) raises
+  `PoTokenRequired` for these. No general solution yet.
+- **Breakage** — YouTube broke all HTML-scraping tools on ~June 9, 2025 by changing authentication. They can change the
+  Innertube API at any time with no notice.
+- **TOS violation** — Using undocumented APIs violates YouTube Developer Policy Section III.D.7. Every competitor does
+  the same. Not a legal defense but establishes market norm.
 
 ## Shared types
 
@@ -240,26 +254,39 @@ interface ApiError {
 ## Feature summary by run
 
 ### Run 1 — Core MVP
-Paste URL → fetch transcript via Innertube proxy → display with timestamps → search → copy → download TXT/SRT. Error handling. Responsive layout. Deploy.
+
+Paste URL → fetch transcript via Innertube proxy → display with timestamps → search → copy → download TXT/SRT. Error
+handling. Responsive layout. Deploy.
 
 ### Run 2 — Reading + Exports + Languages
-Paragraph/sentence/raw view modes. YouTube IFrame embed with click-to-seek + auto-scroll. VTT/JSON/CSV/Markdown export. Range selection export. Language selection. YouTube auto-translate. Side-by-side bilingual view. Chapter-aware grouping.
+
+Paragraph/sentence/raw view modes. YouTube IFrame embed with click-to-seek + auto-scroll. VTT/JSON/CSV/Markdown export.
+Range selection export. Language selection. YouTube auto-translate. Side-by-side bilingual view. Chapter-aware grouping.
 
 ### Run 3 — AI + Persistence
-BYOK API key management (OpenAI, Anthropic, Google). Summary, key points, chapter summary, action items, quotes. Ask-the-transcript chat with timestamp citations. localStorage history (50 entries). IndexedDB saved transcripts with highlights, notes, tags. Preferences persistence.
+
+BYOK API key management (OpenAI, Anthropic, Google). Summary, key points, chapter summary, action items, quotes.
+Ask-the-transcript chat with timestamp citations. localStorage history (50 entries). IndexedDB saved transcripts with
+highlights, notes, tags. Preferences persistence.
 
 ### Run 4 — Bulk + Polish + Ship
-Batch URL input (25 max). Playlist extraction. Channel recent videos. ZIP export (separate or merged). Blog outline, social posts, study notes, flashcards, SEO keywords, entity extraction. Notion/Obsidian copy formats. Filler word removal. Speaker labels. Accessibility audit (WCAG 2.1 AA). Virtual scroll for long transcripts. Code splitting. Legal page. Production deploy.
+
+Batch URL input (25 max). Playlist extraction. Channel recent videos. ZIP export (separate or merged). Blog outline,
+social posts, study notes, flashcards, SEO keywords, entity extraction. Notion/Obsidian copy formats. Filler word
+removal. Speaker labels. Accessibility audit (WCAG 2.1 AA). Virtual scroll for long transcripts. Code splitting. Legal
+page. Production deploy.
 
 ## Competitive positioning
 
 This tool is free with zero signup. Competitors gate behind credits or accounts:
+
 - **youtube-transcript.io** — 25 free credits/month, then $9.99/mo
 - **Glasp** — 3 AI summaries/day free, requires extension + account, then $12/mo
 - **Tactiq** — 10 transcripts/month free, requires extension + account, then $12/mo
 - **NoteGPT** — 15 quotas/month free, then $9.99/mo
 
-We beat all of them on: no signup, no caps on extraction, all export formats free, bilingual view, BYOK AI (unlimited with own key).
+We beat all of them on: no signup, no caps on extraction, all export formats free, bilingual view, BYOK AI (unlimited
+with own key).
 
 ## Code style
 
@@ -290,4 +317,5 @@ npm run build && npx wrangler pages dev dist/ --live-reload
 
 ## Run checklists
 
-Each run has a self-contained checklist at `docs/runs/run-{1-4}-*.md`. Each item has a definition of done. Start any fresh session by reading the relevant run file. The run files contain all context needed to work independently.
+Each run has a self-contained checklist at `docs/runs/run-{1-4}-*.md`. Each item has a definition of done. Start any
+fresh session by reading the relevant run file. The run files contain all context needed to work independently.

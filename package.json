@@ -1,0 +1,31 @@
+{
+  "name": "yt-transcript",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "wrangler pages dev dist/",
+    "lint": "tsc --noEmit",
+    "deploy": "npm run build && wrangler pages deploy dist/"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.13.6",
+    "fflate": "^0.8.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250410.0",
+    "@tailwindcss/vite": "^4.1.4",
+    "@types/node": "^25.4.0",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "tailwindcss": "^4.1.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.2",
+    "wrangler": "^4.14.0"
+  }
+}
