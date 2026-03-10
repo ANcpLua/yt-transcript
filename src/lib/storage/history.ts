@@ -1,24 +1,21 @@
 import type {HistoryEntry} from "../../types/transcript";
 
-const STORAGE_KEY = "yt-transcript:history";
+const STORAGE_KEY = "history";
 const MAX_ENTRIES = 50;
 
-export function getHistory(): HistoryEntry[] {
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        return raw ? (JSON.parse(raw) as HistoryEntry[]) : [];
-    } catch {
-        return [];
-    }
+export async function getHistory(): Promise<HistoryEntry[]> {
+    const result = await chrome.storage.local.get(STORAGE_KEY);
+    const stored = result[STORAGE_KEY] as HistoryEntry[] | undefined;
+    return stored ?? [];
 }
 
-export function addToHistory(entry: HistoryEntry): void {
-    const entries = getHistory().filter((e) => e.videoId !== entry.videoId);
+export async function addToHistory(entry: HistoryEntry): Promise<void> {
+    const entries = (await getHistory()).filter((e) => e.videoId !== entry.videoId);
     entries.unshift(entry);
     if (entries.length > MAX_ENTRIES) entries.length = MAX_ENTRIES;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    await chrome.storage.local.set({[STORAGE_KEY]: entries});
 }
 
-export function clearHistory(): void {
-    localStorage.removeItem(STORAGE_KEY);
+export async function clearHistory(): Promise<void> {
+    await chrome.storage.local.remove(STORAGE_KEY);
 }

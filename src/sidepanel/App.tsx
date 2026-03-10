@@ -1,24 +1,24 @@
-import React, {lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState} from "react";
-import type {ApiError, Chapter, NoteEntry, Preferences, SavedTranscript, Segment, Track, TranscriptResponse} from "./types/transcript";
-import {UrlInput} from "./components/UrlInput";
-import {TranscriptView} from "./components/TranscriptView";
-import {ExportBar} from "./components/ExportBar";
-import {ErrorMessage} from "./components/ErrorMessage";
-import {LoadingSpinner} from "./components/LoadingSpinner";
-import {TagEditor} from "./components/TagEditor";
-import {addToHistory} from "./lib/storage/history";
-import {getSavedTranscript, saveTranscript, updateHighlights, updateNotes, updateTags} from "./lib/storage/saved";
-import {BatchProcessor, type BatchState, type BatchItem} from "./lib/batch/queue";
-import {BatchResultsNav} from "./components/BatchResultsNav";
+import {lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState} from "react";
+import type {ApiError, Chapter, NoteEntry, Preferences, SavedTranscript, Segment, Track, TranscriptResponse} from "../types/transcript";
+import {UrlInput} from "../components/UrlInput";
+import {TranscriptView} from "../components/TranscriptView";
+import {ExportBar} from "../components/ExportBar";
+import {ErrorMessage} from "../components/ErrorMessage";
+import {LoadingSpinner} from "../components/LoadingSpinner";
+import {TagEditor} from "../components/TagEditor";
+import {addToHistory} from "../lib/storage/history";
+import {getSavedTranscript, saveTranscript, updateHighlights, updateNotes, updateTags} from "../lib/storage/saved";
+import {BatchProcessor, type BatchState, type BatchItem} from "../lib/batch/queue";
+import {BatchResultsNav} from "../components/BatchResultsNav";
 
 // ---------- lazy imports ----------
 
-const Settings = lazy(() => import("./components/Settings").then((m) => ({default: m.Settings})));
-const AiPanel = lazy(() => import("./components/AiPanel").then((m) => ({default: m.AiPanel})));
-const History = lazy(() => import("./components/History").then((m) => ({default: m.History})));
-const SavedList = lazy(() => import("./components/SavedList").then((m) => ({default: m.SavedList})));
-const BatchProgress = lazy(() => import("./components/BatchProgress").then((m) => ({default: m.BatchProgress})));
-const LegalPage = lazy(() => import("./components/LegalPage").then((m) => ({default: m.LegalPage})));
+const Settings = lazy(() => import("../components/Settings").then((m) => ({default: m.Settings})));
+const AiPanel = lazy(() => import("../components/AiPanel").then((m) => ({default: m.AiPanel})));
+const History = lazy(() => import("../components/History").then((m) => ({default: m.History})));
+const SavedList = lazy(() => import("../components/SavedList").then((m) => ({default: m.SavedList})));
+const BatchProgress = lazy(() => import("../components/BatchProgress").then((m) => ({default: m.BatchProgress})));
+const LegalPage = lazy(() => import("../components/LegalPage").then((m) => ({default: m.LegalPage})));
 
 // ---------- types ----------
 
@@ -39,56 +39,6 @@ interface TranscriptData {
     tracks: Track[];
     segments: Segment[];
     chapters?: Chapter[];
-}
-
-// ---------- YouTube IFrame embed ----------
-
-function YouTubeEmbed({videoId, playerRef}: { videoId: string; playerRef: React.MutableRefObject<YTPlayer | null> }) {
-    const containerRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const win = window as unknown as {
-            YT?: {
-                Player: new (el: HTMLElement, opts: Record<string, unknown>) => YTPlayer;
-                PlayerState: Record<string, number>
-            };
-            onYouTubeIframeAPIReady?: () => void
-        };
-
-        function createPlayer() {
-            const el = containerRef.current;
-            if (!el || !win.YT) return;
-            el.innerHTML = "";
-            const div = document.createElement("div");
-            el.appendChild(div);
-
-            playerRef.current = new win.YT.Player(div, {
-                videoId,
-                width: "100%",
-                height: "100%",
-                playerVars: {rel: 0, modestbranding: 1},
-            }) as unknown as YTPlayer;
-        }
-
-        if (win.YT) {
-            createPlayer();
-        } else {
-            win.onYouTubeIframeAPIReady = createPlayer;
-            if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
-                const script = document.createElement("script");
-                script.src = "https://www.youtube.com/iframe_api";
-                document.head.appendChild(script);
-            }
-        }
-
-        return () => {
-            playerRef.current = null;
-        };
-    }, [videoId, playerRef]);
-
-    return (
-        <div ref={containerRef} className="aspect-video w-full overflow-hidden rounded-lg bg-black"/>
-    );
 }
 
 // ---------- header icons ----------
@@ -153,9 +103,43 @@ export function App() {
     const [batchState, setBatchState] = useState<BatchState | null>(null);
     const [batchViewMode, setBatchViewMode] = useState<"progress" | "result">("progress");
     const [route, setRoute] = useState<string>(window.location.hash);
-    const playerRef = useRef<YTPlayer | null>(null);
+    const [currentTime, setCurrentTime] = useState(0);
     const lastFetchRef = useRef(0);
     const batchRef = useRef<BatchProcessor | null>(null);
+
+    // Shim YTPlayer interface using message-based currentTime
+    const playerRef = useRef<YTPlayer | null>(null);
+    useEffect(() => {
+        playerRef.current = {
+            seekTo: (seconds: number) => {
+                chrome.runtime.sendMessage({type: "seek-to", time: seconds}).catch(() => {});
+            },
+            getCurrentTime: () => currentTime,
+            getPlayerState: () => 1, // PLAYING
+        };
+    }, [currentTime]);
+
+    // Listen for video-info messages from content script (via background)
+    useEffect(() => {
+        const listener = (message: { type: string; videoId?: string }) => {
+            if (message.type === "video-info" && message.videoId) {
+                void fetchTranscript(message.videoId);
+            }
+        };
+        chrome.runtime.onMessage.addListener(listener);
+        return () => chrome.runtime.onMessage.removeListener(listener);
+    }, []);
+
+    // Listen for player-time messages from content script
+    useEffect(() => {
+        const listener = (message: { type: string; currentTime?: number }) => {
+            if (message.type === "player-time" && message.currentTime !== undefined) {
+                setCurrentTime(message.currentTime);
+            }
+        };
+        chrome.runtime.onMessage.addListener(listener);
+        return () => chrome.runtime.onMessage.removeListener(listener);
+    }, []);
 
     // Hash-based routing
     useEffect(() => {
@@ -181,9 +165,8 @@ export function App() {
         }
     }, [transcript?.videoId]);
 
-    // Rate-limited fetch
+    // Fetch transcript via extension message passing
     const fetchTranscript = useCallback(async (videoId: string, lang?: string, translateTo?: string) => {
-        // Client-side rate limit: min 2s between requests
         const now = Date.now();
         const elapsed = now - lastFetchRef.current;
         if (elapsed < 2000) {
@@ -196,59 +179,46 @@ export function App() {
         setSelectedRange(null);
 
         try {
-            const res = await fetch("/api/transcript", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({videoId, ...(lang ? {lang} : {}), ...(translateTo ? {translateTo} : {})}),
-            });
+            const response = await chrome.runtime.sendMessage({
+                type: "fetch-transcript",
+                videoId,
+                ...(lang ? {lang} : {}),
+                ...(translateTo ? {translateTo} : {}),
+            }) as { type: string; data?: TranscriptData; error?: ApiError };
 
-            const data = (await res.json()) as TranscriptData | ApiError;
-
-            if (!res.ok) {
-                const err = data as ApiError;
-                // Exponential backoff on 429
-                if (res.status === 429) {
-                    setError({
-                        error: "rate_limited",
-                        message: "YouTube is rate-limiting requests. Please wait a moment and try again."
-                    });
-                } else {
-                    setError(err);
-                }
+            if (response.type === "transcript-error" && response.error) {
+                setError(response.error);
                 setState("error");
                 return;
             }
 
-            const td = data as TranscriptData;
-            setTranscript(td);
-            setState("loaded");
+            if (response.type === "transcript-result" && response.data) {
+                const td = response.data;
+                setTranscript(td);
+                setState("loaded");
 
-            // Save to history
-            const wordCount = td.segments.reduce(
-                (sum, s) => sum + s.text.split(/\s+/).filter((w) => w.length > 0).length,
-                0,
-            );
-            addToHistory({
-                videoId: td.videoId,
-                title: td.title,
-                language: td.language,
-                thumbnailUrl: `https://img.youtube.com/vi/${td.videoId}/mqdefault.jpg`,
-                fetchedAt: new Date().toISOString(),
-                segmentCount: td.segments.length,
-                wordCount,
-            });
+                const wordCount = td.segments.reduce(
+                    (sum, s) => sum + s.text.split(/\s+/).filter((w) => w.length > 0).length,
+                    0,
+                );
+                void addToHistory({
+                    videoId: td.videoId,
+                    title: td.title,
+                    language: td.language,
+                    thumbnailUrl: `https://img.youtube.com/vi/${td.videoId}/mqdefault.jpg`,
+                    fetchedAt: new Date().toISOString(),
+                    segmentCount: td.segments.length,
+                    wordCount,
+                });
+            }
         } catch {
-            setError({error: "fetch_failed", message: "Network error. Please check your connection and try again."});
+            setError({error: "fetch_failed", message: "Failed to fetch transcript. Please try again."});
             setState("error");
         }
     }, []);
 
     const handleSeek = useCallback((seconds: number) => {
-        try {
-            playerRef.current?.seekTo(seconds, true);
-        } catch {
-            // Player not ready
-        }
+        chrome.runtime.sendMessage({type: "seek-to", time: seconds}).catch(() => {});
     }, []);
 
     const handleSave = useCallback(async () => {
@@ -383,7 +353,6 @@ export function App() {
     if (route === "#/legal") {
         return (
             <div className="min-h-screen bg-white dark:bg-slate-900">
-                {/* Header (same as main) */}
                 <header
                     className="border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80">
                     <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-2">
@@ -477,52 +446,44 @@ export function App() {
                             </div>
                         )}
 
-                        {/* Player + Transcript side by side on wide screens */}
-                        <div className="flex flex-col gap-4 lg:flex-row">
-                            <div className="w-full shrink-0 lg:w-80 xl:w-96">
-                                <YouTubeEmbed videoId={transcript.videoId} playerRef={playerRef}/>
+                        {/* Language selector */}
+                        {transcript.tracks.length > 1 && (
+                            <div className="max-w-xs">
+                                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                    Language
+                                </label>
+                                <select
+                                    value={selectedLang ?? transcript.language}
+                                    onChange={(e) => handleLanguageChange(e.target.value)}
+                                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                                >
+                                    {transcript.tracks.map((track) => (
+                                        <option key={track.languageCode} value={track.languageCode}>
+                                            {track.name} {track.kind === "asr" ? "(auto)" : ""}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
 
-                                {/* Language selector */}
-                                {transcript.tracks.length > 1 && (
-                                    <div className="mt-3">
-                                        <label
-                                            className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                                            Language
-                                        </label>
-                                        <select
-                                            value={selectedLang ?? transcript.language}
-                                            onChange={(e) => handleLanguageChange(e.target.value)}
-                                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
-                                        >
-                                            {transcript.tracks.map((track) => (
-                                                <option key={track.languageCode} value={track.languageCode}>
-                                                    {track.name} {track.kind === "asr" ? "(auto)" : ""}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                                <TranscriptView
-                                    key={prefsVersion}
-                                    segments={transcript.segments}
-                                    title={transcript.title}
-                                    language={transcript.language}
-                                    isAutoGenerated={transcript.isAutoGenerated}
-                                    playerRef={playerRef}
-                                    selectedRange={selectedRange}
-                                    onSelectedRangeChange={setSelectedRange}
-                                    cleanFillers={cleanFillers}
-                                    onCleanFillersChange={setCleanFillers}
-                                    chapters={transcript.chapters}
-                                    highlights={highlights}
-                                    notes={notes}
-                                    onHighlightToggle={isSaved ? handleHighlightToggle : undefined}
-                                    onNoteUpdate={isSaved ? handleNoteUpdate : undefined}
-                                />
-                            </div>
-                        </div>
+                        {/* Transcript */}
+                        <TranscriptView
+                            key={prefsVersion}
+                            segments={transcript.segments}
+                            title={transcript.title}
+                            language={transcript.language}
+                            isAutoGenerated={transcript.isAutoGenerated}
+                            playerRef={playerRef}
+                            selectedRange={selectedRange}
+                            onSelectedRangeChange={setSelectedRange}
+                            cleanFillers={cleanFillers}
+                            onCleanFillersChange={setCleanFillers}
+                            chapters={transcript.chapters}
+                            highlights={highlights}
+                            notes={notes}
+                            onHighlightToggle={isSaved ? handleHighlightToggle : undefined}
+                            onNoteUpdate={isSaved ? handleNoteUpdate : undefined}
+                        />
 
                         {/* Export bar */}
                         <ExportBar
@@ -545,7 +506,7 @@ export function App() {
                 )}
             </div>
 
-            {/* Modals (lazy-loaded, self-manage visibility via isOpen) */}
+            {/* Modals */}
             <Suspense fallback={null}>
                 <Settings
                     isOpen={modal === "settings"}

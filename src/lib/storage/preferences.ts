@@ -1,7 +1,7 @@
 import type {Preferences} from "../../types/transcript";
 
-const PREFS_KEY = "yt-transcript:preferences";
-const API_KEY_PREFIX = "yt-transcript:apiKey:";
+const PREFS_KEY = "preferences";
+const API_KEY_PREFIX = "apiKey:";
 
 const DEFAULTS: Preferences = {
     viewMode: "raw",
@@ -11,28 +11,32 @@ const DEFAULTS: Preferences = {
     aiProvider: null,
 };
 
-export function getPreferences(): Preferences {
-    try {
-        const raw = localStorage.getItem(PREFS_KEY);
-        return raw ? {...DEFAULTS, ...(JSON.parse(raw) as Partial<Preferences>)} : DEFAULTS;
-    } catch {
-        return DEFAULTS;
-    }
+export async function getPreferences(): Promise<Preferences> {
+    const result = await chrome.storage.sync.get(PREFS_KEY);
+    const stored = result[PREFS_KEY] as Partial<Preferences> | undefined;
+    return stored ? {...DEFAULTS, ...stored} : DEFAULTS;
 }
 
-export function savePreferences(prefs: Partial<Preferences>): void {
-    const merged = {...getPreferences(), ...prefs};
-    localStorage.setItem(PREFS_KEY, JSON.stringify(merged));
+export async function savePreferences(prefs: Partial<Preferences>): Promise<void> {
+    const current = await getPreferences();
+    const merged = {...current, ...prefs};
+    await chrome.storage.sync.set({[PREFS_KEY]: merged});
 }
 
-export function getApiKey(provider: string): string | null {
-    return localStorage.getItem(`${API_KEY_PREFIX}${provider}`);
+export async function getApiKey(provider: string): Promise<string | null> {
+    const key = `${API_KEY_PREFIX}${provider}`;
+    const result = await chrome.storage.local.get(key);
+    const value = result[key] as string | undefined;
+    return value ?? null;
 }
 
-export function saveApiKey(provider: string, key: string): void {
-    localStorage.setItem(`${API_KEY_PREFIX}${provider}`, key);
+export async function saveApiKey(provider: string, key: string): Promise<void> {
+    await chrome.storage.local.set({[`${API_KEY_PREFIX}${provider}`]: key});
 }
 
-export function clearApiKey(provider: string): void {
-    localStorage.removeItem(`${API_KEY_PREFIX}${provider}`);
+export async function removeApiKey(provider: string): Promise<void> {
+    await chrome.storage.local.remove(`${API_KEY_PREFIX}${provider}`);
 }
+
+/** @deprecated Use removeApiKey instead */
+export const clearApiKey = removeApiKey;
