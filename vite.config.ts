@@ -1,21 +1,18 @@
-import {defineConfig} from "vite";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import {resolve} from "path";
+import { resolve } from "path";
 
 export default defineConfig({
-    plugins: [react(), tailwindcss()],
-    resolve: {
-        alias: {
-            "@": resolve(__dirname, "src"),
-        },
+  plugins: [react(), tailwindcss()],
+  root: "src/sidepanel",
+  build: {
+    outDir: resolve(__dirname, "dist/sidepanel"),
+    emptyOutDir: true,
+  },
+  resolve: {
+    alias: {
+      "@": resolve(__dirname, "src"),
     },
-    server: {
-        proxy: {
-            "/api": {
-                target: "http://localhost:8788",
-                changeOrigin: true,
-            },
-        },
-    },
+  },
 });
