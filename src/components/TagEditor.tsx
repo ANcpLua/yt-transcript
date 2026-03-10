@@ -60,7 +60,7 @@ export function TagEditor({tags, onTagsChange}: TagEditorProps): React.JSX.Eleme
                 onKeyDown={handleKeyDown}
                 onBlur={() => { if (input.trim()) addTags(input); }}
                 placeholder={tags.length === 0 ? "Add tags (comma separated)..." : ""}
-                className="min-w-[120px] flex-1 border-none bg-transparent px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none dark:text-slate-200 dark:placeholder:text-slate-500"
+                className="min-w-[120px] flex-1 border-none bg-transparent px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-hidden dark:text-slate-200 dark:placeholder:text-slate-500"
             />
         </div>
     );

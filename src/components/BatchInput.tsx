@@ -80,7 +80,7 @@ export function BatchInput({onSingleSubmit, onBatchStart, isLoading}: BatchInput
                         value={singleUrl}
                         onChange={(e) => setSingleUrl(e.target.value)}
                         placeholder="Paste YouTube URL or video ID..."
-                        className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                         disabled={isLoading}
                     />
                     <button
@@ -98,7 +98,7 @@ export function BatchInput({onSingleSubmit, onBatchStart, isLoading}: BatchInput
               onChange={(e) => setBatchText(e.target.value)}
               placeholder={"Paste YouTube URLs, one per line...\n\nhttps://youtube.com/watch?v=...\nhttps://youtu.be/..."}
               rows={6}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-mono text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 resize-y"
               disabled={isLoading}
           />
 
@@ -108,7 +108,7 @@ export function BatchInput({onSingleSubmit, onBatchStart, isLoading}: BatchInput
                             {parsedLines.map((line, i) => (
                                 <div
                                     key={i}
-                                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm ${
+                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-sm text-sm ${
                                         line.videoId
                                             ? "bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300"
                                             : "bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300"

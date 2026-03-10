@@ -132,7 +132,7 @@ export function BatchProgress({
                                         <button
                                             type="button"
                                             onClick={() => onExport(fmt, "separate")}
-                                            className="px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                                            className="px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                                             title={`Download as separate ${fmt.toUpperCase()} files (ZIP)`}
                                         >
                                             .{fmt}
@@ -142,7 +142,7 @@ export function BatchProgress({
                                 <button
                                     type="button"
                                     onClick={() => onExport("txt", "merged")}
-                                    className="px-3 py-1.5 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                                    className="px-3 py-1.5 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-sm hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
                                     title="Download all as one merged file"
                                 >
                                     Merged

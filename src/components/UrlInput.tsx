@@ -79,10 +79,10 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
             </div>
             <div className="max-h-64 space-y-1 overflow-y-auto">
                 {videoList.map((v, i) => (
-                    <label key={v.videoId} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-700">
+                    <label key={v.videoId} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-700">
                         <input type="checkbox" checked={v.selected}
                             onChange={() => setVideoList(prev => prev.map((item, j) => j === i ? {...item, selected: !item.selected} : item))}
-                            className="rounded" />
+                            className="rounded-sm" />
                         <span className="truncate text-sm text-slate-700 dark:text-slate-300">{v.title}</span>
                     </label>
                 ))}
@@ -129,14 +129,14 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
                             disabled={isLoading || loadingList}
                             aria-label="YouTube URL"
                             aria-invalid={validationError.length > 0}
-                            className={`min-h-[48px] flex-1 rounded-xl border-2 bg-white px-4 py-3 text-base shadow-sm transition-colors placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 ${
+                            className={`min-h-[48px] flex-1 rounded-xl border-2 bg-white px-4 py-3 text-base shadow-xs transition-colors placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 ${
                                 validationError ? "border-red-400 dark:border-red-500" : "border-slate-200 dark:border-slate-600"
                             }`}
                         />
                         <button
                             type="submit"
                             disabled={isLoading || loadingList || url.length === 0}
-                            className="min-h-[48px] whitespace-nowrap rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-offset-slate-900"
+                            className="min-h-[48px] whitespace-nowrap rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-blue-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-offset-slate-900"
                         >
                             {loadingList ? "Loading..." : "Get Transcript"}
                         </button>
@@ -176,14 +176,14 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
                         disabled={isLoading || loadingList}
                         aria-label="YouTube URL"
                         aria-invalid={validationError.length > 0}
-                        className={`min-h-[44px] flex-1 rounded-lg border-2 bg-white px-4 py-2 text-sm shadow-sm transition-colors placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 ${
+                        className={`min-h-[44px] flex-1 rounded-lg border-2 bg-white px-4 py-2 text-sm shadow-xs transition-colors placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 ${
                             validationError ? "border-red-400 dark:border-red-500" : "border-slate-200 dark:border-slate-600"
                         }`}
                     />
                     <button
                         type="submit"
                         disabled={isLoading || loadingList || url.length === 0}
-                        className="min-h-[44px] whitespace-nowrap rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-offset-slate-900"
+                        className="min-h-[44px] whitespace-nowrap rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-blue-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-offset-slate-900"
                     >
                         {loadingList ? "Loading..." : isLoading ? "Loading..." : "Get Transcript"}
                     </button>
@@ -202,7 +202,7 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
 function FeatureCard({title, description}: { title: string; description: string }) {
     return (
         <div
-            className="rounded-xl border border-slate-200 bg-white p-5 text-center shadow-sm dark:border-slate-700 dark:bg-slate-800">
+            className="rounded-xl border border-slate-200 bg-white p-5 text-center shadow-xs dark:border-slate-700 dark:bg-slate-800">
             <h3 className="mb-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
             <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">{description}</p>
         </div>

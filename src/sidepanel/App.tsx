@@ -354,7 +354,7 @@ export function App() {
         return (
             <div className="min-h-screen bg-white dark:bg-slate-900">
                 <header
-                    className="border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80">
+                    className="border-b border-slate-200 bg-white/80 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
                     <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-2">
                         <span className="text-sm font-bold text-slate-900 dark:text-white">YT Transcript</span>
                     </div>
@@ -374,7 +374,7 @@ export function App() {
         <div className="min-h-screen bg-white dark:bg-slate-900">
             {/* Header */}
             <header
-                className="border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80">
+                className="border-b border-slate-200 bg-white/80 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
                 <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-2">
                     <span className="text-sm font-bold text-slate-900 dark:text-white">YT Transcript</span>
                     <div className="flex items-center gap-1">

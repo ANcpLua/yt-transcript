@@ -107,11 +107,20 @@ export function TranscriptView({
                                    onHighlightToggle,
                                    onNoteUpdate,
                                }: TranscriptViewProps) {
-    const [viewMode, setViewMode] = useState<ViewMode>(() => getPreferences().viewMode);
-    const [showTimestamps, setShowTimestamps] = useState(() => getPreferences().showTimestamps);
-    const [compactMode, setCompactMode] = useState(() => getPreferences().compactMode);
+    const [viewMode, setViewMode] = useState<ViewMode>("raw");
+    const [showTimestamps, setShowTimestamps] = useState(true);
+    const [compactMode, setCompactMode] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
-    const [autoScroll, setAutoScroll] = useState(() => getPreferences().autoScroll);
+    const [autoScroll, setAutoScroll] = useState(true);
+
+    useEffect(() => {
+        void getPreferences().then((p) => {
+            setViewMode(p.viewMode);
+            setShowTimestamps(p.showTimestamps);
+            setCompactMode(p.compactMode);
+            setAutoScroll(p.autoScroll);
+        });
+    }, []);
     const [activeIndex, setActiveIndex] = useState(-1);
     const [rangeAnchor, setRangeAnchor] = useState<number | null>(null);
     const [editingNoteIndex, setEditingNoteIndex] = useState<number | null>(null);
@@ -380,7 +389,7 @@ export function TranscriptView({
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Search transcript..."
                         aria-label="Search transcript"
-                        className="h-8 w-full rounded-lg border border-slate-200 bg-white px-3 pr-16 text-xs shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
+                        className="h-8 w-full rounded-lg border border-slate-200 bg-white px-3 pr-16 text-xs shadow-xs placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
                     />
                     {debouncedQuery.length > 0 && (
                         <span
@@ -394,22 +403,22 @@ export function TranscriptView({
                 {/* Toggles */}
                 <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
                     <input type="checkbox" checked={showTimestamps}
-                           onChange={(e) => setShowTimestamps(e.target.checked)} className="rounded"/>
+                           onChange={(e) => setShowTimestamps(e.target.checked)} className="rounded-sm"/>
                     Timestamps
                 </label>
                 <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
                     <input type="checkbox" checked={compactMode} onChange={(e) => setCompactMode(e.target.checked)}
-                           className="rounded"/>
+                           className="rounded-sm"/>
                     Compact
                 </label>
                 <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
                     <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)}
-                           className="rounded"/>
+                           className="rounded-sm"/>
                     Auto-scroll
                 </label>
                 <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
                     <input type="checkbox" checked={cleanFillers} onChange={(e) => onCleanFillersChange(e.target.checked)}
-                           className="rounded"/>
+                           className="rounded-sm"/>
                     Clean fillers
                 </label>
                 {uniqueSpeakers.length > 1 && (
@@ -503,7 +512,7 @@ export function TranscriptView({
                                             <button
                                                 type="button"
                                                 onClick={(e) => { e.stopPropagation(); onHighlightToggle(virtualRow.index); }}
-                                                className={`rounded p-0.5 ${isHighlighted ? "text-yellow-500" : "text-slate-400 hover:text-yellow-500"}`}
+                                                className={`rounded-sm p-0.5 ${isHighlighted ? "text-yellow-500" : "text-slate-400 hover:text-yellow-500"}`}
                                                 title={isHighlighted ? "Remove highlight" : "Highlight"}
                                             >
                                                 <svg className="h-3.5 w-3.5" fill={isHighlighted ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -521,7 +530,7 @@ export function TranscriptView({
                                                         setNoteText(existingNote ?? "");
                                                     }
                                                 }}
-                                                className={`rounded p-0.5 ${existingNote !== undefined ? "text-blue-500" : "text-slate-400 hover:text-blue-500"}`}
+                                                className={`rounded-sm p-0.5 ${existingNote !== undefined ? "text-blue-500" : "text-slate-400 hover:text-blue-500"}`}
                                                 title="Add note"
                                             >
                                                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -539,17 +548,17 @@ export function TranscriptView({
                                             value={noteText}
                                             onChange={(e) => setNoteText(e.target.value)}
                                             placeholder="Add a note..."
-                                            className="w-full rounded border border-slate-200 bg-white p-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                                            className="w-full rounded-sm border border-slate-200 bg-white p-2 text-xs focus:outline-hidden focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
                                             rows={2}
                                             autoFocus
                                         />
                                         <div className="mt-1 flex gap-1">
                                             <button type="button"
                                                 onClick={() => { onNoteUpdate(virtualRow.index, noteText); setEditingNoteIndex(null); }}
-                                                className="rounded bg-blue-600 px-2 py-0.5 text-xs text-white hover:bg-blue-700">Save</button>
+                                                className="rounded-sm bg-blue-600 px-2 py-0.5 text-xs text-white hover:bg-blue-700">Save</button>
                                             <button type="button"
                                                 onClick={() => setEditingNoteIndex(null)}
-                                                className="rounded px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700">Cancel</button>
+                                                className="rounded-sm px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700">Cancel</button>
                                         </div>
                                     </div>
                                 )}

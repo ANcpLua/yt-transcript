@@ -51,7 +51,7 @@ function RenderedContent({text, onSeek}: { text: string; onSeek: (t: number) => 
                     <button
                         key={i}
                         onClick={() => onSeek(parseTimestamp(part))}
-                        className="mx-0.5 rounded bg-blue-100 px-1 text-xs font-mono text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300"
+                        className="mx-0.5 rounded-sm bg-blue-100 px-1 text-xs font-mono text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300"
                     >
                         {part}
                     </button>
@@ -78,17 +78,17 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         chatEndRef.current?.scrollIntoView({behavior: "smooth"});
     }, [chatMessages]);
 
-    const getConfiguredProvider = useCallback(() => {
-        const prefs = getPreferences();
+    const getConfiguredProvider = useCallback(async () => {
+        const prefs = await getPreferences();
         if (!prefs.aiProvider) return null;
-        const key = getApiKey(prefs.aiProvider);
+        const key = await getApiKey(prefs.aiProvider);
         if (!key) return null;
         return getProvider(prefs.aiProvider, key);
     }, []);
 
     const runFeature = async (feature: AiFeature) => {
         if (!transcript) return;
-        const provider = getConfiguredProvider();
+        const provider = await getConfiguredProvider();
         if (!provider) return;
 
         setActiveFeature(feature);
@@ -114,7 +114,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
     const sendChat = async () => {
         if (!chatInput.trim() || !transcript) return;
-        const provider = getConfiguredProvider();
+        const provider = await getConfiguredProvider();
         if (!provider) return;
 
         const userMsg: ChatMessage = {role: "user", content: chatInput.trim()};
@@ -147,7 +147,11 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         if (result) navigator.clipboard.writeText(result);
     };
 
-    const hasProvider = getConfiguredProvider() !== null;
+    const [hasProvider, setHasProvider] = useState(false);
+
+    useEffect(() => {
+        void getConfiguredProvider().then((p) => setHasProvider(p !== null));
+    }, [getConfiguredProvider]);
 
     if (!transcript) return null;
 
@@ -207,12 +211,12 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                     )}
                     <div className="mt-3 flex gap-2">
                         <button onClick={copyResult}
-                                className="rounded bg-gray-200 px-3 py-1 text-xs hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300">
+                                className="rounded-sm bg-gray-200 px-3 py-1 text-xs hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300">
                             Copy
                         </button>
                         <button
                             onClick={() => activeFeature && runFeature(activeFeature)}
-                            className="rounded bg-gray-200 px-3 py-1 text-xs hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300"
+                            className="rounded-sm bg-gray-200 px-3 py-1 text-xs hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300"
                         >
                             Regenerate
                         </button>
@@ -314,7 +318,7 @@ function FlashcardView({
                 <button
                     key={i}
                     onClick={() => toggle(i)}
-                    className="rounded-lg border p-3 text-left transition hover:shadow dark:border-gray-600"
+                    className="rounded-lg border p-3 text-left transition hover:shadow-xs dark:border-gray-600"
                 >
                     <p className="text-sm font-medium text-gray-900 dark:text-white">{card.q}</p>
                     {flippedCards.has(i) && (

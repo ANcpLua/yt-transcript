@@ -77,7 +77,7 @@ function SegmentCell({
         <button
             type="button"
             onClick={() => onSeek(segment.start)}
-            className="w-full text-left p-2 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+            className="w-full text-left p-2 rounded-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
             aria-label={`Seek to ${formatTimestamp(segment.start)}`}
         >
             {showTime && (

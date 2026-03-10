@@ -12,13 +12,12 @@ export function History({onSelectVideo, isOpen, onClose}: HistoryProps) {
     const [entries, setEntries] = useState<HistoryEntry[]>([]);
 
     useEffect(() => {
-        if (isOpen) setEntries(getHistory());
+        if (isOpen) void getHistory().then(setEntries);
     }, [isOpen]);
 
     const handleClear = () => {
         if (!confirm("Clear all history?")) return;
-        clearHistory();
-        setEntries([]);
+        void clearHistory().then(() => setEntries([]));
     };
 
     if (!isOpen) return null;
@@ -63,7 +62,7 @@ export function History({onSelectVideo, isOpen, onClose}: HistoryProps) {
                                 <img
                                     src={entry.thumbnailUrl}
                                     alt=""
-                                    className="h-14 w-24 shrink-0 rounded object-cover"
+                                    className="h-14 w-24 shrink-0 rounded-sm object-cover"
                                     loading="lazy"
                                 />
                                 <div className="min-w-0 flex-1">

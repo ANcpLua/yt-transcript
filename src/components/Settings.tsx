@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useState} from "react";
 import type {Preferences} from "../types/transcript";
-import {clearApiKey, getApiKey, getPreferences, saveApiKey, savePreferences} from "../lib/storage/preferences";
+import {getApiKey, getPreferences, removeApiKey, saveApiKey, savePreferences} from "../lib/storage/preferences";
 import {clearAllData, exportAllData} from "../lib/storage/saved";
 import {clearHistory} from "../lib/storage/history";
 import {getProvider} from "../lib/ai/providers";
@@ -25,50 +25,57 @@ interface SettingsProps {
 
 type KeyStatus = "idle" | "validating" | "valid" | "invalid";
 
+const DEFAULT_PREFS: Preferences = {
+    viewMode: "raw",
+    showTimestamps: true,
+    compactMode: false,
+    autoScroll: true,
+    aiProvider: null,
+};
+
 export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) {
-    const [prefs, setPrefs] = useState<Preferences>(getPreferences);
-    const [selectedProvider, setSelectedProvider] = useState(prefs.aiProvider ?? "openai");
+    const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
+    const [selectedProvider, setSelectedProvider] = useState<string>("openai");
     const [keyInput, setKeyInput] = useState("");
     const [showKey, setShowKey] = useState(false);
     const [keyStatus, setKeyStatus] = useState<KeyStatus>("idle");
-    const [storageSize, setStorageSize] = useState("0");
     const [storageEstimate, setStorageEstimate] = useState<{usage: number; quota: number} | null>(null);
 
+    // Load preferences once when the panel opens
     useEffect(() => {
         if (!isOpen) return;
-        setPrefs(getPreferences());
-        const existing = getApiKey(selectedProvider);
-        setKeyInput(existing ?? "");
-        setKeyStatus(existing ? "valid" : "idle");
+        let cancelled = false;
+        void (async () => {
+            const p = await getPreferences();
+            if (cancelled) return;
+            setPrefs(p);
+            setSelectedProvider(p.aiProvider ?? "openai");
+        })();
+        return () => { cancelled = true; };
+    }, [isOpen]);
+
+    // Reload the API key whenever the selected provider tab changes
+    useEffect(() => {
+        if (!isOpen) return;
+        let cancelled = false;
+        void (async () => {
+            const existing = await getApiKey(selectedProvider);
+            if (cancelled) return;
+            setKeyInput(existing ?? "");
+            setKeyStatus(existing ? "valid" : "idle");
+        })();
+        return () => { cancelled = true; };
     }, [isOpen, selectedProvider]);
 
     useEffect(() => {
         if (!isOpen) return;
-
-        // localStorage measurement
-        try {
-            let total = 0;
-            for (let i = 0; i < localStorage.length; i++) {
-                const k = localStorage.key(i);
-                if (k?.startsWith("yt-transcript")) {
-                    total += (localStorage.getItem(k) ?? "").length * 2;
-                }
-            }
-            setStorageSize((total / 1024).toFixed(1));
-        } catch {
-            setStorageSize("?");
-        }
-
-        // IndexedDB + overall quota estimate
         if (navigator.storage?.estimate) {
             navigator.storage.estimate().then((est) => {
                 setStorageEstimate({
                     usage: est.usage ?? 0,
                     quota: est.quota ?? 0,
                 });
-            }).catch(() => {
-                // Storage API not available
-            });
+            }).catch(() => {});
         }
     }, [isOpen]);
 
@@ -76,7 +83,7 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
         <K extends keyof Preferences>(key: K, value: Preferences[K]) => {
             const next = {...prefs, [key]: value};
             setPrefs(next);
-            savePreferences(next);
+            void savePreferences(next);
             onPreferencesChange(next);
         },
         [prefs, onPreferencesChange],
@@ -88,7 +95,7 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
         const provider = getProvider(selectedProvider, keyInput.trim());
         const valid = await provider.validateKey();
         if (valid) {
-            saveApiKey(selectedProvider, keyInput.trim());
+            await saveApiKey(selectedProvider, keyInput.trim());
             updatePref("aiProvider", selectedProvider as Preferences["aiProvider"]);
             setKeyStatus("valid");
         } else {
@@ -96,8 +103,8 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
         }
     };
 
-    const handleClearKey = () => {
-        clearApiKey(selectedProvider);
+    const handleClearKey = async () => {
+        await removeApiKey(selectedProvider);
         setKeyInput("");
         setKeyStatus("idle");
         if (prefs.aiProvider === selectedProvider) {
@@ -119,13 +126,13 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
     const handleClearAll = async () => {
         if (!confirm("Delete all saved transcripts and history? This cannot be undone.")) return;
         await clearAllData();
-        clearHistory();
-        setStorageSize("0");
+        await clearHistory();
+        setStorageEstimate(null);
     };
 
     const totalUsageKB = storageEstimate
-        ? (storageEstimate.usage / 1024) + parseFloat(storageSize || "0")
-        : parseFloat(storageSize || "0");
+        ? storageEstimate.usage / 1024
+        : 0;
     const quotaKB = storageEstimate ? storageEstimate.quota / 1024 : 0;
     const usagePercent = quotaKB > 0 ? Math.min((totalUsageKB / quotaKB) * 100, 100) : 0;
     const isWarning = usagePercent > 80;
@@ -201,14 +208,14 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                             </button>
                         </div>
                         <button
-                            onClick={handleSaveKey}
+                            onClick={() => void handleSaveKey()}
                             disabled={keyStatus === "validating" || !keyInput.trim()}
                             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                         >
                             {keyStatus === "validating" ? "..." : "Save"}
                         </button>
                         <button
-                            onClick={handleClearKey}
+                            onClick={() => void handleClearKey()}
                             className="rounded-lg bg-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300"
                         >
                             Clear
@@ -254,7 +261,7 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                                     type="checkbox"
                                     checked={prefs[key]}
                                     onChange={(e) => updatePref(key, e.target.checked)}
-                                    className="h-4 w-4 rounded"
+                                    className="h-4 w-4 rounded-sm"
                                 />
                             </label>
                         ))}
@@ -278,13 +285,9 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
 
                     {/* Usage details */}
                     <div className="mb-3 space-y-2">
-                        <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                            <span>Local storage</span>
-                            <span>~{storageSize} KB</span>
-                        </div>
                         {storageEstimate && (
                             <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                                <span>IndexedDB</span>
+                                <span>Storage used</span>
                                 <span>~{(storageEstimate.usage / 1024).toFixed(1)} KB</span>
                             </div>
                         )}
@@ -310,13 +313,13 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
 
                     <div className="flex gap-2">
                         <button
-                            onClick={handleExport}
+                            onClick={() => void handleExport()}
                             className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
                         >
                             Export all data
                         </button>
                         <button
-                            onClick={handleClearAll}
+                            onClick={() => void handleClearAll()}
                             className="rounded-lg bg-red-100 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400"
                         >
                             Clear all data
