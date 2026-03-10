@@ -4,5 +4,8 @@ dist/
 .superpowers/
 .playwright-mcp/
 *.tsbuildinfo
-*.png
 *.ico
+# Screenshots (not extension icons)
+/fixed-landing.png
+/landing-page.png
+.DS_Store

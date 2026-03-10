@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Transcript Extractor",
+  "description": "Extract, search, and export YouTube transcripts. Free. No signup.",
+  "version": "1.0.0",
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "storage",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*",
+    "*://*.googlevideo.com/*"
+  ],
+  "optional_host_permissions": [
+    "*://api.openai.com/*",
+    "*://api.anthropic.com/*",
+    "*://generativelanguage.googleapis.com/*",
+    "http://localhost:*/*"
+  ],
+  "side_panel": {
+    "default_path": "sidepanel/index.html"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/watch*",
+        "*://*.youtube.com/shorts/*",
+        "*://*.youtube.com/embed/*",
+        "*://*.youtube.com/live/*"
+      ],
+      "js": ["content/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}
