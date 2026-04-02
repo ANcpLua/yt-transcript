@@ -12,6 +12,19 @@ export interface PlayerTimeMessage {
   currentTime: number;
 }
 
+// -- Background -> Content script (request page data) --
+
+export interface RequestPlayerDataMessage {
+  type: "request-player-data";
+  videoId: string;
+}
+
+export interface PlayerDataResponseMessage {
+  type: "player-data-response";
+  videoId: string;
+  playerResponse: unknown | null;
+}
+
 // -- Side panel -> Background --
 
 export interface FetchTranscriptMessage {
@@ -38,10 +51,10 @@ export interface FetchChannelMessage {
 
 export interface AiRequestMessage {
   type: "ai-request";
-  feature: string;
-  text: string;
-  provider: "chrome-ai" | "openai" | "anthropic" | "google";
-  config?: { apiKey: string; model: string; endpoint: string };
+  provider: string;
+  apiKey: string;
+  systemPrompt: string;
+  userMessage: string;
 }
 
 export interface SeekToMessage {
@@ -111,7 +124,8 @@ export interface AiErrorMessage {
 
 export type ContentToBackgroundMessage =
   | VideoDetectedMessage
-  | PlayerTimeMessage;
+  | PlayerTimeMessage
+  | PlayerDataResponseMessage;
 
 export type PanelToBackgroundMessage =
   | FetchTranscriptMessage
@@ -134,7 +148,8 @@ export type BackgroundToPanelMessage =
   | AiErrorMessage;
 
 export type BackgroundToContentMessage =
-  | SeekToMessage;
+  | SeekToMessage
+  | RequestPlayerDataMessage;
 
 export type ExtensionMessage =
   | ContentToBackgroundMessage

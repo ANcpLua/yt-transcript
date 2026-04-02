@@ -106,6 +106,7 @@ export function App() {
     const [currentTime, setCurrentTime] = useState(0);
     const lastFetchRef = useRef(0);
     const batchRef = useRef<BatchProcessor | null>(null);
+    const lastPlayerTimeRef = useRef(0);
 
     // Shim YTPlayer interface using message-based currentTime
     const playerRef = useRef<YTPlayer | null>(null);
@@ -115,7 +116,9 @@ export function App() {
                 chrome.runtime.sendMessage({type: "seek-to", time: seconds}).catch(() => {});
             },
             getCurrentTime: () => currentTime,
-            getPlayerState: () => 1, // PLAYING
+            // Content script sends player-time every ~1s while playing.
+            // If >1.5s since last message, video is likely paused.
+            getPlayerState: () => (Date.now() - lastPlayerTimeRef.current < 1500 ? 1 : 2),
         };
     }, [currentTime]);
 
@@ -134,6 +137,7 @@ export function App() {
     useEffect(() => {
         const listener = (message: { type: string; currentTime?: number }) => {
             if (message.type === "player-time" && message.currentTime !== undefined) {
+                lastPlayerTimeRef.current = Date.now();
                 setCurrentTime(message.currentTime);
             }
         };
@@ -495,6 +499,8 @@ export function App() {
                             showTimestamps={true}
                             selectedRange={selectedRange}
                             cleanFillers={cleanFillers}
+                            chapters={transcript.chapters}
+                            highlights={highlights}
                         />
 
                         {/* AI Panel */}

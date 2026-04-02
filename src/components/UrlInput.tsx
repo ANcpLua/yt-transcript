@@ -15,6 +15,31 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
     const [listTitle, setListTitle] = useState("");
     const [loadingList, setLoadingList] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleCsvUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            const text = reader.result as string;
+            const ids: string[] = [];
+            for (const line of text.split(/\r?\n/)) {
+                for (const cell of line.split(",")) {
+                    const id = parseVideoId(cell.trim());
+                    if (id && !ids.includes(id)) ids.push(id);
+                }
+            }
+            if (ids.length > 0) {
+                setVideoList(ids.map(id => ({videoId: id, title: id, selected: true})));
+                setListTitle(`CSV Import (${ids.length} videos)`);
+            } else {
+                setValidationError("No valid YouTube video IDs found in CSV");
+            }
+        };
+        reader.readAsText(file);
+        e.target.value = "";
+    }, []);
 
     const handleSubmit = useCallback(async (e: FormEvent) => {
         e.preventDefault();
@@ -24,13 +49,18 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
         if (playlistId) {
             setLoadingList(true);
             try {
-                const res = await fetch(`/api/playlist?id=${encodeURIComponent(playlistId)}`);
-                if (res.ok) {
-                    const data = await res.json() as {playlistTitle: string; videos: {videoId: string; title: string}[]};
-                    setVideoList(data.videos.map(v => ({...v, selected: true})));
-                    setListTitle(data.playlistTitle);
-                }
-            } catch { /* network error — list simply won't appear */ }
+                const data = await new Promise<{playlistTitle: string; videos: {videoId: string; title: string}[]}>((resolve, reject) => {
+                    chrome.runtime.sendMessage({type: "fetch-playlist", playlistId}, (response: unknown) => {
+                        if (chrome.runtime.lastError) { reject(new Error(chrome.runtime.lastError.message)); return; }
+                        const res = response as {playlistTitle?: string; videos?: {videoId: string; title: string}[]; error?: string};
+                        if (res?.error) { reject(new Error(res.error)); return; }
+                        if (res?.playlistTitle && res?.videos) { resolve(res as {playlistTitle: string; videos: {videoId: string; title: string}[]}); return; }
+                        reject(new Error("Invalid response"));
+                    });
+                });
+                setVideoList(data.videos.map(v => ({...v, selected: true})));
+                setListTitle(data.playlistTitle);
+            } catch { /* fetch failed — list simply won't appear */ }
             setLoadingList(false);
             return;
         }
@@ -40,13 +70,18 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
         if (channelHandle) {
             setLoadingList(true);
             try {
-                const res = await fetch(`/api/channel?handle=${encodeURIComponent(channelHandle)}`);
-                if (res.ok) {
-                    const data = await res.json() as {channelTitle: string; videos: {videoId: string; title: string}[]};
-                    setVideoList(data.videos.map(v => ({...v, selected: true})));
-                    setListTitle(data.channelTitle);
-                }
-            } catch { /* network error — list simply won't appear */ }
+                const data = await new Promise<{channelTitle: string; videos: {videoId: string; title: string}[]}>((resolve, reject) => {
+                    chrome.runtime.sendMessage({type: "fetch-channel", identifier: channelHandle}, (response: unknown) => {
+                        if (chrome.runtime.lastError) { reject(new Error(chrome.runtime.lastError.message)); return; }
+                        const res = response as {channelTitle?: string; videos?: {videoId: string; title: string}[]; error?: string};
+                        if (res?.error) { reject(new Error(res.error)); return; }
+                        if (res?.channelTitle && res?.videos) { resolve(res as {channelTitle: string; videos: {videoId: string; title: string}[]}); return; }
+                        reject(new Error("Invalid response"));
+                    });
+                });
+                setVideoList(data.videos.map(v => ({...v, selected: true})));
+                setListTitle(data.channelTitle);
+            } catch { /* fetch failed — list simply won't appear */ }
             setLoadingList(false);
             return;
         }
@@ -141,6 +176,13 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
                             {loadingList ? "Loading..." : "Get Transcript"}
                         </button>
                     </div>
+                    <div className="mt-2 flex items-center justify-center">
+                        <input ref={fileInputRef} type="file" accept=".csv,.txt" onChange={handleCsvUpload} className="hidden" />
+                        <button type="button" onClick={() => fileInputRef.current?.click()}
+                            className="text-xs text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400">
+                            or upload a CSV of video URLs
+                        </button>
+                    </div>
                     {validationError && (
                         <p className="mt-2 text-sm text-red-500 dark:text-red-400" role="alert">
                             {validationError}
@@ -180,6 +222,13 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
                             validationError ? "border-red-400 dark:border-red-500" : "border-slate-200 dark:border-slate-600"
                         }`}
                     />
+                    <button type="button" onClick={() => fileInputRef.current?.click()}
+                        title="Upload CSV"
+                        className="min-h-[44px] rounded-lg border-2 border-slate-200 bg-white px-2.5 text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700">
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                        </svg>
+                    </button>
                     <button
                         type="submit"
                         disabled={isLoading || loadingList || url.length === 0}
@@ -188,6 +237,7 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
                         {loadingList ? "Loading..." : isLoading ? "Loading..." : "Get Transcript"}
                     </button>
                 </div>
+                <input ref={fileInputRef} type="file" accept=".csv,.txt" onChange={handleCsvUpload} className="hidden" />
                 {validationError && (
                     <p className="mt-1.5 text-sm text-red-500 dark:text-red-400" role="alert">
                         {validationError}

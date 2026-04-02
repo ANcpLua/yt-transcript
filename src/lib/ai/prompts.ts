@@ -79,6 +79,41 @@ export const promptTemplates: Record<AiFeature, PromptTemplate> = {
         user: (t) =>
             `Extract all named entities from this transcript: people, companies, tools/products, URLs, and locations. Include approximate timestamps:\n\n${truncateTranscript(t)}`,
     },
+    sentiment: {
+        system: BASE_SYSTEM,
+        user: (t) =>
+            `Analyze the sentiment and emotional arc of this transcript. Include:\n1. Overall tone (positive/negative/neutral/mixed)\n2. Emotional arc — how the tone shifts throughout\n3. Any detected bias or persuasion techniques\n4. Key emotional moments with timestamps\n\n${truncateTranscript(t)}`,
+    },
+    topics: {
+        system: BASE_SYSTEM,
+        user: (t) =>
+            `Extract the main topics and themes from this transcript. Provide:\n1. Primary topics (3-5) with brief descriptions\n2. Secondary topics (5-10)\n3. Suggested hashtags (10-15, formatted as #hashtag)\n4. One-line topic summary\n\n${truncateTranscript(t)}`,
+    },
+    qaExtract: {
+        system: BASE_SYSTEM,
+        user: (t) =>
+            `Find direct answers to common questions within this transcript. For each, provide:\n- The implicit or explicit question being answered\n- The direct answer from the transcript\n- The approximate timestamp\n\nExtract 5-15 Q&A pairs. Focus on factual, actionable answers.\n\n${truncateTranscript(t)}`,
+    },
+    mindmap: {
+        system: BASE_SYSTEM,
+        user: (t) =>
+            `Create a mermaid mindmap diagram representing the key concepts and their relationships from this transcript. Use this exact format:\n\n\`\`\`mermaid\nmindmap\n  root((Main Topic))\n    Branch 1\n      Sub-topic\n      Sub-topic\n    Branch 2\n      Sub-topic\n\`\`\`\n\nInclude 3-6 main branches with 2-4 sub-topics each. Output ONLY the mermaid code block.\n\n${truncateTranscript(t)}`,
+    },
+    studyGuide: {
+        system: BASE_SYSTEM,
+        user: (t) =>
+            `Create a comprehensive study guide from this transcript with:\n1. **Learning Objectives** — what you should know after studying\n2. **Key Concepts** — definitions and explanations\n3. **Detailed Notes** — organized by section with timestamps\n4. **Summary** — 3-5 sentence recap\n5. **Review Questions** — 5 questions to test understanding\n\n${truncateTranscript(t)}`,
+    },
+    qaGenerate: {
+        system: BASE_SYSTEM,
+        user: (t) =>
+            `Generate 10-15 question-answer pairs for review based on this transcript. Include a mix of:\n- Factual recall questions\n- Conceptual understanding questions\n- Application questions\n\nFormat each as:\n**Q:** [question]\n**A:** [answer]\n\n${truncateTranscript(t)}`,
+    },
+    quiz: {
+        system: BASE_SYSTEM,
+        user: (t) =>
+            `Generate a 10-question multiple-choice quiz based on this transcript. For each question:\n- Provide 4 options labeled A, B, C, D\n- Mark the correct answer with ✓\n- Include a brief explanation for the correct answer\n\nFormat:\n**1. [Question]**\nA) [option]\nB) [option]\nC) [option] ✓\nD) [option]\n*Explanation: [why C is correct]*\n\n${truncateTranscript(t)}`,
+    },
 };
 
 export function getChatSystemPrompt(transcriptText: string): string {

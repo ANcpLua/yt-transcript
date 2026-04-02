@@ -1,5 +1,5 @@
-import {useCallback, useState} from "react";
-import type {Segment} from "../types/transcript";
+import {useCallback, useMemo, useState} from "react";
+import type {Chapter, Segment} from "../types/transcript";
 import {formatTimestamp} from "../lib/formatTime";
 import {exportTxt, generateTxt} from "../lib/exportTxt";
 import {exportSrt} from "../lib/exportSrt";
@@ -18,6 +18,8 @@ interface ExportBarProps {
     showTimestamps: boolean;
     selectedRange: [number, number] | null;
     cleanFillers?: boolean;
+    chapters?: Chapter[];
+    highlights?: number[];
 }
 
 export function ExportBar({
@@ -29,6 +31,8 @@ export function ExportBar({
                               showTimestamps,
                               selectedRange,
                               cleanFillers,
+                              chapters,
+                              highlights,
                           }: ExportBarProps) {
     const [copied, setCopied] = useState<string | null>(null);
     const [showMore, setShowMore] = useState(false);
@@ -48,18 +52,34 @@ export function ExportBar({
     }, [activeSegments, showTimestamps]);
 
     const handleCopyNotion = useCallback(async () => {
-        const text = generateMarkdown({title, videoId, language, segments: activeSegments, format: "notion"});
+        const text = generateMarkdown({title, videoId, language, segments: activeSegments, chapters, format: "notion"});
         await navigator.clipboard.writeText(text);
         setCopied("notion");
         setTimeout(() => setCopied(null), 2000);
-    }, [activeSegments, title, videoId, language]);
+    }, [activeSegments, title, videoId, language, chapters]);
 
     const handleCopyObsidian = useCallback(async () => {
-        const text = generateMarkdown({title, videoId, language, segments: activeSegments, format: "obsidian"});
+        const text = generateMarkdown({title, videoId, language, segments: activeSegments, chapters, format: "obsidian"});
         await navigator.clipboard.writeText(text);
         setCopied("obsidian");
         setTimeout(() => setCopied(null), 2000);
-    }, [activeSegments, title, videoId, language]);
+    }, [activeSegments, title, videoId, language, chapters]);
+
+    // Highlights use original segment indices (from IndexedDB), so filter from
+    // the raw segments array and apply cleanFillers independently.
+    const highlightedSegments = useMemo(() => {
+        if (!highlights || highlights.length === 0) return [];
+        let result = segments.filter((_, i) => highlights.includes(i));
+        if (cleanFillers) result = removeFillersFromSegments(result, language);
+        return result;
+    }, [segments, highlights, cleanFillers, language]);
+
+    const handleCopyHighlights = useCallback(async () => {
+        const text = generateTxt(highlightedSegments, showTimestamps);
+        await navigator.clipboard.writeText(text);
+        setCopied("highlights");
+        setTimeout(() => setCopied(null), 2000);
+    }, [highlightedSegments, showTimestamps]);
 
     const btnClass =
         "min-h-[36px] rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-xs transition-colors hover:bg-slate-50 focus:outline-hidden focus:ring-2 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700";
@@ -77,6 +97,11 @@ export function ExportBar({
             <button onClick={handleCopy} className={btnClass}>
                 {copied === "copy" ? "Copied!" : "Copy"}
             </button>
+            {highlightedSegments.length > 0 && (
+                <button onClick={handleCopyHighlights} className={btnClass}>
+                    {copied === "highlights" ? "Copied!" : `Highlights (${highlightedSegments.length})`}
+                </button>
+            )}
             <button onClick={() => exportTxt(activeSegments, title, language, showTimestamps)} className={btnClass}>
                 TXT
             </button>
@@ -92,7 +117,7 @@ export function ExportBar({
                     className={btnClass}>JSON
                 </button>
                 <button onClick={() => exportCsv(activeSegments, title, language)} className={btnClass}>CSV</button>
-                <button onClick={() => exportMarkdown({title, videoId, language, segments: activeSegments})}
+                <button onClick={() => exportMarkdown({title, videoId, language, segments: activeSegments, chapters})}
                         className={btnClass}>MD
                 </button>
                 <button onClick={handleCopyNotion}
@@ -125,7 +150,7 @@ export function ExportBar({
                         }} className={btnClass}>CSV
                         </button>
                         <button onClick={() => {
-                            exportMarkdown({title, videoId, language, segments: activeSegments});
+                            exportMarkdown({title, videoId, language, segments: activeSegments, chapters});
                             setShowMore(false);
                         }} className={btnClass}>MD
                         </button>

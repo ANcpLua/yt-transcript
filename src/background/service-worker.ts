@@ -1,7 +1,24 @@
 import { fetchTranscript, fetchTracks } from "./innertube";
 import { fetchPlaylist, fetchChannel } from "./innertube-browse";
 import type { AiRequestMessage, ExtensionMessage } from "../types/messages";
-import type { AiFeature } from "../types/transcript";
+
+// Ask the content script on the active YouTube tab for page-extracted player data.
+// Returns the raw player response if available, or null.
+async function requestPagePlayerData(videoId: string): Promise<unknown | null> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !tab.url?.includes("youtube.com")) return null;
+
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      type: "request-player-data",
+      videoId,
+    });
+    return response?.playerResponse ?? null;
+  } catch {
+    // Content script not available (tab not on YouTube, extension just installed, etc.)
+    return null;
+  }
+}
 
 chrome.runtime.onMessage.addListener(
   (message: ExtensionMessage, sender, sendResponse) => {
@@ -19,17 +36,21 @@ chrome.runtime.onMessage.addListener(
         return false;
 
       case "fetch-transcript":
-        fetchTranscript(message.videoId, message.lang, message.translateTo).then((result) => {
+        requestPagePlayerData(message.videoId).then((pageData) =>
+          fetchTranscript(message.videoId, message.lang, message.translateTo, pageData ?? undefined),
+        ).then((result) => {
           if ("error" in result) {
             sendResponse({ type: "transcript-error", error: result });
           } else {
             sendResponse({ type: "transcript-result", data: result });
           }
         });
-        return true; // keep channel open for async
+        return true;
 
       case "fetch-tracks":
-        fetchTracks(message.videoId).then((result) => {
+        requestPagePlayerData(message.videoId).then((pageData) =>
+          fetchTracks(message.videoId, pageData ?? undefined),
+        ).then((result) => {
           if ("error" in result) {
             sendResponse({ type: "tracks-error", error: result });
           } else {
@@ -74,43 +95,13 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(
 );
 
 async function handleAiRequest(message: AiRequestMessage): Promise<string> {
-  if (message.provider === "chrome-ai") {
-    const { chromeAiSummarize } = await import("../lib/ai/chrome-ai");
-    return chromeAiSummarize(message.text);
-  }
-
-  // BYOK providers — validate key presence
-  if (!message.config?.apiKey) throw new Error("No API key configured");
+  if (!message.apiKey) throw new Error("No API key configured");
 
   const { getProvider } = await import("../lib/ai/providers");
-  const provider = getProvider(message.provider, message.config.apiKey);
-
-  // Build prompt from feature using promptTemplates
-  const { promptTemplates } = await import("../lib/ai/prompts");
-
-  const AI_FEATURES = new Set<string>([
-    "summary",
-    "bulletPoints",
-    "chapterSummary",
-    "actionItems",
-    "quotes",
-    "blogOutline",
-    "socialPosts",
-    "studyNotes",
-    "flashcards",
-    "seoKeywords",
-    "entities",
-  ]);
-
-  if (!AI_FEATURES.has(message.feature)) {
-    throw new Error(`Unknown AI feature: ${message.feature}`);
-  }
-
-  const feature = message.feature as AiFeature;
-  const template = promptTemplates[feature];
+  const provider = getProvider(message.provider, message.apiKey);
 
   return provider.sendMessage({
-    systemPrompt: template.system,
-    userMessage: template.user(message.text),
+    systemPrompt: message.systemPrompt,
+    userMessage: message.userMessage,
   });
 }

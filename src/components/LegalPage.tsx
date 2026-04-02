@@ -12,7 +12,7 @@ const sections: LegalSection[] = [
     },
     {
         title: "No Server-Side Storage",
-        body: "We do not store any data on our servers. Your transcripts, API keys, and preferences are stored locally in your browser using localStorage and IndexedDB.",
+        body: "We do not store any data on our servers. Your transcripts, API keys, and preferences are stored locally in your browser using chrome.storage and IndexedDB.",
     },
     {
         title: "Third-Party Services",

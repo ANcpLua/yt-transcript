@@ -102,4 +102,11 @@ export type AiFeature =
   | "studyNotes"
   | "flashcards"
   | "seoKeywords"
-  | "entities";
+  | "entities"
+  | "sentiment"
+  | "topics"
+  | "qaExtract"
+  | "mindmap"
+  | "studyGuide"
+  | "qaGenerate"
+  | "quiz";

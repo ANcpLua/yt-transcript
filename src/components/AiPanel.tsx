@@ -24,15 +24,23 @@ const FEATURES: { id: AiFeature; label: string }[] = [
     {id: "chapterSummary", label: "Chapters"},
     {id: "actionItems", label: "Action Items"},
     {id: "quotes", label: "Quotes"},
+    {id: "sentiment", label: "Sentiment"},
+    {id: "topics", label: "Topics & Tags"},
+    {id: "qaExtract", label: "Q&A Extract"},
+    {id: "mindmap", label: "Mindmap"},
+    {id: "studyGuide", label: "Study Guide"},
+    {id: "studyNotes", label: "Study Notes"},
+    {id: "qaGenerate", label: "Q&A Generate"},
+    {id: "quiz", label: "Quiz"},
+    {id: "flashcards", label: "Flashcards"},
     {id: "blogOutline", label: "Blog Outline"},
     {id: "socialPosts", label: "Social Posts"},
-    {id: "studyNotes", label: "Study Notes"},
-    {id: "flashcards", label: "Flashcards"},
     {id: "seoKeywords", label: "SEO Keywords"},
     {id: "entities", label: "Entities"},
 ];
 
-const TIMESTAMP_RE = /(\d{1,2}:\d{2})/g;
+const TIMESTAMP_SPLIT_RE = /(\d{1,2}:\d{2})/g;
+const TIMESTAMP_TEST_RE = /^\d{1,2}:\d{2}$/;
 
 function transcriptToText(transcript: TranscriptResponse): string {
     return transcript.segments
@@ -50,19 +58,14 @@ interface AiRequestPayload {
     apiKey: string;
     systemPrompt: string;
     userMessage: string;
-    maxTokens?: number;
 }
-
-type AiRequestResponse =
-    | {ok: true; result: string}
-    | {ok: false; error: string};
 
 /** Route an AI request through the Chrome extension background worker. */
 function sendAiRequest(payload: AiRequestPayload): Promise<string> {
     return new Promise<string>((resolve, reject) => {
         chrome.runtime.sendMessage(
-            {type: "ai-request", payload},
-            (response: AiRequestResponse | undefined) => {
+            {type: "ai-request", ...payload},
+            (response: {type: string; content?: string; error?: string} | undefined) => {
                 if (chrome.runtime.lastError) {
                     reject(new Error(chrome.runtime.lastError.message ?? "Extension error"));
                     return;
@@ -71,10 +74,10 @@ function sendAiRequest(payload: AiRequestPayload): Promise<string> {
                     reject(new Error("No response from background worker"));
                     return;
                 }
-                if (response.ok) {
-                    resolve(response.result);
+                if (response.type === "ai-result" && response.content) {
+                    resolve(response.content);
                 } else {
-                    reject(new Error(response.error));
+                    reject(new Error(response.error ?? "AI request failed"));
                 }
             },
         );
@@ -82,11 +85,11 @@ function sendAiRequest(payload: AiRequestPayload): Promise<string> {
 }
 
 function RenderedContent({text, onSeek}: { text: string; onSeek: (t: number) => void }) {
-    const parts = text.split(TIMESTAMP_RE);
+    const parts = text.split(TIMESTAMP_SPLIT_RE);
     return (
         <div className="prose prose-sm max-w-none whitespace-pre-wrap dark:prose-invert">
             {parts.map((part, i) =>
-                TIMESTAMP_RE.test(part) ? (
+                TIMESTAMP_TEST_RE.test(part) ? (
                     <button
                         key={i}
                         onClick={() => onSeek(parseTimestamp(part))}

@@ -125,6 +125,7 @@ export function TranscriptView({
     const [rangeAnchor, setRangeAnchor] = useState<number | null>(null);
     const [editingNoteIndex, setEditingNoteIndex] = useState<number | null>(null);
     const [noteText, setNoteText] = useState("");
+    const [collapsedChapters, setCollapsedChapters] = useState<Set<number>>(new Set());
 
     const debouncedQuery = useDebounce(searchQuery, 200);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -180,7 +181,7 @@ export function TranscriptView({
         return filterBySpeaker(speakerSegments, speakerFilter);
     }, [speakerSegments, speakerFilter]);
 
-    // Chapter map: segment index -> chapter
+    // Chapter map: segment index -> chapter, and chapter ranges for collapsibility
     const chapterMap = useMemo(() => {
         if (!chapters || chapters.length === 0) return new Map<number, Chapter>();
         const map = new Map<number, Chapter>();
@@ -199,6 +200,30 @@ export function TranscriptView({
         return map;
     }, [chapters, filteredSegments]);
 
+    // Compute body-segment indices hidden by collapsed chapters (headers stay visible)
+    const collapsedIndices = useMemo(() => {
+        if (collapsedChapters.size === 0 || chapterMap.size === 0) return new Set<number>();
+        const hidden = new Set<number>();
+        const chapterStarts = [...chapterMap.keys()].sort((a, b) => a - b);
+        for (let ci = 0; ci < chapterStarts.length; ci++) {
+            const startIdx = chapterStarts[ci]!;
+            if (!collapsedChapters.has(startIdx)) continue;
+            // Hide body segments (startIdx+1..endIdx), keep header (startIdx) visible
+            const endIdx = ci + 1 < chapterStarts.length ? chapterStarts[ci + 1]! : filteredSegments.length;
+            for (let i = startIdx + 1; i < endIdx; i++) hidden.add(i);
+        }
+        return hidden;
+    }, [collapsedChapters, chapterMap, filteredSegments.length]);
+
+    const toggleChapter = useCallback((chapterIdx: number) => {
+        setCollapsedChapters(prev => {
+            const next = new Set(prev);
+            if (next.has(chapterIdx)) next.delete(chapterIdx);
+            else next.add(chapterIdx);
+            return next;
+        });
+    }, []);
+
     // Search match tracking
     const matchCount = useMemo(() => {
         if (debouncedQuery.length === 0) return 0;
@@ -207,9 +232,15 @@ export function TranscriptView({
 
     const wordCount = useMemo(() => countWords(segments), [segments]);
 
+    // Visible indices: all segments except body segments hidden by collapsed chapters
+    const visibleIndices = useMemo(() => {
+        if (collapsedIndices.size === 0) return filteredSegments.map((_, i) => i);
+        return filteredSegments.map((_, i) => i).filter(i => !collapsedIndices.has(i));
+    }, [filteredSegments, collapsedIndices]);
+
     // Virtual scrolling
     const virtualizer = useVirtualizer({
-        count: filteredSegments.length,
+        count: visibleIndices.length,
         getScrollElement: () => scrollContainerRef.current,
         estimateSize: () => (compactMode ? 32 : viewMode === "paragraphs" ? 80 : 44),
         overscan: 20,
@@ -241,7 +272,8 @@ export function TranscriptView({
                 }
                 if (idx >= 0 && idx !== activeIndex) {
                     setActiveIndex(idx);
-                    virtualizer.scrollToIndex(idx, {align: "center"});
+                    const vIdx = visibleIndices.indexOf(idx);
+                    if (vIdx >= 0) virtualizer.scrollToIndex(vIdx, {align: "center"});
                 }
             } catch {
                 // Player not ready
@@ -253,7 +285,7 @@ export function TranscriptView({
                 clearInterval(autoScrollIntervalRef.current);
             }
         };
-    }, [autoScroll, filteredSegments, playerRef, activeIndex, virtualizer]);
+    }, [autoScroll, filteredSegments, playerRef, activeIndex, virtualizer, visibleIndices]);
 
     // Click-to-seek
     const handleSegmentClick = useCallback(
@@ -299,14 +331,16 @@ export function TranscriptView({
                     e.preventDefault();
                     const next = Math.min(activeIndex + 1, filteredSegments.length - 1);
                     setActiveIndex(next);
-                    virtualizer.scrollToIndex(next, {align: "center"});
+                    const vNext = visibleIndices.indexOf(next);
+                    if (vNext >= 0) virtualizer.scrollToIndex(vNext, {align: "center"});
                     break;
                 }
                 case "ArrowUp": {
                     e.preventDefault();
                     const prev = Math.max(activeIndex - 1, 0);
                     setActiveIndex(prev);
-                    virtualizer.scrollToIndex(prev, {align: "center"});
+                    const vPrev = visibleIndices.indexOf(prev);
+                    if (vPrev >= 0) virtualizer.scrollToIndex(vPrev, {align: "center"});
                     break;
                 }
                 case "Enter": {
@@ -322,7 +356,7 @@ export function TranscriptView({
                     break;
             }
         },
-        [activeIndex, filteredSegments, playerRef, onSelectedRangeChange, virtualizer],
+        [activeIndex, filteredSegments, playerRef, onSelectedRangeChange, virtualizer, visibleIndices],
     );
 
     const isInRange = useCallback(
@@ -446,15 +480,17 @@ export function TranscriptView({
                     style={{height: virtualizer.getTotalSize(), position: "relative"}}
                 >
                     {virtualizer.getVirtualItems().map((virtualRow) => {
-                        const segment = filteredSegments[virtualRow.index];
+                        const segIdx = visibleIndices[virtualRow.index]!;
+                        const segment = filteredSegments[segIdx];
                         if (!segment) return null;
 
+                        const isCollapsedHeader = chapterMap.has(segIdx) && collapsedChapters.has(segIdx);
                         const matches = matchesSearch(segment.text, debouncedQuery);
-                        const isActive = virtualRow.index === activeIndex;
-                        const inRange = isInRange(virtualRow.index);
-                        const isHighlighted = highlights?.includes(virtualRow.index) ?? false;
-                        const existingNote = noteMap.get(virtualRow.index);
-                        const isEditingNote = editingNoteIndex === virtualRow.index;
+                        const isActive = segIdx === activeIndex;
+                        const inRange = isInRange(segIdx);
+                        const isHighlighted = highlights?.includes(segIdx) ?? false;
+                        const existingNote = noteMap.get(segIdx);
+                        const isEditingNote = editingNoteIndex === segIdx;
 
                         return (
                             <div
@@ -462,7 +498,7 @@ export function TranscriptView({
                                 data-index={virtualRow.index}
                                 ref={virtualizer.measureElement}
                                 role="listitem"
-                                onClick={(e) => handleSegmentClick(virtualRow.index, e)}
+                                onClick={(e) => handleSegmentClick(segIdx, e)}
                                 style={{
                                     position: "absolute",
                                     top: 0,
@@ -480,13 +516,21 @@ export function TranscriptView({
                                         : "hover:bg-slate-50 dark:hover:bg-slate-700/50"
                                 }`}
                             >
-                                {chapterMap.has(virtualRow.index) && (
-                                    <div className="mb-1 border-t border-slate-300 pt-2 dark:border-slate-600">
+                                {chapterMap.has(segIdx) && (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); toggleChapter(segIdx); }}
+                                        className="mb-1 flex w-full items-center gap-1 border-t border-slate-300 pt-2 text-left dark:border-slate-600"
+                                    >
+                                        <svg className={`h-3 w-3 shrink-0 text-slate-400 transition-transform ${collapsedChapters.has(segIdx) ? "" : "rotate-90"}`} viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M9 5l7 7-7 7z"/>
+                                        </svg>
                                         <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                            {chapterMap.get(virtualRow.index)!.title}
+                                            {chapterMap.get(segIdx)!.title}
                                         </span>
-                                    </div>
+                                    </button>
                                 )}
+                                {!isCollapsedHeader && (<>
                                 <div className="flex gap-2">
                                     {showTimestamps && (
                                         <span
@@ -511,7 +555,7 @@ export function TranscriptView({
                                         <div className="ml-auto flex shrink-0 gap-1 opacity-0 transition-opacity group-hover:opacity-100">
                                             <button
                                                 type="button"
-                                                onClick={(e) => { e.stopPropagation(); onHighlightToggle(virtualRow.index); }}
+                                                onClick={(e) => { e.stopPropagation(); onHighlightToggle(segIdx); }}
                                                 className={`rounded-sm p-0.5 ${isHighlighted ? "text-yellow-500" : "text-slate-400 hover:text-yellow-500"}`}
                                                 title={isHighlighted ? "Remove highlight" : "Highlight"}
                                             >
@@ -526,7 +570,7 @@ export function TranscriptView({
                                                     if (isEditingNote) {
                                                         setEditingNoteIndex(null);
                                                     } else {
-                                                        setEditingNoteIndex(virtualRow.index);
+                                                        setEditingNoteIndex(segIdx);
                                                         setNoteText(existingNote ?? "");
                                                     }
                                                 }}
@@ -554,7 +598,7 @@ export function TranscriptView({
                                         />
                                         <div className="mt-1 flex gap-1">
                                             <button type="button"
-                                                onClick={() => { onNoteUpdate(virtualRow.index, noteText); setEditingNoteIndex(null); }}
+                                                onClick={() => { onNoteUpdate(segIdx, noteText); setEditingNoteIndex(null); }}
                                                 className="rounded-sm bg-blue-600 px-2 py-0.5 text-xs text-white hover:bg-blue-700">Save</button>
                                             <button type="button"
                                                 onClick={() => setEditingNoteIndex(null)}
@@ -569,6 +613,7 @@ export function TranscriptView({
                                         {existingNote}
                                     </div>
                                 )}
+                                </>)}
                             </div>
                         );
                     })}

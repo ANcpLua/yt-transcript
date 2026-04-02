@@ -36,16 +36,26 @@ function buildState(items: BatchItem[], isProcessing: boolean, currentIndex: num
 }
 
 async function fetchTranscript(videoId: string): Promise<TranscriptResponse> {
-    const res = await fetch("/api/transcript", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({videoId}),
+    return new Promise<TranscriptResponse>((resolve, reject) => {
+        chrome.runtime.sendMessage(
+            {type: "fetch-transcript", videoId},
+            (response: { type: string; data?: TranscriptResponse; error?: { message: string } } | undefined) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message ?? "Extension error"));
+                    return;
+                }
+                if (!response) {
+                    reject(new Error("No response from background worker"));
+                    return;
+                }
+                if (response.type === "transcript-result" && response.data) {
+                    resolve(response.data);
+                } else {
+                    reject(new Error(response.error?.message ?? "Failed to fetch transcript"));
+                }
+            },
+        );
     });
-    if (!res.ok) {
-        const body = await res.json().catch(() => ({message: "Request failed"}));
-        throw new Error((body as { message?: string }).message ?? `HTTP ${res.status}`);
-    }
-    return res.json() as Promise<TranscriptResponse>;
 }
 
 export class BatchProcessor {
