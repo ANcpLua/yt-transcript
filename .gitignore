@@ -3,9 +3,18 @@ dist/
 .wrangler/
 .superpowers/
 .playwright-mcp/
+.blackboard/
+.idea/
 *.tsbuildinfo
 *.ico
-# Screenshots (not extension icons)
-/fixed-landing.png
-/landing-page.png
 .DS_Store
+
+# Build artifacts
+yt-transcript-*.zip
+test-results/
+
+# Temp screenshots
+*.png
+!public/**/*.png
+!e2e/screenshots/*.png
+!store/**/*.png
