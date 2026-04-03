@@ -39,6 +39,15 @@ if (!existsSync(firefoxManifest)) {
 }
 cpSync(firefoxManifest, resolve(firefoxDist, "manifest.json"));
 
+// Strip Chrome-only sidePanel API from Firefox service worker
+const swPath = resolve(firefoxDist, "background/service-worker.js");
+if (existsSync(swPath)) {
+    let sw = readFileSync(swPath, "utf-8");
+    sw = sw.replace(/chrome\.sidePanel\.setPanelBehavior\([^)]*\);?/g, "/* removed: Chrome-only sidePanel API */");
+    writeFileSync(swPath, sw);
+    console.log("  → stripped sidePanel.setPanelBehavior from Firefox build");
+}
+
 execSync("zip -r ../yt-transcript-firefox.zip .", {cwd: firefoxDist, stdio: "inherit"});
 rmSync(firefoxDist, {recursive: true});
 console.log("✅ yt-transcript-firefox.zip (Firefox)");
