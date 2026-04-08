@@ -5,6 +5,9 @@ import {clearAllData, exportAllData} from "../lib/storage/saved";
 import {clearHistory} from "../lib/storage/history";
 import {getProvider} from "../lib/ai/providers";
 
+type WhisperState = "unknown" | "not-downloaded" | "downloading" | "ready";
+
+
 const PROVIDERS = [
     {id: "openai", label: "OpenAI"},
     {id: "anthropic", label: "Anthropic"},
@@ -31,6 +34,7 @@ const DEFAULT_PREFS: Preferences = {
     compactMode: false,
     autoScroll: true,
     aiProvider: null,
+    whisperModel: "tiny",
 };
 
 export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) {
@@ -40,6 +44,8 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
     const [showKey, setShowKey] = useState(false);
     const [keyStatus, setKeyStatus] = useState<KeyStatus>("idle");
     const [storageEstimate, setStorageEstimate] = useState<{usage: number; quota: number} | null>(null);
+    const [whisperState, setWhisperState] = useState<WhisperState>("unknown");
+    const [whisperProgress, setWhisperProgress] = useState(0);
 
     // Load preferences once when the panel opens
     useEffect(() => {
@@ -66,6 +72,27 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
         })();
         return () => { cancelled = true; };
     }, [isOpen, selectedProvider]);
+
+    // Check Whisper model status
+    useEffect(() => {
+        if (!isOpen) return;
+        chrome.runtime.sendMessage({type: "check-whisper-status"}, (response: {downloaded?: boolean} | undefined) => {
+            if (response?.downloaded) setWhisperState("ready");
+            else setWhisperState("not-downloaded");
+        });
+
+        const listener = (msg: {type: string; progress?: number}) => {
+            if (msg.type === "download-whisper-progress") {
+                if (msg.progress === 100) setWhisperState("ready");
+                else {
+                    setWhisperState("downloading");
+                    setWhisperProgress(msg.progress ?? 0);
+                }
+            }
+        };
+        chrome.runtime.onMessage.addListener(listener);
+        return () => chrome.runtime.onMessage.removeListener(listener);
+    }, [isOpen]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -234,6 +261,67 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                     </p>
                 </section>
 
+                {/* Local Transcription */}
+                <section className="mb-6">
+                    <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        Local Transcription
+                    </h3>
+                    <div className="space-y-3">
+                        <label className="flex items-center justify-between">
+                            <span className="text-sm text-gray-700 dark:text-gray-300">Model</span>
+                            <select
+                                value={prefs.whisperModel}
+                                onChange={(e) => updatePref("whisperModel", e.target.value as "tiny" | "base")}
+                                className="rounded-lg border px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                            >
+                                <option value="tiny">Tiny (40 MB, fast)</option>
+                                <option value="base">Base (150 MB, better)</option>
+                            </select>
+                        </label>
+                        <div className="flex items-center justify-between">
+                            <span className="text-sm text-gray-700 dark:text-gray-300">
+                                {whisperState === "ready" && "Model ready"}
+                                {whisperState === "not-downloaded" && "Not downloaded"}
+                                {whisperState === "downloading" && `Downloading... ${whisperProgress}%`}
+                                {whisperState === "unknown" && "Checking..."}
+                            </span>
+                            {whisperState === "not-downloaded" && (
+                                <button
+                                    onClick={() => {
+                                        setWhisperState("downloading");
+                                        chrome.runtime.sendMessage({type: "download-whisper", model: prefs.whisperModel});
+                                    }}
+                                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                                >
+                                    Download
+                                </button>
+                            )}
+                            {whisperState === "ready" && (
+                                <button
+                                    onClick={() => {
+                                        chrome.runtime.sendMessage({type: "delete-whisper"});
+                                        setWhisperState("not-downloaded");
+                                    }}
+                                    className="rounded-lg bg-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300"
+                                >
+                                    Delete
+                                </button>
+                            )}
+                        </div>
+                        {whisperState === "downloading" && (
+                            <div className="h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                                <div
+                                    className="h-full rounded-full bg-blue-500 transition-all"
+                                    style={{width: `${Math.max(whisperProgress, 2)}%`}}
+                                />
+                            </div>
+                        )}
+                    </div>
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        Used when videos have no captions. Transcribes audio locally in your browser. Chrome only.
+                    </p>
+                </section>
+
                 {/* Preferences */}
                 <section className="mb-6">
                     <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -250,6 +338,7 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                                 <option value="raw">Raw</option>
                                 <option value="sentences">Sentences</option>
                                 <option value="paragraphs">Paragraphs</option>
+                                <option value="tabular">Tabular</option>
                             </select>
                         </label>
                         {(["showTimestamps", "compactMode", "autoScroll"] as const).map((key) => (

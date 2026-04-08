@@ -317,3 +317,13 @@ After completing any work session, verify:
 7. **Type safety**: No `any` types, no `@ts-ignore`, no `as unknown as X` hacks
 
 </validation>
+
+## Store Publishing
+
+When the extension is published and verified on Chrome Web Store, Firefox Add-ons, or Edge Add-ons,
+update the `yt-transcript` skill (`~/.claude/skills/yt-transcript/SKILL.md`) and
+`AGENTS.md` with:
+
+- Store listing URLs for each verified platform
+- Install instructions (link to store instead of "Load unpacked")
+- Badge/status indicating which stores are live

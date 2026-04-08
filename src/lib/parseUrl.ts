@@ -1,3 +1,5 @@
+import type { Platform } from "@/types/transcript";
+
 const VIDEO_ID_RE = /^[a-zA-Z0-9_-]{11}$/;
 
 const PATTERNS: readonly RegExp[] = [
@@ -31,6 +33,17 @@ const CHANNEL_PATTERNS: readonly RegExp[] = [
     /(?:https?:\/\/)?(?:www\.)?youtube\.com\/c\/([a-zA-Z0-9_-]+)/,
 ];
 
+const VIMEO_PATTERNS: readonly RegExp[] = [
+    // vimeo.com/123456
+    /(?:https?:\/\/)?(?:www\.)?vimeo\.com\/(\d+)/,
+    // player.vimeo.com/video/123456
+    /(?:https?:\/\/)?player\.vimeo\.com\/video\/(\d+)/,
+    // vimeo.com/channels/name/123456
+    /(?:https?:\/\/)?(?:www\.)?vimeo\.com\/channels\/[^/]+\/(\d+)/,
+    // vimeo.com/groups/name/videos/123456
+    /(?:https?:\/\/)?(?:www\.)?vimeo\.com\/groups\/[^/]+\/videos\/(\d+)/,
+];
+
 export function parseVideoId(input: string): string | null {
     const trimmed = input.trim();
 
@@ -38,7 +51,7 @@ export function parseVideoId(input: string): string | null {
         return null;
     }
 
-    // Check for bare 11-character video ID
+    // Check for bare 11-character YouTube video ID
     if (VIDEO_ID_RE.test(trimmed)) {
         return trimmed;
     }
@@ -50,6 +63,15 @@ export function parseVideoId(input: string): string | null {
         }
     }
 
+    return null;
+}
+
+export function parseVimeoId(input: string): string | null {
+    const trimmed = input.trim();
+    for (const pattern of VIMEO_PATTERNS) {
+        const match = pattern.exec(trimmed);
+        if (match?.[1]) return match[1];
+    }
     return null;
 }
 
@@ -68,5 +90,40 @@ export function parseChannelHandle(input: string): string | null {
         const match = pattern.exec(trimmed);
         if (match?.[1]) return match[1];
     }
+    return null;
+}
+
+export type ParsedUrl =
+    | { platform: "youtube"; type: "video"; videoId: string }
+    | { platform: "youtube"; type: "playlist"; playlistId: string }
+    | { platform: "youtube"; type: "channel"; handle: string }
+    | { platform: "vimeo"; type: "video"; videoId: string };
+
+export function parseUrl(input: string): ParsedUrl | null {
+    const trimmed = input.trim();
+    if (trimmed.length === 0) return null;
+
+    // Vimeo first (numeric IDs won't collide with YouTube's 11-char alphanumeric)
+    const vimeoId = parseVimeoId(trimmed);
+    if (vimeoId) return { platform: "vimeo", type: "video", videoId: vimeoId };
+
+    // YouTube playlist (check before video — URLs can have both v= and list=)
+    const playlistId = parsePlaylistId(trimmed);
+    if (playlistId) return { platform: "youtube", type: "playlist", playlistId };
+
+    // YouTube channel
+    const channelHandle = parseChannelHandle(trimmed);
+    if (channelHandle) return { platform: "youtube", type: "channel", handle: channelHandle };
+
+    // YouTube video
+    const videoId = parseVideoId(trimmed);
+    if (videoId) return { platform: "youtube", type: "video", videoId };
+
+    return null;
+}
+
+export function detectPlatformFromHostname(hostname: string): Platform | null {
+    if (hostname.includes("youtube.com") || hostname.includes("youtu.be")) return "youtube";
+    if (hostname.includes("vimeo.com")) return "vimeo";
     return null;
 }

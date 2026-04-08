@@ -13,7 +13,7 @@ Free YouTube transcript extractor that runs entirely in your browser. No account
 Everything youtube-transcript.io charges $9.99/month for, this does for free:
 
 - Single video, playlist, or channel transcript extraction
-- 6 export formats: TXT, SRT, VTT, JSON, CSV, Markdown
+- Export transcripts in six formats including subtitles and structured data
 - AI-powered summaries, quizzes, flashcards, mind maps, study guides (bring your own API key or use Chrome built-in AI)
 - Speaker detection, chapter extraction, filler word removal
 - Transcript search, highlights, and notes
