@@ -9,6 +9,7 @@ const DEFAULTS: Preferences = {
     compactMode: false,
     autoScroll: true,
     aiProvider: null,
+    whisperModel: "tiny",
 };
 
 export async function getPreferences(): Promise<Preferences> {

@@ -27,7 +27,7 @@ run(
   `--outfile=dist/background/service-worker.js`
 );
 
-// 3. Content script (esbuild, IIFE)
+// 3. Content script — YouTube (esbuild, IIFE)
 mkdirSync(resolve(dist, "content"), { recursive: true });
 run(
   `npx esbuild src/content/content.ts ` +
@@ -35,7 +35,26 @@ run(
   `--outfile=dist/content/content.js`
 );
 
-// 4. Copy static assets
+// 4. Content script — Vimeo (esbuild, IIFE)
+run(
+  `npx esbuild src/content/vimeo-content.ts ` +
+  `--bundle --format=iife --target=es2022 ` +
+  `--outfile=dist/content/vimeo-content.js`
+);
+
+// 5. Offscreen document (esbuild, ESM — runs in offscreen page context)
+mkdirSync(resolve(dist, "offscreen"), { recursive: true });
+run(
+  `npx esbuild src/background/transcribe/offscreen.ts ` +
+  `--bundle --format=esm --target=es2022 ` +
+  `--outfile=dist/offscreen/offscreen.js`
+);
+cpSync(
+  resolve(root, "src/background/transcribe/offscreen.html"),
+  resolve(dist, "offscreen/offscreen.html")
+);
+
+// 6. Copy static assets
 cpSync(resolve(root, "manifest.json"), resolve(dist, "manifest.json"));
 cpSync(resolve(root, "public/icons"), resolve(dist, "icons"), { recursive: true });
 

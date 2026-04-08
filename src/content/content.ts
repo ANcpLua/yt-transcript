@@ -1,3 +1,5 @@
+export {};
+
 const VIDEO_ID_RE = /[?&]v=([a-zA-Z0-9_-]{11})/;
 const SHORTS_RE = /\/shorts\/([a-zA-Z0-9_-]{11})/;
 const EMBED_RE = /\/embed\/([a-zA-Z0-9_-]{11})/;
@@ -47,7 +49,7 @@ function detectAndNotify(): void {
     cachedPlayerResponse = { videoId, data: playerResponse };
   }
 
-  chrome.runtime.sendMessage({ type: "video-detected", videoId });
+  chrome.runtime.sendMessage({ type: "video-detected", videoId, platform: "youtube" });
 
   // Start player time relay (1Hz)
   if (playerTimeInterval) clearInterval(playerTimeInterval);

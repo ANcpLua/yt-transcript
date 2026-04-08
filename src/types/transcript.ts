@@ -53,6 +53,7 @@ export interface HistoryEntry {
   fetchedAt: string;
   segmentCount: number;
   wordCount: number;
+  platform?: Platform;
 }
 
 export interface NoteEntry {
@@ -73,12 +74,15 @@ export interface SavedTranscript {
   tags: string[];
 }
 
+export type Platform = "youtube" | "vimeo";
+
 export interface Preferences {
-  viewMode: "raw" | "sentences" | "paragraphs";
+  viewMode: "raw" | "sentences" | "paragraphs" | "tabular";
   showTimestamps: boolean;
   compactMode: boolean;
   autoScroll: boolean;
   aiProvider: "openai" | "anthropic" | "google" | null;
+  whisperModel: "tiny" | "base";
 }
 
 export interface PlaylistResponse {

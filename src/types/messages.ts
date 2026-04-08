@@ -1,10 +1,11 @@
-import type { TranscriptResponse, ApiError, Track, PlaylistResponse, ChannelResponse } from "./transcript";
+import type { TranscriptResponse, ApiError, Track, PlaylistResponse, ChannelResponse, Platform, Segment } from "./transcript";
 
 // -- Content script -> Background --
 
 export interface VideoDetectedMessage {
   type: "video-detected";
   videoId: string;
+  platform: Platform;
 }
 
 export interface PlayerTimeMessage {
@@ -30,6 +31,7 @@ export interface PlayerDataResponseMessage {
 export interface FetchTranscriptMessage {
   type: "fetch-transcript";
   videoId: string;
+  platform: Platform;
   lang?: string;
   translateTo?: string;
 }
@@ -37,6 +39,7 @@ export interface FetchTranscriptMessage {
 export interface FetchTracksMessage {
   type: "fetch-tracks";
   videoId: string;
+  platform: Platform;
 }
 
 export interface FetchPlaylistMessage {
@@ -88,6 +91,62 @@ export interface TracksErrorMessage {
 export interface VideoInfoMessage {
   type: "video-info";
   videoId: string;
+  platform: Platform;
+}
+
+// -- Transcription (Whisper local) --
+
+export interface StartTranscriptionMessage {
+  type: "start-transcription";
+  videoId: string;
+  title: string;
+}
+
+export interface StopTranscriptionMessage {
+  type: "stop-transcription";
+}
+
+export interface TranscriptionProgressMessage {
+  type: "transcription-progress";
+  videoId: string;
+  progress: number;
+  segments: Segment[];
+}
+
+export interface TranscriptionCompleteMessage {
+  type: "transcription-complete";
+  videoId: string;
+  title: string;
+  segments: Segment[];
+}
+
+export interface TranscriptionErrorMessage {
+  type: "transcription-error";
+  error: string;
+}
+
+export interface CheckWhisperStatusMessage {
+  type: "check-whisper-status";
+}
+
+export interface WhisperStatusMessage {
+  type: "whisper-status";
+  downloaded: boolean;
+  modelId: string;
+}
+
+export interface DownloadWhisperMessage {
+  type: "download-whisper";
+  model: "tiny" | "base";
+}
+
+export interface DownloadWhisperProgressMessage {
+  type: "download-whisper-progress";
+  progress: number;
+}
+
+export interface DeleteWhisperMessage {
+  type: "delete-whisper";
 }
 
 export interface PlaylistResultMessage {
@@ -132,7 +191,12 @@ export type PanelToBackgroundMessage =
   | FetchTracksMessage
   | FetchPlaylistMessage
   | FetchChannelMessage
-  | AiRequestMessage;
+  | AiRequestMessage
+  | StartTranscriptionMessage
+  | StopTranscriptionMessage
+  | CheckWhisperStatusMessage
+  | DownloadWhisperMessage
+  | DeleteWhisperMessage;
 
 export type BackgroundToPanelMessage =
   | TranscriptResultMessage
@@ -145,7 +209,12 @@ export type BackgroundToPanelMessage =
   | ChannelResultMessage
   | ChannelErrorMessage
   | AiResultMessage
-  | AiErrorMessage;
+  | AiErrorMessage
+  | TranscriptionProgressMessage
+  | TranscriptionCompleteMessage
+  | TranscriptionErrorMessage
+  | WhisperStatusMessage
+  | DownloadWhisperProgressMessage;
 
 export type BackgroundToContentMessage =
   | SeekToMessage

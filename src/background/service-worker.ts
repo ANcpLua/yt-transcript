@@ -1,13 +1,26 @@
-import { fetchTranscript, fetchTracks } from "./innertube";
 import { fetchPlaylist, fetchChannel } from "./innertube-browse";
+import { YouTubeProvider } from "./providers/youtube";
+import { VimeoProvider } from "./providers/vimeo";
+import { isApiError } from "./providers/types";
+import type { TranscriptProvider } from "./providers/types";
 import type { AiRequestMessage, ExtensionMessage } from "../types/messages";
+import type { Platform } from "../types/transcript";
 
-// Ask the content script on the active YouTube tab for page-extracted player data.
-// Returns the raw player response if available, or null.
-async function requestPagePlayerData(videoId: string): Promise<unknown | null> {
+const providers: Record<Platform, TranscriptProvider> = {
+  youtube: new YouTubeProvider(),
+  vimeo: new VimeoProvider(),
+};
+
+// Ask the content script on the active tab for page-extracted player data.
+// Works for both YouTube and Vimeo — content scripts use the same message protocol.
+async function requestPagePlayerData(videoId: string, platform: Platform): Promise<unknown | null> {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id || !tab.url?.includes("youtube.com")) return null;
+    if (!tab?.id || !tab.url) return null;
+
+    const isYouTube = tab.url.includes("youtube.com");
+    const isVimeo = tab.url.includes("vimeo.com");
+    if ((platform === "youtube" && !isYouTube) || (platform === "vimeo" && !isVimeo)) return null;
 
     const response = await chrome.tabs.sendMessage(tab.id, {
       type: "request-player-data",
@@ -15,7 +28,6 @@ async function requestPagePlayerData(videoId: string): Promise<unknown | null> {
     });
     return response?.playerResponse ?? null;
   } catch {
-    // Content script not available (tab not on YouTube, extension just installed, etc.)
     return null;
   }
 }
@@ -28,36 +40,48 @@ chrome.runtime.onMessage.addListener(
           chrome.action.setBadgeText({ text: "1", tabId: sender.tab.id });
           chrome.action.setBadgeBackgroundColor({ color: "#22c55e", tabId: sender.tab.id });
         }
-        chrome.runtime.sendMessage({ type: "video-info", videoId: message.videoId }).catch(() => {});
+        chrome.runtime.sendMessage({
+          type: "video-info",
+          videoId: message.videoId,
+          platform: message.platform,
+        }).catch(() => {});
         return false;
 
       case "player-time":
         chrome.runtime.sendMessage(message).catch(() => {});
         return false;
 
-      case "fetch-transcript":
-        requestPagePlayerData(message.videoId).then((pageData) =>
-          fetchTranscript(message.videoId, message.lang, message.translateTo, pageData ?? undefined),
+      case "fetch-transcript": {
+        const provider = providers[message.platform];
+        requestPagePlayerData(message.videoId, message.platform).then((pageData) =>
+          provider.fetchTranscript(message.videoId, {
+            lang: message.lang,
+            translateTo: message.translateTo,
+            pageData: pageData ?? undefined,
+          }),
         ).then((result) => {
-          if ("error" in result) {
+          if (isApiError(result)) {
             sendResponse({ type: "transcript-error", error: result });
           } else {
             sendResponse({ type: "transcript-result", data: result });
           }
         });
         return true;
+      }
 
-      case "fetch-tracks":
-        requestPagePlayerData(message.videoId).then((pageData) =>
-          fetchTracks(message.videoId, pageData ?? undefined),
+      case "fetch-tracks": {
+        const provider = providers[message.platform];
+        requestPagePlayerData(message.videoId, message.platform).then((pageData) =>
+          provider.fetchTracks(message.videoId, pageData ?? undefined),
         ).then((result) => {
-          if ("error" in result) {
+          if (isApiError(result)) {
             sendResponse({ type: "tracks-error", error: result });
           } else {
             sendResponse({ type: "tracks-result", ...result });
           }
         });
         return true;
+      }
 
       case "fetch-playlist":
         fetchPlaylist(message.playlistId).then((result) => sendResponse(result));
@@ -72,6 +96,32 @@ chrome.runtime.onMessage.addListener(
           .then((content) => sendResponse({ type: "ai-result", content }))
           .catch((err: unknown) => sendResponse({ type: "ai-error", error: String(err) }));
         return true;
+
+      case "start-transcription":
+        handleStartTranscription(message.videoId, message.title)
+          .catch((err: unknown) => {
+            chrome.runtime.sendMessage({
+              type: "transcription-error",
+              error: String(err),
+            }).catch(() => {});
+          });
+        return false;
+
+      case "stop-transcription":
+        handleStopTranscription();
+        return false;
+
+      case "check-whisper-status":
+        handleCheckWhisperStatus().then((status) => sendResponse(status));
+        return true;
+
+      case "download-whisper":
+        handleDownloadWhisper(message.model);
+        return false;
+
+      case "delete-whisper":
+        handleDeleteWhisper().then(() => sendResponse({ success: true }));
+        return true;
     }
   },
 );
@@ -79,7 +129,7 @@ chrome.runtime.onMessage.addListener(
 // Open side panel when extension icon is clicked
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
-// Backup: detect YouTube navigation via webNavigation API
+// Detect navigation on YouTube
 chrome.webNavigation.onHistoryStateUpdated.addListener(
   (details) => {
     if (details.frameId !== 0) return;
@@ -88,10 +138,25 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(
     if (videoId) {
       chrome.action.setBadgeText({ text: "1", tabId: details.tabId });
       chrome.action.setBadgeBackgroundColor({ color: "#22c55e", tabId: details.tabId });
-      chrome.runtime.sendMessage({ type: "video-info", videoId }).catch(() => {});
+      chrome.runtime.sendMessage({ type: "video-info", videoId, platform: "youtube" as Platform }).catch(() => {});
     }
   },
   { url: [{ hostSuffix: "youtube.com" }] },
+);
+
+// Detect navigation on Vimeo
+chrome.webNavigation.onHistoryStateUpdated.addListener(
+  (details) => {
+    if (details.frameId !== 0) return;
+    const match = /\/(\d+)(?:\?|$|#)/.exec(details.url);
+    if (match?.[1]) {
+      const videoId = match[1];
+      chrome.action.setBadgeText({ text: "1", tabId: details.tabId });
+      chrome.action.setBadgeBackgroundColor({ color: "#22c55e", tabId: details.tabId });
+      chrome.runtime.sendMessage({ type: "video-info", videoId, platform: "vimeo" as Platform }).catch(() => {});
+    }
+  },
+  { url: [{ hostSuffix: "vimeo.com" }] },
 );
 
 async function handleAiRequest(message: AiRequestMessage): Promise<string> {
@@ -104,4 +169,75 @@ async function handleAiRequest(message: AiRequestMessage): Promise<string> {
     systemPrompt: message.systemPrompt,
     userMessage: message.userMessage,
   });
+}
+
+// ---------- Whisper transcription ----------
+
+let offscreenCreated = false;
+
+async function ensureOffscreen(): Promise<void> {
+  if (offscreenCreated) return;
+  try {
+    await chrome.offscreen.createDocument({
+      url: "offscreen/offscreen.html",
+      reasons: [chrome.offscreen.Reason.USER_MEDIA],
+      justification: "Capture tab audio for local Whisper transcription",
+    });
+    offscreenCreated = true;
+  } catch {
+    // Already exists
+    offscreenCreated = true;
+  }
+}
+
+async function handleStartTranscription(videoId: string, title: string): Promise<void> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) throw new Error("No active tab");
+
+  const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
+  await ensureOffscreen();
+
+  chrome.runtime.sendMessage({
+    type: "offscreen-start-capture",
+    streamId,
+    videoId,
+    title,
+  }).catch(() => {});
+}
+
+function handleStopTranscription(): void {
+  chrome.runtime.sendMessage({ type: "offscreen-stop-capture" }).catch(() => {});
+}
+
+async function handleCheckWhisperStatus(): Promise<{ type: string; downloaded: boolean; modelId: string }> {
+  // Check is delegated to offscreen document which has IndexedDB access
+  await ensureOffscreen();
+  return new Promise((resolve) => {
+    const listener = (msg: { type: string; downloaded?: boolean; modelId?: string }) => {
+      if (msg.type === "whisper-status-response") {
+        chrome.runtime.onMessage.removeListener(listener);
+        resolve({
+          type: "whisper-status",
+          downloaded: msg.downloaded ?? false,
+          modelId: msg.modelId ?? "whisper-tiny",
+        });
+      }
+    };
+    chrome.runtime.onMessage.addListener(listener);
+    chrome.runtime.sendMessage({ type: "offscreen-check-whisper" }).catch(() => {
+      chrome.runtime.onMessage.removeListener(listener);
+      resolve({ type: "whisper-status", downloaded: false, modelId: "whisper-tiny" });
+    });
+  });
+}
+
+function handleDownloadWhisper(model: "tiny" | "base"): void {
+  void ensureOffscreen().then(() => {
+    chrome.runtime.sendMessage({ type: "offscreen-download-whisper", model }).catch(() => {});
+  });
+}
+
+async function handleDeleteWhisper(): Promise<void> {
+  await ensureOffscreen();
+  chrome.runtime.sendMessage({ type: "offscreen-delete-whisper" }).catch(() => {});
 }

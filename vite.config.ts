@@ -6,6 +6,7 @@ import { resolve } from "path";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   root: "src/sidepanel",
+  base: "./",
   build: {
     outDir: resolve(__dirname, "dist/sidepanel"),
     emptyOutDir: true,

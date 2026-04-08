@@ -1,8 +1,9 @@
 import {type FormEvent, useCallback, useRef, useState} from "react";
-import {parseVideoId, parsePlaylistId, parseChannelHandle} from "../lib/parseUrl";
+import {parseUrl, parseVideoId} from "../lib/parseUrl";
+import type {Platform} from "../types/transcript";
 
 interface UrlInputProps {
-    onSubmit: (videoId: string) => void;
+    onSubmit: (videoId: string, platform: Platform) => void;
     onSubmitBatch: (videoIds: string[]) => void;
     isLoading: boolean;
     hasTranscript: boolean;
@@ -34,7 +35,7 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
                 setVideoList(ids.map(id => ({videoId: id, title: id, selected: true})));
                 setListTitle(`CSV Import (${ids.length} videos)`);
             } else {
-                setValidationError("No valid YouTube video IDs found in CSV");
+                setValidationError("No valid video IDs found in CSV");
             }
         };
         reader.readAsText(file);
@@ -44,13 +45,19 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
     const handleSubmit = useCallback(async (e: FormEvent) => {
         e.preventDefault();
 
-        // Check for playlist first
-        const playlistId = parsePlaylistId(url);
-        if (playlistId) {
+        const parsed = parseUrl(url);
+
+        if (!parsed) {
+            setValidationError("Enter a valid YouTube or Vimeo URL");
+            return;
+        }
+
+        // YouTube playlist
+        if (parsed.platform === "youtube" && parsed.type === "playlist") {
             setLoadingList(true);
             try {
                 const data = await new Promise<{playlistTitle: string; videos: {videoId: string; title: string}[]}>((resolve, reject) => {
-                    chrome.runtime.sendMessage({type: "fetch-playlist", playlistId}, (response: unknown) => {
+                    chrome.runtime.sendMessage({type: "fetch-playlist", playlistId: parsed.playlistId}, (response: unknown) => {
                         if (chrome.runtime.lastError) { reject(new Error(chrome.runtime.lastError.message)); return; }
                         const res = response as {playlistTitle?: string; videos?: {videoId: string; title: string}[]; error?: string};
                         if (res?.error) { reject(new Error(res.error)); return; }
@@ -65,13 +72,12 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
             return;
         }
 
-        // Check for channel
-        const channelHandle = parseChannelHandle(url);
-        if (channelHandle) {
+        // YouTube channel
+        if (parsed.platform === "youtube" && parsed.type === "channel") {
             setLoadingList(true);
             try {
                 const data = await new Promise<{channelTitle: string; videos: {videoId: string; title: string}[]}>((resolve, reject) => {
-                    chrome.runtime.sendMessage({type: "fetch-channel", identifier: channelHandle}, (response: unknown) => {
+                    chrome.runtime.sendMessage({type: "fetch-channel", identifier: parsed.handle}, (response: unknown) => {
                         if (chrome.runtime.lastError) { reject(new Error(chrome.runtime.lastError.message)); return; }
                         const res = response as {channelTitle?: string; videos?: {videoId: string; title: string}[]; error?: string};
                         if (res?.error) { reject(new Error(res.error)); return; }
@@ -86,14 +92,9 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
             return;
         }
 
-        // Regular video ID
-        const videoId = parseVideoId(url);
-        if (!videoId) {
-            setValidationError("Enter a valid YouTube URL");
-            return;
-        }
+        // Video (YouTube or Vimeo)
         setValidationError("");
-        onSubmit(videoId);
+        onSubmit(parsed.videoId, parsed.platform);
     }, [url, onSubmit]);
 
     const handleChange = useCallback((value: string) => {
@@ -147,10 +148,10 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
         return (
             <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center px-4">
                 <h1 className="mb-3 text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-4xl">
-                    YouTube Transcript Extractor
+                    YouTube & Vimeo Transcript Extractor
                 </h1>
                 <p className="mb-8 text-center text-lg text-slate-600 dark:text-slate-400">
-                    Extract, search, and export YouTube transcripts. Free. No signup.
+                    Extract, search, and export video transcripts. Free. No signup.
                 </p>
 
                 <form onSubmit={(e) => void handleSubmit(e)} className="mb-8 w-full">
@@ -160,7 +161,7 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
                             type="text"
                             value={url}
                             onChange={(e) => handleChange(e.target.value)}
-                            placeholder="Paste a YouTube URL, playlist, or channel..."
+                            placeholder="Paste a YouTube or Vimeo URL..."
                             disabled={isLoading || loadingList}
                             aria-label="YouTube URL"
                             aria-invalid={validationError.length > 0}
@@ -194,7 +195,7 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
 
                 <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-3">
                     <FeatureCard title="Instant Extraction"
-                                 description="Paste any YouTube URL and get the full transcript in seconds."/>
+                                 description="Paste any YouTube or Vimeo URL and get the full transcript in seconds."/>
                     <FeatureCard title="Search & Export"
                                  description="Search within transcripts. Download as TXT, SRT, VTT, JSON, CSV, or Markdown."/>
                     <FeatureCard title="100% Free"
@@ -214,7 +215,7 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
                         type="text"
                         value={url}
                         onChange={(e) => handleChange(e.target.value)}
-                        placeholder="Paste a YouTube URL, playlist, or channel..."
+                        placeholder="Paste a YouTube or Vimeo URL..."
                         disabled={isLoading || loadingList}
                         aria-label="YouTube URL"
                         aria-invalid={validationError.length > 0}
