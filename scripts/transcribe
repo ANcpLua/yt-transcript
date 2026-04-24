@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# YouTube Transcript Extractor — CLI for AI agents and humans
+# Usage: ./scripts/transcribe <youtube-url> [--json] [--no-timestamps]
+set -euo pipefail
+
+URL="" FORMAT="text" TIMESTAMPS=true
+
+for arg in "$@"; do
+  case "$arg" in
+    --json) FORMAT="json" ;;
+    --no-timestamps) TIMESTAMPS=false ;;
+    http*) URL="$arg" ;;
+  esac
+done
+
+if [[ -z "$URL" ]]; then
+  echo "Usage: scripts/transcribe <youtube-url> [--json] [--no-timestamps]" >&2
+  exit 1
+fi
+
+VIDEO_ID=$(echo "$URL" | sed -E 's|.*[?&]v=([^&]+).*|\1|; s|.*youtu\.be/([^?]+).*|\1|; s|.*youtube\.com/live/([^?]+).*|\1|')
+if [[ -z "$VIDEO_ID" || ${#VIDEO_ID} -gt 20 ]]; then
+  echo "Error: Could not extract video ID from URL" >&2
+  exit 1
+fi
+
+if ! command -v yt-dlp &>/dev/null; then
+  echo "Error: yt-dlp not found. Install: brew install yt-dlp (or) pip install yt-dlp" >&2
+  exit 1
+fi
+
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+
+# Fetch subtitles (all output to stderr, suppressed)
+yt-dlp \
+  --write-subs --write-auto-subs \
+  --sub-langs "en-US,en,en.*" \
+  --skip-download \
+  --sub-format json3 \
+  -o "$TMPDIR/yt-%(id)s" \
+  "$URL" &>/dev/null || true
+
+# Metadata (single quiet call)
+TITLE=$(yt-dlp --print title --skip-download --no-warnings "$URL" 2>/dev/null || echo "Unknown")
+CHANNEL=$(yt-dlp --print channel --skip-download --no-warnings "$URL" 2>/dev/null || echo "Unknown")
+DURATION=$(yt-dlp --print duration_string --skip-download --no-warnings "$URL" 2>/dev/null || echo "Unknown")
+
+# Pick best subtitle file: manual en-US > manual en > auto > any
+SUB_FILE=""
+for pattern in "$TMPDIR/yt-${VIDEO_ID}.en-US.json3" \
+               "$TMPDIR/yt-${VIDEO_ID}.en.json3" \
+               "$TMPDIR/yt-${VIDEO_ID}.en-orig.json3"; do
+  if [[ -f "$pattern" && -s "$pattern" ]]; then
+    SUB_FILE="$pattern"
+    break
+  fi
+done
+# Fallback: any json3 file
+if [[ -z "$SUB_FILE" ]]; then
+  SUB_FILE=$(find "$TMPDIR" -name "*.json3" -size +0c 2>/dev/null | head -1)
+fi
+
+if [[ -z "$SUB_FILE" ]]; then
+  echo "Error: No English subtitles available for this video" >&2
+  exit 1
+fi
+
+python3 << PYEOF
+import json, sys
+
+with open("$SUB_FILE") as f:
+    data = json.load(f)
+
+segments = []
+for e in data.get("events", []):
+    segs = e.get("segs", [])
+    if not segs:
+        continue
+    text = "".join(s.get("utf8", "") for s in segs).strip()
+    if not text or text == "\n":
+        continue
+    start_ms = e.get("tStartMs", 0)
+    m, s = divmod(int(start_ms / 1000), 60)
+    segments.append({"time": f"{m:02d}:{s:02d}", "start_ms": start_ms, "text": text})
+
+title = """$TITLE""" or "Unknown"
+channel = """$CHANNEL""" or "Unknown"
+duration = """$DURATION""" or "Unknown"
+
+if "$FORMAT" == "json":
+    print(json.dumps({
+        "title": title,
+        "channel": channel,
+        "duration": duration,
+        "url": "$URL",
+        "segments": segments,
+        "segment_count": len(segments)
+    }, indent=2, ensure_ascii=False))
+else:
+    print(f"Title: {title}")
+    print(f"Channel: {channel}")
+    print(f"Duration: {duration}")
+    print(f"Segments: {len(segments)}")
+    print("---")
+    for seg in segments:
+        if $( [[ "$TIMESTAMPS" == "true" ]] && echo "True" || echo "False" ):
+            print(f"[{seg['time']}] {seg['text']}")
+        else:
+            print(seg["text"])
+PYEOF
