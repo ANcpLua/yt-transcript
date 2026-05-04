@@ -26,6 +26,25 @@ export interface PlayerDataResponseMessage {
   playerResponse: unknown | null;
 }
 
+// -- ISOLATED-world bridge -> Background (intercepted YouTube responses) --
+
+export type InterceptKind = "get_transcript" | "player" | "timedtext";
+
+export interface InterceptedCaptureMessage {
+  type: "intercepted-capture";
+  kind: InterceptKind;
+  videoId: string | null;
+  url: string;
+  status: number;
+  bodyText: string;
+}
+
+export interface InterceptedNavigateMessage {
+  type: "intercepted-navigate";
+  url: string;
+  videoId: string | null;
+}
+
 // -- Side panel -> Background --
 
 export interface FetchTranscriptMessage {
@@ -94,6 +113,15 @@ export interface VideoInfoMessage {
   type: "video-info";
   videoId: string;
   platform: Platform;
+}
+
+// Side-panel-side notification of a freshly intercepted transcript.
+// Same payload shape as TranscriptResultMessage but distinct type so
+// the side panel can decide whether to auto-load (idle) or show a
+// "new transcript available" hint (already loaded different videoId).
+export interface IntercepedTranscriptMessage {
+  type: "intercepted-transcript";
+  data: TranscriptResponse;
 }
 
 // -- Transcription (Whisper local) --
@@ -186,7 +214,9 @@ export interface AiErrorMessage {
 export type ContentToBackgroundMessage =
   | VideoDetectedMessage
   | PlayerTimeMessage
-  | PlayerDataResponseMessage;
+  | PlayerDataResponseMessage
+  | InterceptedCaptureMessage
+  | InterceptedNavigateMessage;
 
 export type PanelToBackgroundMessage =
   | FetchTranscriptMessage
@@ -203,6 +233,7 @@ export type PanelToBackgroundMessage =
 export type BackgroundToPanelMessage =
   | TranscriptResultMessage
   | TranscriptErrorMessage
+  | IntercepedTranscriptMessage
   | TracksResultMessage
   | TracksErrorMessage
   | VideoInfoMessage

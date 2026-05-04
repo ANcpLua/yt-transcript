@@ -109,6 +109,7 @@ export function App() {
     const [transcriptionProgress, setTranscriptionProgress] = useState(0);
     const [pendingVideoId, setPendingVideoId] = useState<string | null>(null);
     const [pendingTitle, setPendingTitle] = useState("");
+    const [liveCaptureVideoId, setLiveCaptureVideoId] = useState<string | null>(null);
     const lastFetchRef = useRef(0);
     const batchRef = useRef<BatchProcessor | null>(null);
     const lastPlayerTimeRef = useRef(0);
@@ -127,18 +128,55 @@ export function App() {
         };
     }, [currentTime]);
 
-    // Listen for video-info messages from content script (via background)
+    // Listen for video-info messages from content script (via background).
+    // When the MAIN-world interceptor has already populated us for this
+    // videoId, skip the legacy 3-layer fetch — it would race and potentially
+    // overwrite the live-captured data.
     useEffect(() => {
         const listener = (message: { type: string; videoId?: string; platform?: Platform }) => {
             if (message.type === "video-info" && message.videoId) {
                 const platform = message.platform ?? "youtube";
                 setActivePlatform(platform);
+                if (liveCaptureVideoId === message.videoId) return;
+                if (transcript?.videoId === message.videoId) return;
                 void fetchTranscript(message.videoId, platform);
             }
         };
         chrome.runtime.onMessage.addListener(listener);
         return () => chrome.runtime.onMessage.removeListener(listener);
-    }, []);
+    }, [liveCaptureVideoId, transcript?.videoId]);
+
+    // Listen for intercepted-transcript broadcasts from the SW correlator.
+    // These come for free whenever the user is on a YouTube watch page —
+    // no button press required. Only auto-load when idle/loading/error,
+    // never overwrite a paste-URL flow that's already produced a result.
+    useEffect(() => {
+        const listener = (message: { type: string; data?: TranscriptData }) => {
+            if (message.type !== "intercepted-transcript" || !message.data) return;
+            const incoming = message.data;
+            if (transcript?.videoId === incoming.videoId && state === "loaded") return;
+            setTranscript(incoming);
+            setState("loaded");
+            setError(null);
+            setLiveCaptureVideoId(incoming.videoId);
+            const wordCount = incoming.segments.reduce(
+                (sum, s) => sum + s.text.split(/\s+/).filter((w) => w.length > 0).length,
+                0,
+            );
+            void addToHistory({
+                videoId: incoming.videoId,
+                title: incoming.title,
+                language: incoming.language,
+                thumbnailUrl: `https://img.youtube.com/vi/${incoming.videoId}/mqdefault.jpg`,
+                fetchedAt: new Date().toISOString(),
+                segmentCount: incoming.segments.length,
+                wordCount,
+                platform: "youtube",
+            });
+        };
+        chrome.runtime.onMessage.addListener(listener);
+        return () => chrome.runtime.onMessage.removeListener(listener);
+    }, [transcript?.videoId, state]);
 
     // Listen for player-time and transcription messages
     useEffect(() => {
@@ -453,7 +491,18 @@ export function App() {
             <header
                 className="border-b border-slate-200 bg-white/80 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
                 <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-2">
-                    <span className="text-sm font-medium text-slate-900 dark:text-white">Transcript</span>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-900 dark:text-white">Transcript</span>
+                        {liveCaptureVideoId && transcript?.videoId === liveCaptureVideoId && state === "loaded" && (
+                            <span
+                                title="Captured live from the YouTube tab — no API call made"
+                                className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                            >
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                Live
+                            </span>
+                        )}
+                    </div>
                     <div className="flex items-center gap-1">
                         {state === "loaded" && (
                             <button

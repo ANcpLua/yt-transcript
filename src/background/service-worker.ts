@@ -5,6 +5,14 @@ import { isApiError } from "./providers/types";
 import type { TranscriptProvider } from "./providers/types";
 import type { AiRequestMessage, ExtensionMessage } from "../types/messages";
 import type { Platform } from "../types/transcript";
+import {
+  clearTab,
+  notifyNavigate,
+  recordPlayer,
+  recordTimedText,
+  recordTranscript,
+  takeIfReady,
+} from "../lib/intercept/correlator";
 
 const providers: Record<Platform, TranscriptProvider> = {
   youtube: new YouTubeProvider(),
@@ -121,9 +129,41 @@ chrome.runtime.onMessage.addListener(
       case "delete-whisper":
         handleDeleteWhisper().then(() => sendResponse({ success: true }));
         return true;
+
+      case "intercepted-capture": {
+        const tabId = sender.tab?.id;
+        if (!tabId || !message.videoId) return false;
+        if (message.kind === "player") {
+          recordPlayer(tabId, message.videoId, message.bodyText);
+        } else if (message.kind === "get_transcript") {
+          recordTranscript(tabId, message.videoId, message.bodyText);
+        } else if (message.kind === "timedtext") {
+          recordTimedText(tabId, message.videoId, message.bodyText);
+        }
+        const ready = takeIfReady(tabId);
+        if (ready) {
+          chrome.runtime
+            .sendMessage({ type: "intercepted-transcript", data: ready })
+            .catch(() => {});
+        }
+        return false;
+      }
+
+      case "intercepted-navigate": {
+        const tabId = sender.tab?.id;
+        if (!tabId) return false;
+        notifyNavigate(tabId, message.videoId);
+        return false;
+      }
     }
   },
 );
+
+// Drop correlator state when a tab closes so we don't leak captured
+// JSON across the SW lifetime.
+chrome.tabs.onRemoved.addListener((tabId) => {
+  clearTab(tabId);
+});
 
 // Open side panel when extension icon is clicked
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
