@@ -3,7 +3,7 @@ import type {AiFeature, TranscriptResponse} from "../types/transcript";
 import {getChatSystemPrompt, promptTemplates} from "../lib/ai/prompts";
 import {getApiKey, getPreferences} from "../lib/storage/preferences";
 import {formatTimestamp} from "../lib/formatTime";
-import {chromeAiSummarize, isChromeAiAvailable} from "../lib/ai/chrome-ai";
+import {chromeAiSummarize, isChromeAiAvailable, isChromeAiPromptAvailable, runChromeAiPrompt} from "../lib/ai/chrome-ai";
 
 interface AiPanelProps {
     transcript: TranscriptResponse | null;
@@ -15,8 +15,9 @@ interface ChatMessage {
     content: string;
 }
 
-// Features that can use Chrome AI (free, no key required)
-const CHROME_AI_FEATURES: ReadonlySet<AiFeature> = new Set<AiFeature>(["summary"]);
+// Features that can use legacy Chrome AI Summarizer API (only summary).
+// Prompt API supports all features when available.
+const CHROME_AI_LEGACY_FEATURES: ReadonlySet<AiFeature> = new Set<AiFeature>(["summary"]);
 
 const FEATURES: { id: AiFeature; label: string }[] = [
     {id: "summary", label: "Summarize"},
@@ -58,6 +59,8 @@ interface AiRequestPayload {
     apiKey: string;
     systemPrompt: string;
     userMessage: string;
+    ollamaUrl?: string;
+    ollamaModel?: string;
 }
 
 /** Route an AI request through the Chrome extension background worker. */
@@ -116,6 +119,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
     const chatEndRef = useRef<HTMLDivElement>(null);
     const [flippedCards, setFlippedCards] = useState<Set<number>>(new Set());
     const [chromeAiAvailable, setChromeAiAvailable] = useState(false);
+    const [chromeAiPromptAvailable, setChromeAiPromptAvailable] = useState(false);
     const [hasApiKey, setHasApiKey] = useState(false);
 
     useEffect(() => {
@@ -125,22 +129,30 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
     // Check Chrome AI and BYOK key availability on mount
     useEffect(() => {
         void isChromeAiAvailable().then(setChromeAiAvailable);
+        void isChromeAiPromptAvailable().then(setChromeAiPromptAvailable);
         void (async () => {
             const prefs = await getPreferences();
             if (!prefs.aiProvider) return;
+            if (prefs.aiProvider === "chrome-ai" || prefs.aiProvider === "ollama") {
+                setHasApiKey(true);
+                return;
+            }
             const key = await getApiKey(prefs.aiProvider);
             setHasApiKey(key !== null);
         })();
     }, []);
 
-    /** True if this feature can run (Chrome AI or BYOK key). */
+    /** True if this feature can run (Chrome AI Prompt API supports all; legacy summarizer only summary; otherwise needs configured provider). */
     const canRunFeature = useCallback(
-        (feature: AiFeature): boolean =>
-            (chromeAiAvailable && CHROME_AI_FEATURES.has(feature)) || hasApiKey,
-        [chromeAiAvailable, hasApiKey],
+        (feature: AiFeature): boolean => {
+            if (chromeAiPromptAvailable) return true;
+            if (chromeAiAvailable && CHROME_AI_LEGACY_FEATURES.has(feature)) return true;
+            return hasApiKey;
+        },
+        [chromeAiAvailable, chromeAiPromptAvailable, hasApiKey],
     );
 
-    const hasAnyProvider = chromeAiAvailable || hasApiKey;
+    const hasAnyProvider = chromeAiAvailable || chromeAiPromptAvailable || hasApiKey;
 
     const runFeature = async (feature: AiFeature) => {
         if (!transcript) return;
@@ -154,21 +166,46 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
         try {
             const text = transcriptToText(transcript);
+            const template = promptTemplates[feature];
+            const prefs = await getPreferences();
 
-            // Use Chrome AI for summary when available (free, no key needed)
-            if (chromeAiAvailable && CHROME_AI_FEATURES.has(feature)) {
-                const summary = await chromeAiSummarize(text);
-                setResult(summary);
+            // Route 1: User explicitly chose Chrome AI → run in panel via LanguageModel.
+            if (prefs.aiProvider === "chrome-ai" && chromeAiPromptAvailable) {
+                setResult(await runChromeAiPrompt(template.system, template.user(text)));
                 return;
             }
 
-            // Fall back to BYOK provider via extension background worker
-            const prefs = await getPreferences();
-            if (!prefs.aiProvider) throw new Error("No AI provider configured");
-            const apiKey = await getApiKey(prefs.aiProvider);
-            if (!apiKey) throw new Error("No API key configured");
+            // Route 2: User chose Ollama → service worker proxies the localhost call.
+            if (prefs.aiProvider === "ollama") {
+                const response = await sendAiRequest({
+                    provider: "ollama",
+                    apiKey: "",
+                    systemPrompt: template.system,
+                    userMessage: template.user(text),
+                    ollamaUrl: prefs.ollamaUrl,
+                    ollamaModel: prefs.ollamaModel,
+                });
+                setResult(response);
+                return;
+            }
 
-            const template = promptTemplates[feature];
+            // Route 3: No paid provider but legacy Summarizer is available → use it for summary.
+            if (!prefs.aiProvider && chromeAiAvailable && CHROME_AI_LEGACY_FEATURES.has(feature)) {
+                setResult(await chromeAiSummarize(text));
+                return;
+            }
+
+            // Route 4: No provider chosen but Prompt API works → use it as the free default.
+            if (!prefs.aiProvider && chromeAiPromptAvailable) {
+                setResult(await runChromeAiPrompt(template.system, template.user(text)));
+                return;
+            }
+
+            // Route 5: Paid BYOK provider via service worker.
+            if (!prefs.aiProvider) throw new Error("No AI provider configured. Open Settings to choose one.");
+            const apiKey = await getApiKey(prefs.aiProvider);
+            if (!apiKey) throw new Error(`No API key configured for ${prefs.aiProvider}.`);
+
             const response = await sendAiRequest({
                 provider: prefs.aiProvider,
                 apiKey,
@@ -183,9 +220,11 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         }
     };
 
+    const canChat = chromeAiPromptAvailable || hasApiKey;
+
     const sendChat = async () => {
         if (!chatInput.trim() || !transcript) return;
-        if (!hasApiKey) return; // Chat requires BYOK; Chrome AI doesn't support multi-turn chat
+        if (!canChat) return;
 
         const userMsg: ChatMessage = {role: "user", content: chatInput.trim()};
         setChatMessages((prev) => [...prev, userMsg]);
@@ -194,15 +233,36 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
         try {
             const prefs = await getPreferences();
-            if (!prefs.aiProvider) throw new Error("No AI provider configured");
-            const apiKey = await getApiKey(prefs.aiProvider);
-            if (!apiKey) throw new Error("No API key configured");
-
             const systemPrompt = getChatSystemPrompt(transcriptToText(transcript));
             const history = [...chatMessages, userMsg]
                 .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
                 .join("\n\n");
 
+            // Chrome AI Prompt API
+            if ((prefs.aiProvider === "chrome-ai" || !prefs.aiProvider) && chromeAiPromptAvailable) {
+                const response = await runChromeAiPrompt(systemPrompt, history);
+                setChatMessages((prev) => [...prev, {role: "assistant", content: response}]);
+                return;
+            }
+
+            // Ollama
+            if (prefs.aiProvider === "ollama") {
+                const response = await sendAiRequest({
+                    provider: "ollama",
+                    apiKey: "",
+                    systemPrompt,
+                    userMessage: history,
+                    ollamaUrl: prefs.ollamaUrl,
+                    ollamaModel: prefs.ollamaModel,
+                });
+                setChatMessages((prev) => [...prev, {role: "assistant", content: response}]);
+                return;
+            }
+
+            // Paid BYOK provider
+            if (!prefs.aiProvider) throw new Error("No AI provider configured");
+            const apiKey = await getApiKey(prefs.aiProvider);
+            if (!apiKey) throw new Error("No API key configured");
             const response = await sendAiRequest({
                 provider: prefs.aiProvider,
                 apiKey,
@@ -230,13 +290,15 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         <div className="flex flex-col gap-4 rounded-xl border bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white">AI Analysis</h3>
 
-            {chromeAiAvailable && (
+            {(chromeAiAvailable || chromeAiPromptAvailable) && (
                 <div className="flex items-center gap-2 rounded-lg bg-green-50 p-3 text-sm text-green-800 dark:bg-green-900/20 dark:text-green-300">
                     <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                               d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
-                    Chrome AI (Free) available — Summarize runs on-device. Advanced features require an API key.
+                    {chromeAiPromptAvailable
+                        ? "Chrome built-in AI is available — every feature runs on-device, free, no key."
+                        : "Chrome AI Summarizer is available — summary runs on-device. Other features need an API key or Ollama."}
                 </div>
             )}
 
@@ -247,7 +309,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                               d="M12 15v2m0 0v2m0-2h2m-2 0H10m9.374-9.373A9 9 0 115.626 5.626 9 9 0 0119.374 14.627z"/>
                     </svg>
-                    Add an API key in Settings to use AI features.
+                    Pick a free AI provider in Settings — Chrome built-in AI or Ollama (local). No key needed.
                 </div>
             )}
 
@@ -255,13 +317,14 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
             <div className="flex flex-wrap gap-2">
                 {FEATURES.map((f) => {
                     const enabled = canRunFeature(f.id);
-                    const isChromeAiFree = chromeAiAvailable && CHROME_AI_FEATURES.has(f.id);
+                    const isFree = chromeAiPromptAvailable
+                        || (chromeAiAvailable && CHROME_AI_LEGACY_FEATURES.has(f.id));
                     return (
                         <button
                             key={f.id}
                             onClick={() => void runFeature(f.id)}
                             disabled={!enabled || loading}
-                            title={isChromeAiFree ? "Free via Chrome AI" : undefined}
+                            title={isFree ? "Free via Chrome built-in AI" : undefined}
                             className={`rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:opacity-40 ${
                                 activeFeature === f.id
                                     ? "bg-blue-600 text-white"
@@ -269,7 +332,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                             }`}
                         >
                             {f.label}
-                            {isChromeAiFree && <span className="ml-1 text-xs opacity-70">(free)</span>}
+                            {isFree && <span className="ml-1 text-xs opacity-70">(free)</span>}
                         </button>
                     );
                 })}
@@ -354,13 +417,13 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && void sendChat()}
-                        placeholder={hasApiKey ? "Ask a question about this video..." : "Add API key to chat"}
-                        disabled={!hasApiKey || chatLoading}
+                        placeholder={canChat ? "Ask a question about this video..." : "Pick an AI provider in Settings to chat"}
+                        disabled={!canChat || chatLoading}
                         className="flex-1 rounded-lg border px-3 py-2 text-sm disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                     />
                     <button
                         onClick={() => void sendChat()}
-                        disabled={!hasApiKey || chatLoading || !chatInput.trim()}
+                        disabled={!canChat || chatLoading || !chatInput.trim()}
                         className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                     >
                         Send

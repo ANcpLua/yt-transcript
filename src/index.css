@@ -14,6 +14,11 @@
 
 @import "tailwindcss";
 
+@source "./components/**/*.{ts,tsx}";
+@source "./sidepanel/**/*.{ts,tsx}";
+@source "./types/**/*.{ts,tsx}";
+@source "./lib/**/*.{ts,tsx}";
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {

@@ -37,8 +37,7 @@ chrome.runtime.onMessage.addListener(
     switch (message.type) {
       case "video-detected":
         if (sender.tab?.id) {
-          chrome.action.setBadgeText({ text: "1", tabId: sender.tab.id });
-          chrome.action.setBadgeBackgroundColor({ color: "#22c55e", tabId: sender.tab.id });
+          setBadge(sender.tab.id);
         }
         chrome.runtime.sendMessage({
           type: "video-info",
@@ -129,6 +128,12 @@ chrome.runtime.onMessage.addListener(
 // Open side panel when extension icon is clicked
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
+function setBadge(tabId: number): void {
+  if (!chrome.action) return;
+  chrome.action.setBadgeText({ text: "1", tabId }).catch(() => {});
+  chrome.action.setBadgeBackgroundColor({ color: "#22c55e", tabId }).catch(() => {});
+}
+
 // Detect navigation on YouTube
 chrome.webNavigation.onHistoryStateUpdated.addListener(
   (details) => {
@@ -136,8 +141,7 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(
     const url = new URL(details.url);
     const videoId = url.searchParams.get("v");
     if (videoId) {
-      chrome.action.setBadgeText({ text: "1", tabId: details.tabId });
-      chrome.action.setBadgeBackgroundColor({ color: "#22c55e", tabId: details.tabId });
+      setBadge(details.tabId);
       chrome.runtime.sendMessage({ type: "video-info", videoId, platform: "youtube" as Platform }).catch(() => {});
     }
   },
@@ -151,8 +155,7 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(
     const match = /\/(\d+)(?:\?|$|#)/.exec(details.url);
     if (match?.[1]) {
       const videoId = match[1];
-      chrome.action.setBadgeText({ text: "1", tabId: details.tabId });
-      chrome.action.setBadgeBackgroundColor({ color: "#22c55e", tabId: details.tabId });
+      setBadge(details.tabId);
       chrome.runtime.sendMessage({ type: "video-info", videoId, platform: "vimeo" as Platform }).catch(() => {});
     }
   },
@@ -160,10 +163,18 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(
 );
 
 async function handleAiRequest(message: AiRequestMessage): Promise<string> {
-  if (!message.apiKey) throw new Error("No API key configured");
+  const { getProvider, DEFAULT_OLLAMA_URL, DEFAULT_OLLAMA_MODEL } = await import("../lib/ai/providers");
 
-  const { getProvider } = await import("../lib/ai/providers");
-  const provider = getProvider(message.provider, message.apiKey);
+  let provider;
+  if (message.provider === "ollama") {
+    provider = getProvider("ollama", {
+      url: message.ollamaUrl || DEFAULT_OLLAMA_URL,
+      model: message.ollamaModel || DEFAULT_OLLAMA_MODEL,
+    });
+  } else {
+    if (!message.apiKey) throw new Error("No API key configured");
+    provider = getProvider(message.provider, message.apiKey);
+  }
 
   return provider.sendMessage({
     systemPrompt: message.systemPrompt,

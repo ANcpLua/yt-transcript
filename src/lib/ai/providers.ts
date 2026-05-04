@@ -263,17 +263,154 @@ function createGoogleProvider(apiKey: string): AiProvider {
     };
 }
 
+export interface OllamaConfig {
+    url: string;
+    model: string;
+}
+
+export const DEFAULT_OLLAMA_URL = "http://localhost:11434";
+export const DEFAULT_OLLAMA_MODEL = "llama3.2";
+
+interface LanguageModelSession {
+    prompt(text: string): Promise<string>;
+    destroy?(): void;
+}
+
+interface LanguageModelStatic {
+    availability(): Promise<"unavailable" | "downloadable" | "downloading" | "available">;
+    create(options?: { systemPrompt?: string; initialPrompts?: { role: string; content: string }[] }): Promise<LanguageModelSession>;
+}
+
+function getLanguageModel(): LanguageModelStatic | undefined {
+    const w = globalThis as { LanguageModel?: LanguageModelStatic };
+    return w.LanguageModel;
+}
+
+export async function isChromeAiAvailable(): Promise<boolean> {
+    const lm = getLanguageModel();
+    if (!lm) return false;
+    try {
+        const status = await lm.availability();
+        return status === "available" || status === "downloadable" || status === "downloading";
+    } catch {
+        return false;
+    }
+}
+
+function createChromeAiProvider(): AiProvider {
+    return {
+        name: "chrome-ai",
+
+        async sendMessage({ systemPrompt, userMessage }) {
+            const lm = getLanguageModel();
+            if (!lm) {
+                throw new AiError(
+                    "Chrome built-in AI is not available in this browser. Update to Edge/Chrome 138+ or enable chrome://flags/#prompt-api-for-gemini-nano.",
+                    0,
+                    "Chrome AI",
+                );
+            }
+            const status = await lm.availability();
+            if (status === "unavailable") {
+                throw new AiError(
+                    "Chrome built-in AI is unavailable on this device.",
+                    0,
+                    "Chrome AI",
+                );
+            }
+            const session = await lm.create({
+                initialPrompts: [{ role: "system", content: systemPrompt }],
+            });
+            try {
+                return await session.prompt(userMessage);
+            } finally {
+                session.destroy?.();
+            }
+        },
+
+        async validateKey() {
+            return isChromeAiAvailable();
+        },
+    };
+}
+
+function createOllamaProvider(config: OllamaConfig): AiProvider {
+    const baseUrl = config.url.replace(/\/$/, "");
+
+    return {
+        name: "ollama",
+
+        async sendMessage({ systemPrompt, userMessage }) {
+            let response: Response;
+            try {
+                response = await fetch(`${baseUrl}/api/chat`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        model: config.model,
+                        messages: [
+                            { role: "system", content: systemPrompt },
+                            { role: "user", content: userMessage },
+                        ],
+                        stream: false,
+                    }),
+                });
+            } catch {
+                throw new AiError(
+                    `Could not reach Ollama at ${baseUrl}. Make sure Ollama is running ('ollama serve') and the model '${config.model}' is pulled ('ollama pull ${config.model}').`,
+                    0,
+                    "Ollama",
+                );
+            }
+
+            if (!response.ok) {
+                if (response.status === 404) {
+                    throw new AiError(
+                        `Model '${config.model}' is not available in Ollama. Run 'ollama pull ${config.model}'.`,
+                        404,
+                        "Ollama",
+                    );
+                }
+                handleErrorStatus(response.status, "Ollama");
+            }
+
+            const data: { message?: { content?: string } } = await response.json();
+            const content = data.message?.content;
+            if (!content) {
+                throw new AiError("Ollama returned an empty response.", 0, "Ollama");
+            }
+            return content;
+        },
+
+        async validateKey() {
+            try {
+                const response = await fetch(`${baseUrl}/api/tags`);
+                return response.ok;
+            } catch {
+                return false;
+            }
+        },
+    };
+}
+
 export function getProvider(
     name: string,
-    apiKey: string,
+    apiKeyOrConfig: string | OllamaConfig,
 ): AiProvider {
     switch (name) {
+        case "chrome-ai":
+            return createChromeAiProvider();
+        case "ollama":
+            if (typeof apiKeyOrConfig === "string") {
+                return createOllamaProvider({ url: DEFAULT_OLLAMA_URL, model: apiKeyOrConfig || DEFAULT_OLLAMA_MODEL });
+            }
+            return createOllamaProvider(apiKeyOrConfig);
         case "openai":
-            return createOpenAiProvider(apiKey);
+            return createOpenAiProvider(typeof apiKeyOrConfig === "string" ? apiKeyOrConfig : "");
         case "anthropic":
-            return createAnthropicProvider(apiKey);
+            return createAnthropicProvider(typeof apiKeyOrConfig === "string" ? apiKeyOrConfig : "");
         case "google":
-            return createGoogleProvider(apiKey);
+            return createGoogleProvider(typeof apiKeyOrConfig === "string" ? apiKeyOrConfig : "");
         default:
             throw new Error(`Unknown AI provider: ${name}`);
     }

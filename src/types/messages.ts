@@ -58,6 +58,8 @@ export interface AiRequestMessage {
   apiKey: string;
   systemPrompt: string;
   userMessage: string;
+  ollamaUrl?: string;
+  ollamaModel?: string;
 }
 
 export interface SeekToMessage {
