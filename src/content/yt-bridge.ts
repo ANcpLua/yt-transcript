@@ -1,14 +1,12 @@
-// ISOLATED-world content script — sibling of yt-interceptor.ts (which
-// runs in MAIN). MAIN cannot touch chrome.* APIs, so it dispatches
-// CustomEvents that this bridge listens for and forwards to the
-// service worker. In Phase 0 we only console.debug captures (under a
-// runtime flag) so we can verify interception works without changing
-// any user-visible behaviour. Phase 1 will start forwarding via
-// chrome.runtime.sendMessage.
+// ISOLATED-world content script — sibling of yt-interceptor.ts (MAIN).
+// Receives CustomEvents from the page-context interceptor, parses
+// the videoId out of the request body, and forwards to the service
+// worker. MAIN-world has no chrome.* APIs so this is the only path.
+
+import { extractVideoIdFromRequest } from "@/lib/intercept/parseGetTranscript";
+import type { InterceptKind } from "@/types/messages";
 
 export {};
-
-const DEBUG_INTERCEPT = true; // Phase 0 verification flag — flips off in Phase 1.
 
 interface CapturePayload {
   url: string;
@@ -31,11 +29,38 @@ function safeParse<T>(s: string): T | null {
   }
 }
 
-function captureKind(url: string): "get_transcript" | "player" | "timedtext" | "other" {
+function captureKind(url: string): InterceptKind | "other" {
   if (url.includes("/youtubei/v1/get_transcript")) return "get_transcript";
   if (url.includes("/youtubei/v1/player")) return "player";
   if (url.includes("/api/timedtext")) return "timedtext";
   return "other";
+}
+
+function videoIdFromUrl(url: string): string | null {
+  try {
+    const u = new URL(url);
+    const v = u.searchParams.get("v");
+    if (v && /^[A-Za-z0-9_-]{11}$/.test(v)) return v;
+  } catch {
+    // pass
+  }
+  return null;
+}
+
+function isExtensionAlive(): boolean {
+  return Boolean(chrome.runtime?.id);
+}
+
+function safeSend(message: unknown): void {
+  if (!isExtensionAlive()) return;
+  try {
+    const r = chrome.runtime.sendMessage(message);
+    if (r && typeof (r as Promise<unknown>).catch === "function") {
+      (r as Promise<unknown>).catch(() => {});
+    }
+  } catch {
+    // Orphaned content script after extension reload — ignore.
+  }
 }
 
 document.addEventListener("yt-tx-capture", (e) => {
@@ -46,25 +71,25 @@ document.addEventListener("yt-tx-capture", (e) => {
   const kind = captureKind(payload.url);
   if (kind === "other") return;
 
-  if (DEBUG_INTERCEPT) {
-    // Probe-only logging — drops bodyText length, never the body itself.
-    // eslint-disable-next-line no-console
-    console.debug(
-      `[yt-tx] ${kind} status=${payload.status} bodyLen=${payload.bodyText.length} reqLen=${payload.requestBody.length}`,
-    );
-  }
+  // Prefer parsing videoId from the request body (works for player + get_transcript);
+  // fall back to URL `?v=` for /api/timedtext.
+  const videoId =
+    extractVideoIdFromRequest(payload.requestBody) ?? videoIdFromUrl(payload.url);
 
-  // Phase 1 will forward to SW here:
-  // chrome.runtime.sendMessage({ type: "intercepted-capture", kind, payload })
+  safeSend({
+    type: "intercepted-capture",
+    kind,
+    videoId,
+    url: payload.url,
+    status: payload.status,
+    bodyText: payload.bodyText,
+  });
 });
 
 document.addEventListener("yt-tx-navigate", (e) => {
   const ev = e as CustomEvent<string>;
   const payload = safeParse<NavigatePayload>(ev.detail);
   if (!payload) return;
-
-  if (DEBUG_INTERCEPT) {
-    // eslint-disable-next-line no-console
-    console.debug(`[yt-tx] navigate ${payload.url}`);
-  }
+  const videoId = videoIdFromUrl(payload.url);
+  safeSend({ type: "intercepted-navigate", url: payload.url, videoId });
 });
