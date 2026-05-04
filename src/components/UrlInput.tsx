@@ -136,52 +136,46 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
                         }}
                         disabled={videoList.filter(v => v.selected).length === 0}
                         className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-                        Get Transcripts ({videoList.filter(v => v.selected).length})
+                        Fetch ({videoList.filter(v => v.selected).length})
                     </button>
                 </div>
             </div>
         </div>
     );
 
-    // Landing state: centered with tagline and features
+    // Landing state: just the input.
     if (!hasTranscript && !isLoading) {
         return (
-            <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center px-4">
-                <h1 className="mb-3 text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-4xl">
-                    YouTube & Vimeo Transcript Extractor
-                </h1>
-                <p className="mb-8 text-center text-lg text-slate-600 dark:text-slate-400">
-                    Extract, search, and export video transcripts. Free. No signup.
-                </p>
-
-                <form onSubmit={(e) => void handleSubmit(e)} className="mb-8 w-full">
+            <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col justify-center px-4">
+                <form onSubmit={(e) => void handleSubmit(e)} className="w-full">
                     <div className="flex gap-2">
                         <input
                             ref={inputRef}
                             type="text"
                             value={url}
                             onChange={(e) => handleChange(e.target.value)}
-                            placeholder="Paste a YouTube or Vimeo URL..."
+                            placeholder="Paste a YouTube or Vimeo URL"
                             disabled={isLoading || loadingList}
-                            aria-label="YouTube URL"
+                            aria-label="Video URL"
                             aria-invalid={validationError.length > 0}
-                            className={`min-h-[48px] flex-1 rounded-xl border-2 bg-white px-4 py-3 text-base shadow-xs transition-colors placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 ${
-                                validationError ? "border-red-400 dark:border-red-500" : "border-slate-200 dark:border-slate-600"
+                            autoFocus
+                            className={`min-h-[44px] flex-1 rounded-lg border bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-hidden focus:ring-1 focus:ring-blue-500 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 ${
+                                validationError ? "border-red-400 dark:border-red-500" : "border-slate-200 dark:border-slate-700"
                             }`}
                         />
                         <button
                             type="submit"
                             disabled={isLoading || loadingList || url.length === 0}
-                            className="min-h-[48px] whitespace-nowrap rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-blue-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-offset-slate-900"
+                            className="min-h-[44px] whitespace-nowrap rounded-lg bg-blue-600 px-4 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-offset-slate-900"
                         >
-                            {loadingList ? "Loading..." : "Get Transcript"}
+                            {loadingList ? "Loading…" : "Get transcript"}
                         </button>
                     </div>
-                    <div className="mt-2 flex items-center justify-center">
+                    <div className="mt-3 flex items-center justify-center">
                         <input ref={fileInputRef} type="file" accept=".csv,.txt" onChange={handleCsvUpload} className="hidden" />
                         <button type="button" onClick={() => fileInputRef.current?.click()}
-                            className="text-xs text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400">
-                            or upload a CSV of video URLs
+                            className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300">
+                            Or upload a CSV
                         </button>
                     </div>
                     {validationError && (
@@ -192,15 +186,6 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
                 </form>
 
                 {videoSelectionPanel}
-
-                <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-3">
-                    <FeatureCard title="Instant Extraction"
-                                 description="Paste any YouTube or Vimeo URL and get the full transcript in seconds."/>
-                    <FeatureCard title="Search & Export"
-                                 description="Search within transcripts. Download as TXT, SRT, VTT, JSON, CSV, or Markdown."/>
-                    <FeatureCard title="100% Free"
-                                 description="No accounts, no credit limits, no tracking. Works immediately."/>
-                </div>
             </div>
         );
     }
@@ -250,12 +235,3 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, hasTranscript}: Ur
     );
 }
 
-function FeatureCard({title, description}: { title: string; description: string }) {
-    return (
-        <div
-            className="rounded-xl border border-slate-200 bg-white p-5 text-center shadow-xs dark:border-slate-700 dark:bg-slate-800">
-            <h3 className="mb-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
-            <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">{description}</p>
-        </div>
-    );
-}

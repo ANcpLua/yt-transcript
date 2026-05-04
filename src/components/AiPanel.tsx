@@ -19,24 +19,27 @@ interface ChatMessage {
 // Prompt API supports all features when available.
 const CHROME_AI_LEGACY_FEATURES: ReadonlySet<AiFeature> = new Set<AiFeature>(["summary"]);
 
-const FEATURES: { id: AiFeature; label: string }[] = [
-    {id: "summary", label: "Summarize"},
-    {id: "bulletPoints", label: "Key Points"},
-    {id: "chapterSummary", label: "Chapters"},
-    {id: "actionItems", label: "Action Items"},
+const ESSENTIAL_FEATURES: { id: AiFeature; label: string }[] = [
+    {id: "summary", label: "Summary"},
+    {id: "bulletPoints", label: "Key points"},
     {id: "quotes", label: "Quotes"},
-    {id: "sentiment", label: "Sentiment"},
-    {id: "topics", label: "Topics & Tags"},
-    {id: "qaExtract", label: "Q&A Extract"},
-    {id: "mindmap", label: "Mindmap"},
-    {id: "studyGuide", label: "Study Guide"},
-    {id: "studyNotes", label: "Study Notes"},
-    {id: "qaGenerate", label: "Q&A Generate"},
+    {id: "qaExtract", label: "Q&A"},
     {id: "quiz", label: "Quiz"},
     {id: "flashcards", label: "Flashcards"},
-    {id: "blogOutline", label: "Blog Outline"},
-    {id: "socialPosts", label: "Social Posts"},
-    {id: "seoKeywords", label: "SEO Keywords"},
+];
+
+const MORE_FEATURES: { id: AiFeature; label: string }[] = [
+    {id: "chapterSummary", label: "Chapters"},
+    {id: "actionItems", label: "Action items"},
+    {id: "sentiment", label: "Sentiment"},
+    {id: "topics", label: "Topics"},
+    {id: "mindmap", label: "Mindmap"},
+    {id: "studyGuide", label: "Study guide"},
+    {id: "studyNotes", label: "Study notes"},
+    {id: "qaGenerate", label: "Generate Q&A"},
+    {id: "blogOutline", label: "Blog outline"},
+    {id: "socialPosts", label: "Social posts"},
+    {id: "seoKeywords", label: "SEO keywords"},
     {id: "entities", label: "Entities"},
 ];
 
@@ -90,13 +93,13 @@ function sendAiRequest(payload: AiRequestPayload): Promise<string> {
 function RenderedContent({text, onSeek}: { text: string; onSeek: (t: number) => void }) {
     const parts = text.split(TIMESTAMP_SPLIT_RE);
     return (
-        <div className="prose prose-sm max-w-none whitespace-pre-wrap dark:prose-invert">
+        <div className="prose prose-sm prose-slate max-w-none whitespace-pre-wrap dark:prose-invert">
             {parts.map((part, i) =>
                 TIMESTAMP_TEST_RE.test(part) ? (
                     <button
                         key={i}
                         onClick={() => onSeek(parseTimestamp(part))}
-                        className="mx-0.5 rounded bg-blue-100 px-1 text-xs font-mono text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300"
+                        className="mx-0.5 rounded font-mono text-xs text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-slate-900 hover:decoration-slate-500 dark:text-slate-400 dark:decoration-slate-600 dark:hover:text-white"
                     >
                         {part}
                     </button>
@@ -121,6 +124,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
     const [chromeAiAvailable, setChromeAiAvailable] = useState(false);
     const [chromeAiPromptAvailable, setChromeAiPromptAvailable] = useState(false);
     const [hasApiKey, setHasApiKey] = useState(false);
+    const [showMore, setShowMore] = useState(false);
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({behavior: "smooth"});
@@ -286,87 +290,83 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
     if (!transcript) return null;
 
-    return (
-        <div className="flex flex-col gap-4 rounded-xl border bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">AI Analysis</h3>
+    const renderFeatureButton = (f: { id: AiFeature; label: string }) => {
+        const enabled = canRunFeature(f.id);
+        return (
+            <button
+                key={f.id}
+                onClick={() => void runFeature(f.id)}
+                disabled={!enabled || loading}
+                className={`rounded-md px-3 py-1.5 text-sm transition disabled:opacity-30 ${
+                    activeFeature === f.id
+                        ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
+                        : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                }`}
+            >
+                {f.label}
+            </button>
+        );
+    };
 
-            {(chromeAiAvailable || chromeAiPromptAvailable) && (
-                <div className="flex items-center gap-2 rounded-lg bg-green-50 p-3 text-sm text-green-800 dark:bg-green-900/20 dark:text-green-300">
-                    <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    {chromeAiPromptAvailable
-                        ? "Chrome built-in AI is available — every feature runs on-device, free, no key."
-                        : "Chrome AI Summarizer is available — summary runs on-device. Other features need an API key or Ollama."}
-                </div>
-            )}
+    return (
+        <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+            <div className="flex items-baseline justify-between">
+                <h3 className="text-sm font-medium text-slate-900 dark:text-white">Analyze</h3>
+                {hasAnyProvider && (
+                    <span className="text-xs text-slate-400 dark:text-slate-500">
+                        {chromeAiPromptAvailable
+                            ? "Chrome AI · on-device"
+                            : chromeAiAvailable
+                                ? "Chrome AI · summary only"
+                                : "Configured provider"}
+                    </span>
+                )}
+            </div>
 
             {!hasAnyProvider && (
-                <div
-                    className="flex items-center gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-                    <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                              d="M12 15v2m0 0v2m0-2h2m-2 0H10m9.374-9.373A9 9 0 115.626 5.626 9 9 0 0119.374 14.627z"/>
-                    </svg>
-                    Pick a free AI provider in Settings — Chrome built-in AI or Ollama (local). No key needed.
-                </div>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Pick a provider in Settings — Chrome AI or Ollama run locally without a key.
+                </p>
             )}
 
             {/* Feature buttons */}
-            <div className="flex flex-wrap gap-2">
-                {FEATURES.map((f) => {
-                    const enabled = canRunFeature(f.id);
-                    const isFree = chromeAiPromptAvailable
-                        || (chromeAiAvailable && CHROME_AI_LEGACY_FEATURES.has(f.id));
-                    return (
-                        <button
-                            key={f.id}
-                            onClick={() => void runFeature(f.id)}
-                            disabled={!enabled || loading}
-                            title={isFree ? "Free via Chrome built-in AI" : undefined}
-                            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition disabled:opacity-40 ${
-                                activeFeature === f.id
-                                    ? "bg-blue-600 text-white"
-                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
-                            }`}
-                        >
-                            {f.label}
-                            {isFree && <span className="ml-1 text-xs opacity-70">(free)</span>}
-                        </button>
-                    );
-                })}
+            <div className="-mx-1 flex flex-wrap gap-1">
+                {ESSENTIAL_FEATURES.map(renderFeatureButton)}
+                {showMore && MORE_FEATURES.map(renderFeatureButton)}
+                <button
+                    onClick={() => setShowMore((v) => !v)}
+                    className="rounded-md px-3 py-1.5 text-sm text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                >
+                    {showMore ? "Less" : "More"}
+                </button>
             </div>
 
             {/* Results */}
             {loading && (
-                <div className="flex items-center gap-2 py-4 text-sm text-gray-500">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent"/>
-                    Analyzing transcript...
+                <div className="flex items-center gap-2 py-2 text-sm text-slate-500 dark:text-slate-400">
+                    <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600 dark:border-slate-700 dark:border-t-slate-300"/>
+                    Analyzing…
                 </div>
             )}
 
             {error && (
-                <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">
-                    {error}
-                </div>
+                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
             )}
 
             {result && !loading && (
-                <div className="rounded-lg bg-gray-50 p-4 dark:bg-gray-900">
+                <div>
                     {activeFeature === "flashcards" ? (
                         <FlashcardView result={result} flippedCards={flippedCards} setFlippedCards={setFlippedCards}/>
                     ) : (
                         <RenderedContent text={result} onSeek={onSeek}/>
                     )}
-                    <div className="mt-3 flex gap-2">
-                        <button onClick={copyResult}
-                                className="rounded bg-gray-200 px-3 py-1 text-xs hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300">
+                    <div className="mt-3 flex gap-3 text-xs text-slate-500 dark:text-slate-400">
+                        <button onClick={copyResult} className="hover:text-slate-800 dark:hover:text-slate-200">
                             Copy
                         </button>
                         <button
                             onClick={() => activeFeature && void runFeature(activeFeature)}
-                            className="rounded bg-gray-200 px-3 py-1 text-xs hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-300"
+                            className="hover:text-slate-800 dark:hover:text-slate-200"
                         >
                             Regenerate
                         </button>
@@ -375,38 +375,28 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
             )}
 
             {/* Chat */}
-            <div className="border-t pt-4 dark:border-gray-700">
-                <div className="mb-2 flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Ask the transcript</h4>
+            <div className="border-t border-slate-200 pt-4 dark:border-slate-800">
+                <div className="mb-3 flex items-center justify-between">
+                    <h4 className="text-sm font-medium text-slate-900 dark:text-white">Ask</h4>
                     {chatMessages.length > 0 && (
                         <button
                             onClick={() => setChatMessages([])}
-                            className="text-xs text-gray-400 hover:text-gray-600"
+                            className="text-xs text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
                         >
-                            Clear chat
+                            Clear
                         </button>
                     )}
                 </div>
 
                 {chatMessages.length > 0 && (
-                    <div className="mb-3 max-h-64 space-y-2 overflow-y-auto rounded-lg bg-gray-50 p-3 dark:bg-gray-900">
+                    <div className="mb-3 max-h-64 space-y-3 overflow-y-auto">
                         {chatMessages.map((msg, i) => (
-                            <div
-                                key={i}
-                                className={`rounded-lg p-2 text-sm ${
-                                    msg.role === "user"
-                                        ? "ml-8 bg-blue-100 text-blue-900 dark:bg-blue-900/30 dark:text-blue-200"
-                                        : "mr-8 bg-white dark:bg-gray-800 dark:text-gray-200"
-                                }`}
-                            >
+                            <div key={i} className={`text-sm ${msg.role === "user" ? "text-slate-900 dark:text-white" : "text-slate-600 dark:text-slate-300"}`}>
                                 <RenderedContent text={msg.content} onSeek={onSeek}/>
                             </div>
                         ))}
                         {chatLoading && (
-                            <div className="mr-8 rounded-lg bg-white p-2 dark:bg-gray-800">
-                                <div
-                                    className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent"/>
-                            </div>
+                            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600 dark:border-slate-700 dark:border-t-slate-300"/>
                         )}
                         <div ref={chatEndRef}/>
                     </div>
@@ -417,14 +407,14 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && void sendChat()}
-                        placeholder={canChat ? "Ask a question about this video..." : "Pick an AI provider in Settings to chat"}
+                        placeholder={canChat ? "Ask about this video" : "Pick an AI provider in Settings"}
                         disabled={!canChat || chatLoading}
-                        className="flex-1 rounded-lg border px-3 py-2 text-sm disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                        className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm placeholder:text-slate-400 focus:border-slate-400 focus:outline-hidden disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     />
                     <button
                         onClick={() => void sendChat()}
                         disabled={!canChat || chatLoading || !chatInput.trim()}
-                        className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                        className="rounded-md bg-slate-900 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-30 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
                     >
                         Send
                     </button>
@@ -463,16 +453,16 @@ function FlashcardView({
         });
 
     return (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-2">
             {cards.map((card, i) => (
                 <button
                     key={i}
                     onClick={() => toggle(i)}
-                    className="rounded-lg border p-3 text-left transition hover:shadow dark:border-gray-600"
+                    className="rounded-lg border border-slate-200 p-3 text-left transition hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600"
                 >
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">{card.q}</p>
+                    <p className="text-sm text-slate-900 dark:text-white">{card.q}</p>
                     {flippedCards.has(i) && (
-                        <p className="mt-2 border-t pt-2 text-sm text-gray-600 dark:border-gray-600 dark:text-gray-400">
+                        <p className="mt-2 border-t border-slate-200 pt-2 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-400">
                             {card.a}
                         </p>
                     )}

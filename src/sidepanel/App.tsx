@@ -433,7 +433,7 @@ export function App() {
                 <header
                     className="border-b border-slate-200 bg-white/80 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
                     <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-2">
-                        <span className="text-sm font-bold text-slate-900 dark:text-white">Transcript</span>
+                        <span className="text-sm font-medium text-slate-900 dark:text-white">Transcript</span>
                     </div>
                 </header>
                 <Suspense fallback={null}>
@@ -453,7 +453,7 @@ export function App() {
             <header
                 className="border-b border-slate-200 bg-white/80 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
                 <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-2">
-                    <span className="text-sm font-bold text-slate-900 dark:text-white">Transcript</span>
+                    <span className="text-sm font-medium text-slate-900 dark:text-white">Transcript</span>
                     <div className="flex items-center gap-1">
                         {state === "loaded" && (
                             <button
@@ -511,20 +511,17 @@ export function App() {
                 {state === "loading" && <LoadingSpinner/>}
 
                 {state === "no-captions" && (
-                    <div className="mt-8 rounded-xl border border-slate-200 bg-white p-6 text-center dark:border-slate-700 dark:bg-slate-800">
-                        <h3 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">No captions available</h3>
-                        <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
-                            This video has no captions. You can transcribe it locally using AI (runs in your browser).
+                    <div className="mt-8 text-center">
+                        <h3 className="mb-1 text-base font-medium text-slate-900 dark:text-white">No captions</h3>
+                        <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+                            Transcribe locally instead — runs in your browser, ~2–3× realtime.
                         </p>
                         <button
                             onClick={handleStartTranscription}
-                            className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+                            className="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
                         >
-                            Transcribe with local AI
+                            Transcribe
                         </button>
-                        <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                            Video will play while transcribing. Speed: ~2-3x realtime.
-                        </p>
                     </div>
                 )}
 

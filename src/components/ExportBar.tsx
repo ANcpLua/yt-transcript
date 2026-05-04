@@ -95,11 +95,11 @@ export function ExportBar({
             )}
 
             <button onClick={handleCopy} className={btnClass}>
-                {copied === "copy" ? "Copied!" : "Copy"}
+                {copied === "copy" ? "Copied" : "Copy"}
             </button>
             {highlightedSegments.length > 0 && (
                 <button onClick={handleCopyHighlights} className={btnClass}>
-                    {copied === "highlights" ? "Copied!" : `Highlights (${highlightedSegments.length})`}
+                    {copied === "highlights" ? "Copied" : `Highlights (${highlightedSegments.length})`}
                 </button>
             )}
             <button onClick={() => exportTxt(activeSegments, title, language, showTimestamps)} className={btnClass}>
@@ -121,9 +121,9 @@ export function ExportBar({
                         className={btnClass}>MD
                 </button>
                 <button onClick={handleCopyNotion}
-                        className={btnClass}>{copied === "notion" ? "Copied!" : "Notion"}</button>
+                        className={btnClass}>{copied === "notion" ? "Copied" : "Notion"}</button>
                 <button onClick={handleCopyObsidian}
-                        className={btnClass}>{copied === "obsidian" ? "Copied!" : "Obsidian"}</button>
+                        className={btnClass}>{copied === "obsidian" ? "Copied" : "Obsidian"}</button>
             </div>
 
             {/* Mobile overflow */}

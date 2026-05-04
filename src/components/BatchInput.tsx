@@ -48,14 +48,14 @@ export function BatchInput({onSingleSubmit, onBatchStart, isLoading}: BatchInput
     return (
         <div className="w-full max-w-3xl mx-auto">
             {/* Mode tabs */}
-            <div className="flex border-b border-gray-200 dark:border-gray-700 mb-4">
+            <div className="flex border-b border-slate-200 dark:border-slate-700 mb-4">
                 <button
                     type="button"
                     onClick={() => setMode("single")}
                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                         mode === "single"
                             ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                            : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"
+                            : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400"
                     }`}
                 >
                     Single Video
@@ -66,7 +66,7 @@ export function BatchInput({onSingleSubmit, onBatchStart, isLoading}: BatchInput
                     className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                         mode === "batch"
                             ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                            : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400"
+                            : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400"
                     }`}
                 >
                     Batch
@@ -80,7 +80,7 @@ export function BatchInput({onSingleSubmit, onBatchStart, isLoading}: BatchInput
                         value={singleUrl}
                         onChange={(e) => setSingleUrl(e.target.value)}
                         placeholder="Paste YouTube URL or video ID..."
-                        className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                        className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                         disabled={isLoading}
                     />
                     <button
@@ -98,7 +98,7 @@ export function BatchInput({onSingleSubmit, onBatchStart, isLoading}: BatchInput
               onChange={(e) => setBatchText(e.target.value)}
               placeholder={"Paste YouTube URLs, one per line...\n\nhttps://youtube.com/watch?v=...\nhttps://youtu.be/..."}
               rows={6}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-mono text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 resize-y"
+              className="w-full px-4 py-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500 resize-y"
               disabled={isLoading}
           />
 
@@ -130,7 +130,7 @@ export function BatchInput({onSingleSubmit, onBatchStart, isLoading}: BatchInput
                     <div className="flex items-center justify-between">
             <span
                 className={`text-sm ${
-                    parsedLines.length > MAX_URLS ? "text-red-600 dark:text-red-400" : "text-gray-500 dark:text-gray-400"
+                    parsedLines.length > MAX_URLS ? "text-red-600 dark:text-red-400" : "text-slate-500 dark:text-slate-400"
                 }`}
             >
               {validIds.length} valid of {parsedLines.length} URLs (max {MAX_URLS})

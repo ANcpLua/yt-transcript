@@ -32,7 +32,7 @@ function statusColor(status: string): string {
         case "processing":
             return "text-blue-600 dark:text-blue-400 animate-pulse";
         default:
-            return "text-gray-400 dark:text-gray-500";
+            return "text-slate-400 dark:text-slate-500";
     }
 }
 
@@ -52,7 +52,7 @@ export function BatchProgress({
         <div className="w-full max-w-3xl mx-auto space-y-4">
             {/* Progress bar */}
             <div>
-                <div className="flex justify-between text-sm text-gray-600 dark:text-gray-300 mb-1">
+                <div className="flex justify-between text-sm text-slate-600 dark:text-slate-300 mb-1">
           <span>
             {done} of {total} completed
               {failedCount > 0 && (
@@ -63,7 +63,7 @@ export function BatchProgress({
           </span>
                     <span>{pct}%</span>
                 </div>
-                <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                     <div
                         className="h-full bg-blue-600 rounded-full transition-all duration-300"
                         style={{width: `${pct}%`}}
@@ -73,7 +73,7 @@ export function BatchProgress({
 
             {/* Item list */}
             <div
-                className="max-h-64 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-100 dark:divide-gray-700">
+                className="max-h-64 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg divide-y divide-slate-100 dark:divide-slate-700">
                 {items.map((item) => (
                     <div
                         key={item.videoId}
@@ -82,7 +82,7 @@ export function BatchProgress({
             <span className={`flex-shrink-0 font-mono ${statusColor(item.status)}`}>
               {statusIcon(item.status)}
             </span>
-                        <span className="flex-1 truncate text-gray-800 dark:text-gray-200">
+                        <span className="flex-1 truncate text-slate-800 dark:text-slate-200">
               {item.title ?? item.videoId}
             </span>
                         {item.status === "failed" && item.error && (
@@ -132,7 +132,7 @@ export function BatchProgress({
                                         <button
                                             type="button"
                                             onClick={() => onExport(fmt, "separate")}
-                                            className="px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                                            className="px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-sm hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
                                             title={`Download as separate ${fmt.toUpperCase()} files (ZIP)`}
                                         >
                                             .{fmt}

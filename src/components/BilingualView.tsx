@@ -85,7 +85,7 @@ function SegmentCell({
           {formatTimestamp(segment.start)}
         </span>
             )}
-            <span className="text-gray-800 dark:text-gray-200">{segment.text}</span>
+            <span className="text-slate-800 dark:text-slate-200">{segment.text}</span>
         </button>
     );
 }
@@ -151,14 +151,14 @@ export function BilingualView({
             </div>
 
             {/* Mobile toggle */}
-            <div className="flex md:hidden border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            <div className="flex md:hidden border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
                 <button
                     type="button"
                     onClick={() => setMobileColumn("original")}
                     className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
                         mobileColumn === "original"
                             ? "bg-blue-600 text-white"
-                            : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+                            : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"
                     }`}
                     aria-pressed={mobileColumn === "original"}
                 >
@@ -170,7 +170,7 @@ export function BilingualView({
                     className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
                         mobileColumn === "translated"
                             ? "bg-blue-600 text-white"
-                            : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+                            : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"
                     }`}
                     aria-pressed={mobileColumn === "translated"}
                 >
@@ -182,7 +182,7 @@ export function BilingualView({
             <div className="hidden md:grid md:grid-cols-2 gap-4" aria-label="Side-by-side transcript">
                 <div
                     ref={leftRef}
-                    className="overflow-y-auto max-h-[70vh] border border-gray-200 dark:border-gray-700 rounded-lg p-2 space-y-1"
+                    className="overflow-y-auto max-h-[70vh] border border-slate-200 dark:border-slate-700 rounded-lg p-2 space-y-1"
                     role="list"
                     aria-label="Original transcript"
                 >
@@ -194,7 +194,7 @@ export function BilingualView({
                 </div>
                 <div
                     ref={rightRef}
-                    className="overflow-y-auto max-h-[70vh] border border-gray-200 dark:border-gray-700 rounded-lg p-2 space-y-1"
+                    className="overflow-y-auto max-h-[70vh] border border-slate-200 dark:border-slate-700 rounded-lg p-2 space-y-1"
                     role="list"
                     aria-label="Translated transcript"
                 >
@@ -208,7 +208,7 @@ export function BilingualView({
 
             {/* Mobile: single column with toggle */}
             <div
-                className="md:hidden overflow-y-auto max-h-[70vh] border border-gray-200 dark:border-gray-700 rounded-lg p-2 space-y-1"
+                className="md:hidden overflow-y-auto max-h-[70vh] border border-slate-200 dark:border-slate-700 rounded-lg p-2 space-y-1"
                 role="list"
                 aria-label={`${mobileColumn === "original" ? "Original" : "Translated"} transcript`}
             >
