@@ -21,11 +21,26 @@ is in this file.
 
 ## Things to consider
 
-- This project was built by parallel agents who left gaps. Code exists but is not wired. Do not rewrite working code — wire it.
-- The Innertube API is undocumented and YouTube changes it without notice. Every approach must have a fallback.
-- Side panel width is ~400px. Components designed for full-page layouts must be adapted.
-- `TranscriptView.tsx` (28KB) and `AiPanel.tsx` (18KB) are bloated. Split only if you're already modifying them.
-- Inline SVGs are scattered everywhere. Consolidate to a consistent approach when touching icon code.
+- The transcript pipeline is **intercept-first**. The MAIN-world content script
+  (`src/content/yt-interceptor.ts`) rides on YouTube's own `get_transcript` /
+  `player` calls — read the "Transcript Extraction Architecture" section
+  before touching any extraction code, and prefer fixing the parser
+  (`src/lib/intercept/parseGetTranscript.ts`) over re-implementing the
+  Innertube fetch chain. Innertube is the paste-URL fallback only.
+- The Innertube API is undocumented and YouTube changes it without notice. The
+  paste-URL fallback (`src/background/innertube.ts`) is one client only
+  (`WEB_EMBEDDED_PLAYER`) plus a watch-page scrape — keep it slim.
+- Side panel width is ~400px. Components designed for full-page layouts must
+  be adapted.
+- `TranscriptView.tsx` (~26KB after the cleanup pass) and `AiPanel.tsx`
+  (~16KB) are still on the chunky side. Split only if you're already
+  modifying them and the change is non-trivial.
+- Inline SVGs still appear in several components. Four files duplicate the
+  same close-X glyph; consolidate when you touch icon code.
+- Local Whisper runs in an offscreen document via `chrome.tabCapture` +
+  `AudioWorkletNode` + `@huggingface/transformers` v3 (WebGPU when
+  available, WASM fallback). Model weights stream from the Hugging Face
+  CDN on first use, then cache in `caches` storage.
 
 ## Competitive Target
 
@@ -197,10 +212,14 @@ weights stream from the Hugging Face CDN on first use and cache in
   handles both shapes seen in production; add new ones there.
 - YouTube can `Object.freeze(window)` in the future, fighting fetch
   re-patching. Currently doesn't.
+- `world: "MAIN"` + `run_at: "document_start"` is "best-effort first" per
+  Chrome — usually we beat YouTube's bundle, occasionally not. If a video
+  doesn't auto-populate on first nav, a SPA navigation away and back
+  re-fires the interceptor.
 - WebGPU isn't universal; WASM fallback is the safety net.
 - L0 only fires on watch pages — paste-URL flows still need L1.
 
-</innertube_api>
+</extraction_layers>
 
 ## AI Prompt Templates
 
@@ -223,10 +242,20 @@ means adding a prompt template to `lib/ai/prompts.ts` and a button/section in `A
 | quiz | F-016 | **DONE** | Multiple choice with correct answers marked |
 | flashcards | F-017 | **DONE** | Flashcard deck |
 | action-items | — | **DONE** | Action items (our extra, they don't have it) |
+| chapterSummary | — | **DONE** | One-line summary per detected chapter |
+| bulletPoints | — | **DONE** | Standalone key-points feature (separate from summary's TLDR) |
+| studyNotes | — | **DONE** | Cornell-style study notes |
+| blogOutline | — | **DONE** | Long-form blog outline from transcript |
+| socialPosts | — | **DONE** | Twitter/LinkedIn-shaped post drafts |
+| seoKeywords | — | **DONE** | SEO keyword extraction |
+| entities | — | **DONE** | Named entity extraction |
 
-To add a missing prompt:
+The user-facing buttons are split into 6 essentials shown by default and
+the rest behind a "More" disclosure in `AiPanel.tsx`.
+
+To add a new prompt:
 1. Add the template function to `lib/ai/prompts.ts` following existing pattern
-2. Add a button + result display section to `components/AiPanel.tsx`
+2. Add an entry to `ESSENTIAL_FEATURES` or `MORE_FEATURES` in `AiPanel.tsx`
 3. Use the existing `sendMessage()` from the provider — no new wiring needed
 
 </ai_prompt_inventory>
@@ -237,58 +266,86 @@ To add a missing prompt:
 yt-transcript/
   src/
     background/
-      service-worker.ts          # Extension background — message routing, Innertube orchestration
-      innertube.ts               # Innertube API client (3-layer fallback)
-      innertube-browse.ts        # Playlist/channel browse via Innertube
+      service-worker.ts            # Message router; correlator broadcasts;
+                                   # Whisper offscreen lifecycle
+      innertube.ts                 # Paste-URL fallback only — single
+                                   # WEB_EMBEDDED_PLAYER client + watch-page scrape
+      innertube-browse.ts          # Playlist/channel browse via Innertube
+      providers/
+        types.ts                   # TranscriptProvider interface, isApiError
+        youtube.ts                 # Wraps innertube.ts behind the provider iface
+        vimeo.ts                   # Vimeo player.vimeo.com/.../config + VTT parse
+      transcribe/
+        offscreen.ts               # Tab-audio capture + Whisper inference
+                                   # (transformers.js v3, WebGPU/q4f16 → WASM/q8)
+        worklet-processor.ts       # AudioWorkletProcessor (separate bundle)
+        offscreen.html             # Document loaded by chrome.offscreen
     content/
-      content.ts                 # Content script — DOM extraction, page data caching
-    sidepanel/                   # Vite entry point for side panel UI
+      yt-interceptor.ts            # MAIN-world, document_start. Patches fetch + XHR,
+                                   # captures get_transcript / player / timedtext
+      yt-bridge.ts                 # ISOLATED, document_start. Forwards captures to SW
+      content.ts                   # ISOLATED, document_idle. Video-detect + seek-to
+                                   # + 1 Hz player-time relay (no DOM extraction)
+      vimeo-content.ts             # Vimeo equivalent of content.ts (still does
+                                   # page-config DOM extraction; Vimeo's auth is simpler)
+    sidepanel/                     # Vite entry point for side panel UI
+      index.html
+      main.tsx
+      App.tsx                      # Side-panel shell, listens for intercepted-transcript
+                                   # and shows the "Live" pill on auto-populate
     components/
-      UrlInput.tsx               # URL input + validation
-      TranscriptView.tsx         # Transcript display, view modes, search (28KB — bloated)
-      ExportBar.tsx              # Copy + download buttons (all 6 formats)
-      AiPanel.tsx                # AI features panel (18KB — bloated)
-      Settings.tsx               # BYOK API key management + preferences
-      History.tsx                # Recent history panel
-      SavedList.tsx              # Saved transcripts panel
-      BatchInput.tsx             # Batch/playlist URL input
-      BatchProgress.tsx          # Batch processing progress
-      BatchResultsNav.tsx        # Navigate between batch results
-      BilingualView.tsx          # Side-by-side original + translated
-      ErrorMessage.tsx           # Error states
-      LoadingSpinner.tsx         # Loading skeleton
-      LegalPage.tsx              # Legal/privacy (stub)
-      TagEditor.tsx              # Tag chip input (stub)
-      LazyFallback.tsx           # Code-split loading fallback
+      UrlInput.tsx                 # URL input + validation; landing screen + compact mode
+      TranscriptView.tsx           # Transcript display, view modes, search (~26 KB)
+      ExportBar.tsx                # Copy + download buttons (all 6 formats)
+      AiPanel.tsx                  # AI features panel (~16 KB) with Essentials + More
+      Settings.tsx                 # BYOK API keys, Chrome AI, Ollama, Whisper, prefs
+      History.tsx                  # Recent history modal
+      SavedList.tsx                # Saved transcripts modal
+      BatchProgress.tsx            # Batch processing progress + per-item exports
+      BatchResultsNav.tsx          # Navigate between batch results
+      BilingualView.tsx            # Side-by-side original + translated (NOT WIRED)
+      ErrorMessage.tsx             # Quiet error block + optional Transcribe-locally CTA
+      LoadingSpinner.tsx           # Skeleton loader
+      LegalPage.tsx                # Legal/privacy hash route (#/legal)
+      TagEditor.tsx                # Tag chip input on saved transcripts
     lib/
-      parseUrl.ts                # YouTube URL → video ID
-      formatTime.ts              # Seconds → timestamp strings
-      mergeSegments.ts           # Raw → sentence → paragraph merging
-      cleanText.ts               # Filler word removal (EXISTS, NOT WIRED to UI)
-      detectSpeakers.ts          # Speaker label heuristics (EXISTS, NOT WIRED to UI)
-      parseChapters.ts           # Chapter timestamp parsing (EXISTS)
-      sanitizeFilename.ts        # Title → safe filename
-      exportTxt.ts               # TXT export
-      exportSrt.ts               # SRT export
-      exportVtt.ts               # VTT export
-      exportJson.ts              # JSON export
-      exportCsv.ts               # CSV export
-      exportMarkdown.ts          # Markdown export
+      parseUrl.ts                  # YouTube/Vimeo URL → video ID + URL kind
+      formatTime.ts                # Seconds → timestamp strings
+      mergeSegments.ts             # Raw → sentence → paragraph merging
+      cleanText.ts                 # Filler-word + profanity filter (wired)
+      detectSpeakers.ts            # Speaker label heuristics (wired)
+      parseChapters.ts             # Chapter timestamp parsing
+      parseVtt.ts                  # WebVTT parser used by Vimeo provider
+      sanitizeFilename.ts          # Title → safe filename
+      exportTxt.ts                 # TXT export
+      exportSrt.ts                 # SRT export
+      exportVtt.ts                 # VTT export
+      exportJson.ts                # JSON export
+      exportCsv.ts                 # CSV export
+      exportMarkdown.ts            # Markdown / Notion / Obsidian
       ai/
-        providers.ts             # OpenAI, Anthropic, Google, Chrome AI provider implementations
-        prompts.ts               # Prompt templates (6 MISSING — see ai_prompt_inventory)
+        providers.ts               # OpenAI, Anthropic, Google, Ollama, Chrome AI
+        prompts.ts                 # Prompt templates (all DONE — see ai_prompt_inventory)
+        chrome-ai.ts               # Chrome built-in Prompt API + Summarizer wrappers
+      intercept/
+        parseGetTranscript.ts      # youtubei/v1/get_transcript JSON → Segment[]
+                                   # (handles both response shapes seen in prod)
+        correlator.ts              # SW-side per-tab merge of player + transcript
+                                   # captures into TranscriptResponse
       storage/
-        history.ts               # chrome.storage recent history
-        saved.ts                 # IndexedDB saved transcripts + highlights + notes
-        preferences.ts           # chrome.storage user preferences
+        history.ts                 # chrome.storage recent history
+        saved.ts                   # IndexedDB saved transcripts + highlights + notes
+        preferences.ts             # chrome.storage user preferences
       batch/
-        queue.ts                 # Sequential batch processing with progress
+        queue.ts                   # Sequential batch processing with progress
     types/
-      transcript.ts              # Shared types
-      messages.ts                # Extension message protocol types
-  dist/                          # Built extension — load as unpacked in Chrome
-  manifest.json                  # MV3 manifest
+      transcript.ts                # Shared types
+      messages.ts                  # Extension message protocol types
+  dist/                            # Built extension — load as unpacked in Chrome
+  manifest.json                    # MV3 manifest (4 content_scripts entries)
   vite.config.ts
+  scripts/
+    build.mjs                      # Vite + esbuild orchestrator (8 bundles)
   package.json
 ```
 
@@ -320,12 +377,52 @@ npm run lint         # tsc --noEmit (type check)
 ```
 
 To test the extension: `npm run build` → Chrome → `chrome://extensions` → Developer mode →
-"Load unpacked" → select `dist/` → open any YouTube video → click extension icon to open side panel.
- 
-## Gap Detail
+"Load unpacked" → select `dist/` → open any YouTube video → side panel populates automatically
+via the MAIN-world interceptor. Click the toolbar icon to open the side panel if it isn't pinned.
 
-Full per-gap implementation specs with files-to-modify and definition-of-done are in
-`docs/runs/run-1to4-remaining.md`. Read it before starting work on any gap.
+After reloading the extension in chrome://extensions, also reload any open YouTube tabs once so
+they pick up the new content scripts (orphaned scripts are safe — they shut down quietly — but
+they won't broadcast captures until refreshed).
+
+### Node version
+
+Homebrew Node 25 on Apple Silicon currently fails to start (missing
+`libsimdjson.31.dylib` after a Homebrew simdjson upgrade). Until that's
+relinked, prefer the nvm-installed Node v22:
+
+```bash
+PATH="/Users/ancplua/.nvm/versions/node/v22.21.1/bin:$PATH" npm run build
+```
+
+Or fix Homebrew once with `brew reinstall node`.
+ 
+## Deferred / out of scope
+
+The bleeding-edge rewrite (commits `832684c` … `5e1e9ec`) intentionally
+left the following undone. Pull any of them into the next session if
+asked, otherwise leave alone:
+
+- **EXTRA-004 wiring (`BilingualView.tsx`)** — the component exists but has
+  no toolbar entry. Wiring it needs a target-language picker and dual-track
+  state in `App.tsx`, plus a new view mode in `TranscriptView.tsx`.
+- **`TranscriptView.tsx` / `AiPanel.tsx` splits** — bloat is real but
+  splitting carries regression risk for no immediate user-visible win.
+- **Inline-SVG → `components/icons.tsx` consolidation** — four files
+  duplicate the close-X glyph; the rest are unique. Low-impact.
+- **Hugging Face Hub host-permission opt-in** — `manifest.json` does *not*
+  list `huggingface.co`. Whisper still works because transformers.js
+  fetches via standard CORS. To strictly honour the "no surprise network
+  requests" privacy line, ask the user via `chrome.permissions.request`
+  before the first model download.
+- **YouTube Music app, YouTube Live captions, Prompt-API audio multimodal,
+  Vimeo MAIN-world interceptor, packaged offline Whisper, floating overlay,
+  Web Neural Network API.**
+
+## Gap Detail (legacy)
+
+`docs/runs/run-1to4-remaining.md` is preserved for historical reference but
+the gaps it describes are mostly closed by the rewrite. Check the parity
+table above for current state before consulting it.
 
 ## Validation Checklist
 
