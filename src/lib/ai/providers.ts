@@ -278,7 +278,12 @@ interface LanguageModelSession {
 
 interface LanguageModelStatic {
     availability(): Promise<"unavailable" | "downloadable" | "downloading" | "available">;
-    create(options?: { systemPrompt?: string; initialPrompts?: { role: string; content: string }[] }): Promise<LanguageModelSession>;
+    create(options?: {
+        systemPrompt?: string;
+        initialPrompts?: { role: string; content: string }[];
+        expectedInputs?: { type: "text"; languages?: string[] }[];
+        expectedOutputs?: { type: "text"; languages?: string[] }[];
+    }): Promise<LanguageModelSession>;
 }
 
 function getLanguageModel(): LanguageModelStatic | undefined {
@@ -320,6 +325,8 @@ function createChromeAiProvider(): AiProvider {
             }
             const session = await lm.create({
                 initialPrompts: [{ role: "system", content: systemPrompt }],
+                expectedInputs: [{ type: "text", languages: ["en", "es", "ja"] }],
+                expectedOutputs: [{ type: "text", languages: ["en"] }],
             });
             try {
                 return await session.prompt(userMessage);
