@@ -34,12 +34,19 @@ interface LanguageModelSession {
   destroy?(): void;
 }
 
+interface LanguageModelExpectation {
+  type: "text";
+  languages?: string[];
+}
+
 interface LanguageModelStatic {
   availability(): Promise<"unavailable" | "downloadable" | "downloading" | "available">;
   create(options?: {
     initialPrompts?: { role: "system" | "user" | "assistant"; content: string }[];
     temperature?: number;
     topK?: number;
+    expectedInputs?: LanguageModelExpectation[];
+    expectedOutputs?: LanguageModelExpectation[];
   }): Promise<LanguageModelSession>;
 }
 
@@ -88,6 +95,8 @@ export async function runChromeAiPrompt(
   if (status === "unavailable") throw new Error("Chrome built-in AI is unavailable on this device.");
   const session = await lm.create({
     initialPrompts: [{ role: "system", content: systemPrompt }],
+    expectedInputs: [{ type: "text", languages: ["en", "es", "ja"] }],
+    expectedOutputs: [{ type: "text", languages: ["en"] }],
   });
   try {
     return await session.prompt(userMessage);

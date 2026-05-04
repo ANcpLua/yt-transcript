@@ -564,7 +564,18 @@ export function App() {
                 )}
 
                 {state === "error" && error && (
-                    <ErrorMessage error={error.error} message={error.message} onRetry={handleRetry}/>
+                    <ErrorMessage
+                        error={error.error}
+                        message={error.message}
+                        onRetry={handleRetry}
+                        onTranscribeLocal={error.error === "fetch_failed" ? () => {
+                            const videoId = transcript?.videoId ?? pendingVideoId;
+                            if (!videoId) return;
+                            setPendingVideoId(videoId);
+                            setPendingTitle(transcript?.title ?? pendingTitle);
+                            handleStartTranscription();
+                        } : undefined}
+                    />
                 )}
 
                 {state === "loaded" && transcript && (
