@@ -13,7 +13,6 @@
   ],
   "host_permissions": [
     "*://*.youtube.com/*",
-    "*://*.googlevideo.com/*",
     "*://*.vimeo.com/*",
     "*://player.vimeo.com/*"
   ],

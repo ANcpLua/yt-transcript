@@ -35,7 +35,7 @@ We replace youtube-transcript.io feature-for-feature. This is the parity table:
 
 | ID | Their Feature | Their Tier | Our Status | Our Approach |
 |----|---|---|---|---|
-| F-001 | Single transcript extraction | Free (25/mo cap) | **DONE** | 3-layer fallback: content script DOM → WEB_EMBEDDED_PLAYER → watch page scrape (`innertube.ts:resolvePlayer`) |
+| F-001 | Single transcript extraction | Free (25/mo cap) | **DONE** | Intercept-first: MAIN-world fetch hook (`yt-interceptor.ts`) captures YouTube's own `youtubei/v1/get_transcript` + `player` calls, correlator merges and emits to side panel (`lib/intercept/`). Paste-URL fallback uses WEB_EMBEDDED_PLAYER + watch-page scrape (`innertube.ts:resolvePlayer`). |
 | F-002 | Playlist bulk extraction | Plus ($9.99/mo) | **DONE** | `UrlInput.tsx` detects playlist URLs → `chrome.runtime.sendMessage({type:"fetch-playlist"})` → video selection panel → batch queue |
 | F-003 | CSV bulk upload | Plus | **DONE** | `UrlInput.tsx` file input accepts `.csv/.txt`, parses video IDs via `parseVideoId`, feeds into `onSubmitBatch` |
 | F-004 | Channel ID finder + transcripts | Plus/Pro | **DONE** | `UrlInput.tsx` detects channel URLs → `chrome.runtime.sendMessage({type:"fetch-channel"})` → selection panel → batch |
@@ -128,70 +128,77 @@ skip steps or do them in wrong order):
 
 </execution_protocol>
 
-## Innertube API Reference
+## Transcript Extraction Architecture
 
-This is how transcript extraction works. Do not deviate from this unless YouTube changes it.
+The extension uses an **intercept-first** model. YouTube's own UI loads the
+transcript with full session auth (PO tokens, SAPISIDHASH, signed URLs); we
+ride on top of that work instead of duplicating it.
 
-<innertube_api>
+<extraction_layers>
 
-### Layer 1: Content Script DOM Extraction (preferred)
+### L0 — MAIN-world fetch interceptor (primary)
 
-The content script (`content/content.ts`) extracts `ytInitialPlayerResponse` from the YouTube watch page DOM.
-This is the most reliable method because:
-- Runs in the page context with the user's cookies/session
-- No CORS issues
-- No IP blocking (user's own browser)
-- YouTube has already authenticated the user
+`src/content/yt-interceptor.ts` runs in the page's JS context at
+`document_start`, **before** YouTube's bundle initialises and stores its
+own `fetch` reference in a closure. It patches `window.fetch` and
+`XMLHttpRequest.prototype.open/send`. On responses to a fixed allowlist:
 
-The content script caches the response and responds to `request-player-data` messages from the service worker.
+- `/youtubei/v1/get_transcript` — primary cue source
+- `/youtubei/v1/player` — title, captionTracks, description (chapters)
+- `/api/timedtext` — legacy timestamped-text shape
 
-### Layer 2: WEB_EMBEDDED_PLAYER Client
+…it `.clone()`s the response and dispatches a `CustomEvent("yt-tx-capture")`
+to the ISOLATED-world bridge. Every other URL is O(1) pass-through —
+bodies are never read. MAIN-world has no `chrome.*`, hence the bridge.
 
-```json
-{
-  "context": {
-    "client": {
-      "clientName": "WEB_EMBEDDED_PLAYER",
-      "clientVersion": "1.20260101.00.00"
-    }
-  },
-  "videoId": "VIDEO_ID"
-}
-```
+`src/content/yt-bridge.ts` (ISOLATED, document_start) listens for
+`yt-tx-capture` / `yt-tx-navigate`, parses the videoId out of the
+request body (direct field for `player`, base64 protobuf field-1 decode
+for `get_transcript`), and forwards to the service worker.
 
-WEB_EMBEDDED_PLAYER is exempt from PO token requirements. Use as fallback when content script extraction
-fails (e.g., user navigated away from the video page).
+`src/lib/intercept/correlator.ts` keeps a per-tab map combining a
+`player` capture (title, tracks, chapters) with a `get_transcript`
+capture (segments) into one `TranscriptResponse` and emits it once to
+the side panel as `intercepted-transcript`.
 
-### Layer 3: Watch Page Scrape
+This works for VEVO music videos and other content YouTube gates
+behind tokens we cannot replicate from MV3 — because we never make the
+request, we just observe the one YouTube already made.
 
-Fetch `youtube.com/watch?v=ID` via the service worker, parse `ytInitialPlayerResponse` from the HTML.
-Most fragile — use only when layers 1 and 2 fail.
+### L1 — paste-URL fallback
 
-### Caption Track Fetching
+If the user pastes a URL for a video they're not actively watching, the
+SW falls back to `src/background/innertube.ts`:
 
-From any layer's player response, extract `captions.playerCaptionsTracklistRenderer.captionTracks[]`.
-Each track has `baseUrl`, `languageCode`, `kind` ("asr" = auto-generated), `name.simpleText`.
+1. **WEB_EMBEDDED_PLAYER** Innertube call — exempt from PO tokens per
+   the yt-dlp wiki. Returns `captionTracks[].baseUrl`.
+2. **Watch-page scrape** — fetch `youtube.com/watch?v=ID`, regex out
+   `ytInitialPlayerResponse`. Last resort.
 
-Fetch transcript: `GET {baseUrl}&fmt=json3`
-For translation: `GET {baseUrl}&fmt=json3&tlang={targetLangCode}`
+Then `GET {baseUrl}&fmt=json3` for the timestamped events.
 
-Response:
-```json
-{
-  "events": [
-    { "tStartMs": 1500, "dDurationMs": 3000, "segs": [{ "utf8": "Hello " }, { "utf8": "world" }] }
-  ]
-}
-```
+This path covers the rare "paste a link with no matching open tab"
+case. For watch-page traffic L0 always wins.
 
-Parse: concatenate `segs[].utf8` per event. `tStartMs / 1000` = start seconds. Skip events with no `segs`.
+### Local Whisper (when no transcript exists at all)
+
+`src/background/transcribe/offscreen.ts` captures tab audio via
+`chrome.tabCapture` + `AudioWorkletNode` and runs Whisper through
+`@huggingface/transformers` v3 — WebGPU + dtype `q4f16` when
+`navigator.gpu` is present, WASM + `q8` fallback otherwise. Model
+weights stream from the Hugging Face CDN on first use and cache in
+`caches` storage.
+
+</extraction_layers>
 
 ### Known Risks
 
-- YouTube broke all HTML-scraping tools ~June 2025 by changing authentication
-- PO tokens now required per-video for WEB client (not WEB_EMBEDDED_PLAYER)
-- ANDROID client now requires PO tokens per yt-dlp wiki
-- Innertube API has no stability guarantees
+- YouTube can change its `get_transcript` JSON shape — `parseGetTranscript.ts`
+  handles both shapes seen in production; add new ones there.
+- YouTube can `Object.freeze(window)` in the future, fighting fetch
+  re-patching. Currently doesn't.
+- WebGPU isn't universal; WASM fallback is the safety net.
+- L0 only fires on watch pages — paste-URL flows still need L1.
 
 </innertube_api>
 
