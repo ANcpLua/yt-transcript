@@ -512,9 +512,9 @@ export function App() {
 
                 {state === "no-captions" && (
                     <div className="mt-8 text-center">
-                        <h3 className="mb-1 text-base font-medium text-slate-900 dark:text-white">No captions</h3>
+                        <h3 className="mb-1 text-base font-medium text-slate-900 dark:text-white">No transcript</h3>
                         <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-                            Transcribe locally instead — runs in your browser, ~2–3× realtime.
+                            This video doesn't have subtitles. We can transcribe the audio locally — runs in your browser, ~2–3× realtime.
                         </p>
                         <button
                             onClick={handleStartTranscription}

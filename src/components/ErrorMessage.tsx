@@ -6,8 +6,12 @@ interface ErrorMessageProps {
 
 const HEADINGS: Record<string, { heading: string; description: string }> = {
     no_captions: {
-        heading: "No captions",
-        description: "This video doesn't have captions.",
+        heading: "No transcript",
+        description: "This video doesn't have subtitles.",
+    },
+    fetch_failed: {
+        heading: "Couldn't get the transcript",
+        description: "YouTube didn't return readable subtitle data. Try again in a moment.",
     },
     unavailable: {
         heading: "Video unavailable",
