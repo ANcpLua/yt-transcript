@@ -9,12 +9,12 @@ import {isChromeAiAvailable, isChromeAiPromptAvailable} from "../lib/ai/chrome-a
 type WhisperState = "unknown" | "not-downloaded" | "downloading" | "ready";
 
 
-const PROVIDERS: { id: AiProviderId; label: string; free: boolean }[] = [
-    {id: "chrome-ai", label: "Chrome AI", free: true},
-    {id: "ollama", label: "Ollama", free: true},
-    {id: "openai", label: "OpenAI", free: false},
-    {id: "anthropic", label: "Anthropic", free: false},
-    {id: "google", label: "Google Gemini", free: false},
+const PROVIDERS: { id: AiProviderId; label: string }[] = [
+    {id: "chrome-ai", label: "Chrome AI"},
+    {id: "ollama", label: "Ollama"},
+    {id: "openai", label: "OpenAI"},
+    {id: "anthropic", label: "Anthropic"},
+    {id: "google", label: "Gemini"},
 ];
 
 export function formatQuota(kb: number): string {
@@ -217,27 +217,26 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 backdrop-blur-sm py-10" onClick={onClose}>
             <div
-                className="mx-4 w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-800"
+                className="mx-4 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900 dark:ring-1 dark:ring-white/10"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="mb-6 flex items-center justify-between">
-                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">Settings</h2>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                  d="M6 18L18 6M6 6l12 12"/>
+                    <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Settings</h2>
+                    <button onClick={onClose} aria-label="Close" className="-m-1 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
                         </svg>
                     </button>
                 </div>
 
                 {/* AI Provider */}
                 <section className="mb-6">
-                    <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         AI Provider
                     </h3>
-                    <div className="mb-3 flex flex-wrap gap-2">
+                    <div className="mb-3 flex flex-wrap gap-1.5">
                         {PROVIDERS.map((p) => {
                             const isActive = prefs.aiProvider === p.id;
                             const isSelected = selectedProvider === p.id;
@@ -245,15 +244,16 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                                 <button
                                     key={p.id}
                                     onClick={() => setSelectedProvider(p.id)}
-                                    className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                                    className={`relative rounded-md px-3 py-1.5 text-sm transition ${
                                         isSelected
-                                            ? "bg-blue-600 text-white"
-                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
+                                            ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
+                                            : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
                                     }`}
                                 >
                                     {p.label}
-                                    {p.free && <span className={`ml-1 text-xs ${isSelected ? "text-blue-100" : "text-green-600 dark:text-green-400"}`}>Free</span>}
-                                    {isActive && <span className="ml-1">✓</span>}
+                                    {isActive && !isSelected && (
+                                        <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-blue-500 align-middle" aria-label="active" />
+                                    )}
                                 </button>
                             );
                         })}
@@ -261,71 +261,72 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
 
                     {/* Chrome AI panel */}
                     {selectedProvider === "chrome-ai" && (
-                        <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-600">
-                            <p className="mb-2 text-sm text-gray-700 dark:text-gray-300">
-                                Runs Gemini Nano on-device. No key, no network calls, free.
+                        <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                            <p className="mb-2 text-sm text-slate-700 dark:text-slate-300">
+                                Gemini Nano, on-device. No key, no network.
                             </p>
-                            <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-                                {chromeAiStatus === "checking" && "Checking availability..."}
-                                {chromeAiStatus === "available" && "✅ Available — supports all features."}
-                                {chromeAiStatus === "summarizer-only" && "⚠️ Summarizer only. The Prompt API requires Edge/Chrome 138+ and may need chrome://flags/#prompt-api-for-gemini-nano."}
-                                {chromeAiStatus === "unavailable" && "❌ Not available. Update to Edge/Chrome 138+ or enable chrome://flags/#prompt-api-for-gemini-nano."}
+                            <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+                                {chromeAiStatus === "checking" && "Checking…"}
+                                {chromeAiStatus === "available" && "Ready — supports every feature."}
+                                {chromeAiStatus === "summarizer-only" && "Summary only. Enable the Prompt API flag for the rest."}
+                                {chromeAiStatus === "unavailable" && "Needs Edge or Chrome 138+ with the Prompt API flag enabled."}
                             </p>
-                            <button
-                                onClick={handleSelectChromeAi}
-                                disabled={chromeAiStatus === "unavailable"}
-                                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                            >
-                                {prefs.aiProvider === "chrome-ai" ? "Selected" : "Use Chrome AI"}
-                            </button>
+                            {prefs.aiProvider === "chrome-ai" ? (
+                                <span className="text-sm text-slate-500 dark:text-slate-400">Active</span>
+                            ) : (
+                                <button
+                                    onClick={handleSelectChromeAi}
+                                    disabled={chromeAiStatus === "unavailable"}
+                                    className="rounded-md bg-slate-900 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+                                >
+                                    Use Chrome AI
+                                </button>
+                            )}
                         </div>
                     )}
 
                     {/* Ollama panel */}
                     {selectedProvider === "ollama" && (
-                        <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-600">
-                            <p className="mb-2 text-sm text-gray-700 dark:text-gray-300">
-                                Local LLM via Ollama. Free. Install from{" "}
+                        <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                            <p className="mb-3 text-sm text-slate-700 dark:text-slate-300">
+                                Local LLM via{" "}
                                 <a href="https://ollama.com/download" target="_blank" rel="noreferrer"
-                                   className="text-blue-600 hover:underline dark:text-blue-400">ollama.com</a>,
-                                run <code className="rounded bg-gray-100 px-1 dark:bg-gray-700">ollama pull llama3.2</code>.
+                                   className="underline decoration-slate-300 underline-offset-2 hover:decoration-slate-500 dark:decoration-slate-600">Ollama</a>.
+                                Run <code className="rounded bg-slate-100 px-1 font-mono text-[11px] dark:bg-slate-800">ollama pull llama3.2</code> first.
                             </p>
-                            <div className="mb-2 grid gap-2">
-                                <label className="text-xs text-gray-500 dark:text-gray-400">
-                                    Server URL
+                            <div className="mb-3 grid gap-2">
+                                <label className="text-xs text-slate-500 dark:text-slate-400">
+                                    Server
                                     <input
                                         type="text"
                                         value={ollamaUrl}
                                         onChange={(e) => { setOllamaUrl(e.target.value); setOllamaStatus("idle"); }}
                                         placeholder={DEFAULT_OLLAMA_URL}
-                                        className="mt-1 w-full rounded-lg border bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                        className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                                     />
                                 </label>
-                                <label className="text-xs text-gray-500 dark:text-gray-400">
+                                <label className="text-xs text-slate-500 dark:text-slate-400">
                                     Model
                                     <input
                                         type="text"
                                         value={ollamaModel}
                                         onChange={(e) => { setOllamaModel(e.target.value); setOllamaStatus("idle"); }}
                                         placeholder={DEFAULT_OLLAMA_MODEL}
-                                        className="mt-1 w-full rounded-lg border bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                        className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                                     />
                                 </label>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-3">
                                 <button
                                     onClick={() => void handleTestOllama()}
                                     disabled={ollamaStatus === "checking"}
-                                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                                    className="rounded-md bg-slate-900 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
                                 >
-                                    {ollamaStatus === "checking" ? "Testing..." : prefs.aiProvider === "ollama" ? "Update" : "Test & Use"}
+                                    {ollamaStatus === "checking" ? "Testing…" : prefs.aiProvider === "ollama" ? "Update" : "Test connection"}
                                 </button>
-                                {ollamaStatus === "ok" && <span className="text-sm text-green-600 dark:text-green-400">✓ Connected</span>}
-                                {ollamaStatus === "fail" && <span className="text-sm text-red-600 dark:text-red-400">Could not reach Ollama</span>}
+                                {ollamaStatus === "ok" && <span className="text-xs text-slate-500 dark:text-slate-400">Connected</span>}
+                                {ollamaStatus === "fail" && <span className="text-xs text-red-600 dark:text-red-400">Could not reach Ollama</span>}
                             </div>
-                            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                                The extension needs permission to call localhost. Allow when prompted.
-                            </p>
                         </div>
                     )}
 
@@ -333,89 +334,66 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                     {(selectedProvider === "openai" || selectedProvider === "anthropic" || selectedProvider === "google") && (
                         <>
                             <div className="flex gap-2">
-                                <div className="relative flex-1">
-                                    <input
-                                        type={showKey ? "text" : "password"}
-                                        value={keyInput}
-                                        onChange={(e) => {
-                                            setKeyInput(e.target.value);
-                                            setKeyStatus("idle");
-                                        }}
-                                        placeholder="Paste API key"
-                                        className="w-full rounded-lg border bg-white px-3 py-2 pr-10 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                                    />
-                                    <button
-                                        onClick={() => setShowKey(!showKey)}
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
-                                        aria-label={showKey ? "Hide key" : "Show key"}
-                                    >
-                                        {showKey ? (
-                                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                                      d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
-                                            </svg>
-                                        ) : (
-                                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                                            </svg>
-                                        )}
-                                    </button>
-                                </div>
+                                <input
+                                    type={showKey ? "text" : "password"}
+                                    value={keyInput}
+                                    onChange={(e) => { setKeyInput(e.target.value); setKeyStatus("idle"); }}
+                                    onFocus={() => setShowKey(true)}
+                                    onBlur={() => setShowKey(false)}
+                                    placeholder="API key"
+                                    spellCheck={false}
+                                    className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 font-mono text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                />
                                 <button
                                     onClick={() => void handleSaveKey()}
                                     disabled={keyStatus === "validating" || !keyInput.trim()}
-                                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                                    className="rounded-md bg-slate-900 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
                                 >
-                                    {keyStatus === "validating" ? "..." : "Save"}
+                                    {keyStatus === "validating" ? "…" : "Save"}
                                 </button>
-                                <button
-                                    onClick={() => void handleClearKey()}
-                                    className="rounded-lg bg-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300"
-                                >
-                                    Clear
-                                </button>
-                            </div>
-                            <div className="mt-2 flex items-center gap-2 text-sm">
-                                {keyStatus === "valid" && (
-                                    <span className="text-green-600 dark:text-green-400">Valid key</span>
-                                )}
-                                {keyStatus === "invalid" && (
-                                    <span className="text-red-600 dark:text-red-400">Invalid key</span>
+                                {keyInput && (
+                                    <button
+                                        onClick={() => void handleClearKey()}
+                                        className="rounded-md px-2 py-1.5 text-sm text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                                    >
+                                        Clear
+                                    </button>
                                 )}
                             </div>
-                            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                                Your API key is stored only in this browser. It is never sent to our server.
-                            </p>
+                            <div className="mt-2 flex items-center justify-between">
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    Stored only in this browser.
+                                </p>
+                                {keyStatus === "valid" && <span className="text-xs text-slate-500 dark:text-slate-400">Valid</span>}
+                                {keyStatus === "invalid" && <span className="text-xs text-red-600 dark:text-red-400">Invalid</span>}
+                            </div>
                         </>
                     )}
                 </section>
 
                 {/* Local Transcription */}
                 <section className="mb-6">
-                    <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         Local Transcription
                     </h3>
                     <div className="space-y-3">
                         <label className="flex items-center justify-between">
-                            <span className="text-sm text-gray-700 dark:text-gray-300">Model</span>
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Model</span>
                             <select
                                 value={prefs.whisperModel}
                                 onChange={(e) => updatePref("whisperModel", e.target.value as "tiny" | "base")}
-                                className="rounded-lg border px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                             >
-                                <option value="tiny">Tiny (40 MB, fast)</option>
-                                <option value="base">Base (150 MB, better)</option>
+                                <option value="tiny">Tiny — 40 MB</option>
+                                <option value="base">Base — 150 MB</option>
                             </select>
                         </label>
                         <div className="flex items-center justify-between">
-                            <span className="text-sm text-gray-700 dark:text-gray-300">
-                                {whisperState === "ready" && "Model ready"}
+                            <span className="text-sm text-slate-500 dark:text-slate-400">
+                                {whisperState === "ready" && "Ready"}
                                 {whisperState === "not-downloaded" && "Not downloaded"}
-                                {whisperState === "downloading" && `Downloading... ${whisperProgress}%`}
-                                {whisperState === "unknown" && "Checking..."}
+                                {whisperState === "downloading" && `Downloading… ${whisperProgress}%`}
+                                {whisperState === "unknown" && "Checking…"}
                             </span>
                             {whisperState === "not-downloaded" && (
                                 <button
@@ -423,7 +401,7 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                                         setWhisperState("downloading");
                                         chrome.runtime.sendMessage({type: "download-whisper", model: prefs.whisperModel});
                                     }}
-                                    className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                                    className="rounded-md border border-slate-200 px-3 py-1 text-xs text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                                 >
                                     Download
                                 </button>
@@ -434,38 +412,38 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                                         chrome.runtime.sendMessage({type: "delete-whisper"});
                                         setWhisperState("not-downloaded");
                                     }}
-                                    className="rounded-lg bg-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300"
+                                    className="rounded-md px-2 py-1 text-xs text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
                                 >
                                     Delete
                                 </button>
                             )}
                         </div>
                         {whisperState === "downloading" && (
-                            <div className="h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                            <div className="h-1 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                                 <div
-                                    className="h-full rounded-full bg-blue-500 transition-all"
+                                    className="h-full rounded-full bg-slate-400 transition-all dark:bg-slate-500"
                                     style={{width: `${Math.max(whisperProgress, 2)}%`}}
                                 />
                             </div>
                         )}
                     </div>
-                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        Used when videos have no captions. Transcribes audio locally in your browser. Chrome only.
+                    <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                        Used when a video has no captions. Runs in-browser, Chrome only.
                     </p>
                 </section>
 
                 {/* Preferences */}
                 <section className="mb-6">
-                    <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         Preferences
                     </h3>
                     <div className="space-y-3">
                         <label className="flex items-center justify-between">
-                            <span className="text-sm text-gray-700 dark:text-gray-300">View mode</span>
+                            <span className="text-sm text-slate-700 dark:text-slate-300">View</span>
                             <select
                                 value={prefs.viewMode}
                                 onChange={(e) => updatePref("viewMode", e.target.value as Preferences["viewMode"])}
-                                className="rounded-lg border px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                             >
                                 <option value="raw">Raw</option>
                                 <option value="sentences">Sentences</option>
@@ -475,14 +453,14 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                         </label>
                         {(["showTimestamps", "compactMode", "autoScroll"] as const).map((key) => (
                             <label key={key} className="flex items-center justify-between">
-                <span className="text-sm text-gray-700 dark:text-gray-300">
-                  {key === "showTimestamps" ? "Show timestamps" : key === "compactMode" ? "Compact mode" : "Auto-scroll"}
-                </span>
+                                <span className="text-sm text-slate-700 dark:text-slate-300">
+                                    {key === "showTimestamps" ? "Show timestamps" : key === "compactMode" ? "Compact mode" : "Auto-scroll"}
+                                </span>
                                 <input
                                     type="checkbox"
                                     checked={prefs[key]}
                                     onChange={(e) => updatePref(key, e.target.checked)}
-                                    className="h-4 w-4 rounded-sm"
+                                    className="h-4 w-4 rounded-sm accent-slate-900 dark:accent-white"
                                 />
                             </label>
                         ))}
@@ -491,59 +469,42 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
 
                 {/* Storage */}
                 <section>
-                    <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         Storage
                     </h3>
 
-                    {/* Warning banner */}
-                    {isWarning && (
-                        <div className="mb-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 dark:bg-amber-900/20 dark:border-amber-700">
-                            <p className="text-sm text-amber-800 dark:text-amber-300">
-                                Storage usage is high ({usagePercent.toFixed(0)}%). Consider exporting and clearing old data.
-                            </p>
+                    {storageEstimate && quotaKB > 0 && (
+                        <div className="mb-3">
+                            <div className="mb-1.5 flex justify-between text-xs text-slate-500 dark:text-slate-400">
+                                <span>{formatQuota(totalUsageKB)} used</span>
+                                <span>of {formatQuota(quotaKB)}</span>
+                            </div>
+                            <div className="h-1 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                                <div
+                                    className={`h-full rounded-full transition-all ${isWarning ? "bg-amber-500" : "bg-slate-400 dark:bg-slate-500"}`}
+                                    style={{width: `${Math.max(usagePercent, 1)}%`}}
+                                />
+                            </div>
+                            {isWarning && (
+                                <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+                                    Usage is high ({usagePercent.toFixed(0)}%). Export or clear old data.
+                                </p>
+                            )}
                         </div>
                     )}
-
-                    {/* Usage details */}
-                    <div className="mb-3 space-y-2">
-                        {storageEstimate && (
-                            <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                                <span>Storage used</span>
-                                <span>~{(storageEstimate.usage / 1024).toFixed(1)} KB</span>
-                            </div>
-                        )}
-
-                        {/* Progress bar */}
-                        {quotaKB > 0 && (
-                            <div>
-                                <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
-                                    <span>Total: ~{totalUsageKB.toFixed(1)} KB</span>
-                                    <span>Quota: ~{formatQuota(quotaKB)}</span>
-                                </div>
-                                <div className="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                                    <div
-                                        className={`h-full rounded-full transition-all ${
-                                            isWarning ? "bg-amber-500" : "bg-blue-500"
-                                        }`}
-                                        style={{width: `${Math.max(usagePercent, 1)}%`}}
-                                    />
-                                </div>
-                            </div>
-                        )}
-                    </div>
 
                     <div className="flex gap-2">
                         <button
                             onClick={() => void handleExport()}
-                            className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
+                            className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                         >
-                            Export all data
+                            Export
                         </button>
                         <button
                             onClick={() => void handleClearAll()}
-                            className="rounded-lg bg-red-100 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400"
+                            className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-slate-700 dark:text-red-400 dark:hover:bg-red-950/30"
                         >
-                            Clear all data
+                            Clear all
                         </button>
                     </div>
                 </section>
