@@ -63,6 +63,12 @@ run(
   `--bundle --format=esm --target=es2022 ` +
   `--outfile=dist/offscreen/offscreen.js`
 );
+// 5a. AudioWorklet processor (runs on the audio thread, separate bundle)
+run(
+  `npx esbuild src/background/transcribe/worklet-processor.ts ` +
+  `--bundle --format=iife --target=es2022 ` +
+  `--outfile=dist/offscreen/worklet-processor.js`
+);
 cpSync(
   resolve(root, "src/background/transcribe/offscreen.html"),
   resolve(dist, "offscreen/offscreen.html")

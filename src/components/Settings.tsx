@@ -53,6 +53,7 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
     const [ollamaUrl, setOllamaUrl] = useState(DEFAULT_OLLAMA_URL);
     const [ollamaModel, setOllamaModel] = useState(DEFAULT_OLLAMA_MODEL);
     const [ollamaStatus, setOllamaStatus] = useState<"idle" | "checking" | "ok" | "fail">("idle");
+    const hasWebGpu = typeof (navigator as Navigator & { gpu?: unknown }).gpu !== "undefined";
 
     // Load preferences once when the panel opens
     useEffect(() => {
@@ -428,7 +429,12 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                         )}
                     </div>
                     <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                        Used when a video has no captions. Runs in-browser, Chrome only.
+                        Used when a video has no transcript. Runs in your browser.
+                        {hasWebGpu ? (
+                            <span className="ml-1 text-slate-700 dark:text-slate-300">WebGPU on — fast.</span>
+                        ) : (
+                            <span className="ml-1">WebGPU not detected — falls back to WASM.</span>
+                        )}
                     </p>
                 </section>
 
