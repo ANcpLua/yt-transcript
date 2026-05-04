@@ -45,25 +45,25 @@ export function LegalPage({onBack}: { onBack: () => void }): React.JSX.Element {
         <div className="mx-auto max-w-3xl px-4 py-8">
             <button
                 onClick={onBack}
-                className="mb-6 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors"
+                className="mb-8 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
             >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/>
                 </svg>
                 Back
             </button>
 
-            <h1 className="mb-2 text-2xl font-bold text-slate-900 dark:text-white">
+            <h1 className="mb-1 text-xl font-semibold tracking-tight text-slate-900 dark:text-white">
                 Legal & Privacy
             </h1>
-            <p className="mb-8 text-sm text-slate-500 dark:text-slate-400">
+            <p className="mb-10 text-sm text-slate-500 dark:text-slate-400">
                 How this tool handles your data.
             </p>
 
-            <div className="space-y-6">
+            <div className="space-y-7">
                 {sections.map((section) => (
                     <section key={section.title}>
-                        <h2 className="mb-1.5 text-base font-semibold text-slate-800 dark:text-slate-200">
+                        <h2 className="mb-1.5 text-sm font-medium text-slate-900 dark:text-white">
                             {section.title}
                         </h2>
                         <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-400">
