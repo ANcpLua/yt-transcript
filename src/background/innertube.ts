@@ -1,3 +1,18 @@
+// Innertube fallback path.
+//
+// In the bleeding-edge architecture this only runs when the user pastes a
+// URL for a video they're not actively watching — i.e. when there is no
+// open YouTube watch tab for the MAIN-world interceptor to ride. For
+// videos the user *is* watching, src/lib/intercept/* delivers a
+// transcript without ever calling these endpoints.
+//
+// The chain is two layers:
+//   - WEB_EMBEDDED_PLAYER (no PO token requirement per yt-dlp wiki)
+//   - watch-page HTML scrape (last resort)
+//
+// The legacy "page DOM extraction by content script" path is gone —
+// the interceptor replaces it.
+
 import type { ApiError, Chapter, Segment, Track, TranscriptResponse } from "@/types/transcript";
 import { parseChapters } from "@/lib/parseChapters";
 
@@ -10,33 +25,17 @@ export const INNERTUBE_BROWSE_URL =
 const WEB_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
-export interface PlayerClient {
-  userAgent: string;
-  headers: Record<string, string>;
-  context: Record<string, unknown>;
-}
-
-// WEB_EMBEDDED_PLAYER first — does not require PO tokens (per yt-dlp wiki).
-// ANDROID as secondary — may work for some videos.
-// WEB last — most likely to require PO token / return UNPLAYABLE.
-export const PLAYER_CLIENTS: readonly PlayerClient[] = [
-  {
-    userAgent: WEB_UA,
-    headers: { "Content-Type": "application/json", "User-Agent": WEB_UA },
-    context: {
-      client: {
-        clientName: "WEB_EMBEDDED_PLAYER",
-        clientVersion: "1.20260330.00.00",
-      },
-      thirdParty: { embedUrl: "https://www.youtube.com" },
+const EMBEDDED_CLIENT = {
+  userAgent: WEB_UA,
+  headers: { "Content-Type": "application/json", "User-Agent": WEB_UA },
+  context: {
+    client: {
+      clientName: "WEB_EMBEDDED_PLAYER",
+      clientVersion: "1.20260330.00.00",
     },
+    thirdParty: { embedUrl: "https://www.youtube.com" },
   },
-  {
-    userAgent: WEB_UA,
-    headers: { "Content-Type": "application/json", "User-Agent": WEB_UA },
-    context: { client: { clientName: "WEB", clientVersion: "2.20260330.00.00" } },
-  },
-];
+} as const;
 
 export const CLIENT_CONTEXT = { client: { clientName: "WEB", clientVersion: "2.20260330.00.00" } };
 
@@ -71,13 +70,13 @@ interface InnertubeTrack {
   baseUrl: string;
   languageCode: string;
   kind?: string;
-  name?: { simpleText?: string; runs?: Array<{ text?: string }> };
+  name?: { simpleText?: string; runs?: { text?: string }[] };
 }
 
 interface InnertubeEvent {
   tStartMs?: number;
   dDurationMs?: number;
-  segs?: Array<{ utf8?: string }>;
+  segs?: { utf8?: string }[];
 }
 
 export interface PlayerResult {
@@ -87,14 +86,12 @@ export interface PlayerResult {
   userAgent: string;
 }
 
+// Used by both the SW fallback path and the intercept correlator.
 export function extractPlayerResult(raw: unknown, userAgent: string): PlayerResult | ApiError {
   const status = digStr(raw, "playabilityStatus.status");
   if (status === "ERROR") return { error: "invalid_id", message: "Video not found." };
   if (status === "LOGIN_REQUIRED")
     return { error: "unavailable", message: "This video requires login." };
-
-  // UNPLAYABLE is non-terminal — continue to next client/fallback.
-  // Only truly private/deleted videos should stop the chain.
   if (status === "UNPLAYABLE") {
     const reason = digStr(raw, "playabilityStatus.reason");
     return { error: "fetch_failed", message: reason || "Video is unplayable with this client." };
@@ -121,38 +118,20 @@ export function extractPlayerResult(raw: unknown, userAgent: string): PlayerResu
   };
 }
 
-async function tryInnertubeClients(videoId: string): Promise<PlayerResult | ApiError> {
-  let lastErr = "fetch_failed";
-  let gotEmptyTracks = false;
-
-  for (const client of PLAYER_CLIENTS) {
-    let raw: unknown;
-    try {
-      const res = await fetch(INNERTUBE_PLAYER_URL, {
-        method: "POST",
-        headers: client.headers,
-        body: JSON.stringify({ context: client.context, videoId }),
-      });
-      if (!res.ok) { lastErr = `HTTP ${res.status}`; continue; }
-      raw = await res.json();
-    } catch (e) {
-      lastErr = e instanceof Error ? e.message : String(e);
-      continue;
-    }
-
-    const result = extractPlayerResult(raw, client.userAgent);
-    if ("error" in result) {
-      // Only truly terminal errors stop the loop (invalid_id = video doesn't exist)
-      if (result.error === "invalid_id") return result;
-      lastErr = result.message;
-      continue;
-    }
-    if (result.captionTracks.length > 0) return result;
-    gotEmptyTracks = true;
+async function callEmbeddedPlayer(videoId: string): Promise<PlayerResult | ApiError> {
+  let raw: unknown;
+  try {
+    const res = await fetch(INNERTUBE_PLAYER_URL, {
+      method: "POST",
+      headers: EMBEDDED_CLIENT.headers,
+      body: JSON.stringify({ context: EMBEDDED_CLIENT.context, videoId }),
+    });
+    if (!res.ok) return { error: "fetch_failed", message: `HTTP ${res.status}` };
+    raw = await res.json();
+  } catch (e) {
+    return { error: "fetch_failed", message: e instanceof Error ? e.message : String(e) };
   }
-
-  if (gotEmptyTracks) return { error: "no_captions", message: "This video has no captions available." };
-  return { error: "fetch_failed", message: lastErr };
+  return extractPlayerResult(raw, EMBEDDED_CLIENT.userAgent);
 }
 
 async function scrapeWatchPage(videoId: string): Promise<PlayerResult | ApiError> {
@@ -160,7 +139,6 @@ async function scrapeWatchPage(videoId: string): Promise<PlayerResult | ApiError
   try {
     const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
       headers: { "User-Agent": WEB_UA, "Accept-Language": "en-US,en;q=0.9" },
-      credentials: "include",
     });
     if (!res.ok) return { error: "fetch_failed", message: `Watch page HTTP ${res.status}` };
     html = await res.text();
@@ -178,26 +156,10 @@ async function scrapeWatchPage(videoId: string): Promise<PlayerResult | ApiError
   }
 }
 
-// Fallback chain: content script page data → Innertube clients → watch page scrape.
-// Each layer uses a different mechanism so a single YouTube change can't break all three.
-export async function resolvePlayer(
-  videoId: string,
-  pagePlayerResponse?: unknown,
-): Promise<PlayerResult | ApiError> {
-  // Layer 1: Content script extracted the player response from the live YouTube page.
-  // This is the most reliable — the page already authenticated with YouTube.
-  if (pagePlayerResponse) {
-    const fromPage = extractPlayerResult(pagePlayerResponse, WEB_UA);
-    if (!("error" in fromPage) && fromPage.captionTracks.length > 0) return fromPage;
-  }
-
-  // Layer 2: Direct Innertube API calls (WEB_EMBEDDED_PLAYER, then WEB).
-  const fromApi = await tryInnertubeClients(videoId);
-  if (!("error" in fromApi)) return fromApi;
-
-  // Layer 3: Scrape the watch page HTML from the service worker.
-  // Only skip if the video genuinely doesn't exist.
-  if (fromApi.error === "invalid_id") return fromApi;
+async function resolvePlayer(videoId: string): Promise<PlayerResult | ApiError> {
+  const embedded = await callEmbeddedPlayer(videoId);
+  if (!("error" in embedded)) return embedded;
+  if (embedded.error === "invalid_id") return embedded;
   return scrapeWatchPage(videoId);
 }
 
@@ -230,16 +192,23 @@ function mapTracks(captionTracks: InnertubeTrack[]): Track[] {
   return captionTracks.map((t) => ({ languageCode: t.languageCode, name: getTrackName(t), kind: t.kind }));
 }
 
-// Fetch + parse the timedtext content for a single track. Returns the raw events
-// array if it succeeded, an ApiError otherwise. Empty bodies and unparseable
-// responses are treated as transient (fetch_failed) so the caller can retry
-// with a different player layer — they don't mean "captions don't exist".
+function pickTrack(captionTracks: InnertubeTrack[], lang?: string): InnertubeTrack {
+  return lang
+    ? (captionTracks.find((t) => t.languageCode === lang) ?? captionTracks[0]!)
+    : captionTracks[0]!;
+}
+
+function buildTextUrl(track: InnertubeTrack, translateTo?: string): string {
+  const tlang = translateTo && translateTo !== track.languageCode ? `&tlang=${translateTo}` : "";
+  return track.baseUrl + "&fmt=json3" + tlang;
+}
+
 async function fetchTimedText(textUrl: string, userAgent: string): Promise<unknown[] | ApiError> {
   try {
     const res = await fetch(textUrl, { headers: { "User-Agent": userAgent } });
     if (!res.ok) return { error: "fetch_failed", message: `YouTube returned HTTP ${res.status} when fetching the transcript.` };
     const body = await res.text();
-    if (!body.trim()) return { error: "fetch_failed", message: "YouTube returned an empty response. Try again, or sign out of YouTube and retry." };
+    if (!body.trim()) return { error: "fetch_failed", message: "YouTube returned an empty response. Open the video in a tab so we can capture it directly." };
     let parsed: unknown;
     try {
       parsed = JSON.parse(body);
@@ -252,24 +221,12 @@ async function fetchTimedText(textUrl: string, userAgent: string): Promise<unkno
   }
 }
 
-function pickTrack(captionTracks: InnertubeTrack[], lang?: string): InnertubeTrack {
-  return lang
-    ? (captionTracks.find((t) => t.languageCode === lang) ?? captionTracks[0]!)
-    : captionTracks[0]!;
-}
-
-function buildTextUrl(track: InnertubeTrack, translateTo?: string): string {
-  const tlang = translateTo && translateTo !== track.languageCode ? `&tlang=${translateTo}` : "";
-  return track.baseUrl + "&fmt=json3" + tlang;
-}
-
 export async function fetchTranscript(
   videoId: string,
   lang?: string,
   translateTo?: string,
-  pagePlayerResponse?: unknown,
 ): Promise<TranscriptResponse | ApiError> {
-  const player = await resolvePlayer(videoId, pagePlayerResponse);
+  const player = await resolvePlayer(videoId);
   if ("error" in player) return player;
 
   const { title, captionTracks, shortDescription } = player;
@@ -277,45 +234,13 @@ export async function fetchTranscript(
     return { error: "no_captions", message: "This video has no transcript. Captions weren't created for it." };
 
   const track = pickTrack(captionTracks, lang);
-  let events = await fetchTimedText(buildTextUrl(track, translateTo), player.userAgent);
-
-  // If the first attempt used the page-extracted player response and the timedtext
-  // fetch came back empty/unparseable, the page URL probably needs a PO token we
-  // don't have. Retry by re-resolving without page data — that forces Innertube
-  // (WEB_EMBEDDED_PLAYER first), which doesn't need PO tokens.
-  if ("error" in events && pagePlayerResponse !== undefined) {
-    const fallbackPlayer = await resolvePlayer(videoId, undefined);
-    if (!("error" in fallbackPlayer) && fallbackPlayer.captionTracks.length > 0) {
-      const fallbackTrack = pickTrack(fallbackPlayer.captionTracks, lang);
-      const fallbackEvents = await fetchTimedText(buildTextUrl(fallbackTrack, translateTo), fallbackPlayer.userAgent);
-      if (!("error" in fallbackEvents)) {
-        events = fallbackEvents;
-        // Use the fallback player's tracks for downstream rendering since they
-        // pair with the URL we actually got data from.
-        const segments = parseSegments(fallbackEvents);
-        if (segments.length === 0) return { error: "fetch_failed", message: "YouTube returned a transcript with no readable segments." };
-        return buildResponse(videoId, fallbackPlayer.title, fallbackTrack, fallbackPlayer.captionTracks, segments, fallbackPlayer.shortDescription, translateTo);
-      }
-    }
-  }
-
+  const events = await fetchTimedText(buildTextUrl(track, translateTo), player.userAgent);
   if ("error" in events) return events;
 
   const segments = parseSegments(events);
-  if (segments.length === 0) return { error: "fetch_failed", message: "YouTube returned a transcript with no readable segments." };
+  if (segments.length === 0)
+    return { error: "fetch_failed", message: "YouTube returned a transcript with no readable segments." };
 
-  return buildResponse(videoId, title, track, captionTracks, segments, shortDescription, translateTo);
-}
-
-function buildResponse(
-  videoId: string,
-  title: string,
-  track: InnertubeTrack,
-  captionTracks: InnertubeTrack[],
-  segments: Segment[],
-  shortDescription: string,
-  translateTo?: string,
-): TranscriptResponse {
   const language = track.languageCode;
   const chapters: Chapter[] = parseChapters(shortDescription);
   return {
@@ -332,9 +257,8 @@ function buildResponse(
 
 export async function fetchTracks(
   videoId: string,
-  pagePlayerResponse?: unknown,
 ): Promise<{ tracks: Track[]; title: string } | ApiError> {
-  const player = await resolvePlayer(videoId, pagePlayerResponse);
+  const player = await resolvePlayer(videoId);
   if ("error" in player) return player;
 
   const { title, captionTracks } = player;

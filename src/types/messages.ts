@@ -13,19 +13,6 @@ export interface PlayerTimeMessage {
   currentTime: number;
 }
 
-// -- Background -> Content script (request page data) --
-
-export interface RequestPlayerDataMessage {
-  type: "request-player-data";
-  videoId: string;
-}
-
-export interface PlayerDataResponseMessage {
-  type: "player-data-response";
-  videoId: string;
-  playerResponse: unknown | null;
-}
-
 // -- ISOLATED-world bridge -> Background (intercepted YouTube responses) --
 
 export type InterceptKind = "get_transcript" | "player" | "timedtext";
@@ -214,7 +201,6 @@ export interface AiErrorMessage {
 export type ContentToBackgroundMessage =
   | VideoDetectedMessage
   | PlayerTimeMessage
-  | PlayerDataResponseMessage
   | InterceptedCaptureMessage
   | InterceptedNavigateMessage;
 
@@ -249,9 +235,7 @@ export type BackgroundToPanelMessage =
   | WhisperStatusMessage
   | DownloadWhisperProgressMessage;
 
-export type BackgroundToContentMessage =
-  | SeekToMessage
-  | RequestPlayerDataMessage;
+export type BackgroundToContentMessage = SeekToMessage;
 
 export type ExtensionMessage =
   | ContentToBackgroundMessage
