@@ -5,6 +5,7 @@ dist/
 .playwright-mcp/
 .blackboard/
 .idea/
+.claude/
 *.tsbuildinfo
 *.ico
 .DS_Store
