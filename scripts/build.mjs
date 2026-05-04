@@ -42,6 +42,20 @@ run(
   `--outfile=dist/content/vimeo-content.js`
 );
 
+// 4a. YouTube MAIN-world fetch interceptor (esbuild, IIFE)
+run(
+  `npx esbuild src/content/yt-interceptor.ts ` +
+  `--bundle --format=iife --target=es2022 ` +
+  `--outfile=dist/content/yt-interceptor.js`
+);
+
+// 4b. YouTube ISOLATED-world bridge (esbuild, IIFE)
+run(
+  `npx esbuild src/content/yt-bridge.ts ` +
+  `--bundle --format=iife --target=es2022 ` +
+  `--outfile=dist/content/yt-bridge.js`
+);
+
 // 5. Offscreen document (esbuild, ESM — runs in offscreen page context)
 mkdirSync(resolve(dist, "offscreen"), { recursive: true });
 run(
