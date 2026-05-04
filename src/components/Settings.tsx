@@ -1,18 +1,21 @@
 import {useCallback, useEffect, useState} from "react";
-import type {Preferences} from "../types/transcript";
+import type {AiProviderId, Preferences} from "../types/transcript";
 import {getApiKey, getPreferences, removeApiKey, saveApiKey, savePreferences} from "../lib/storage/preferences";
 import {clearAllData, exportAllData} from "../lib/storage/saved";
 import {clearHistory} from "../lib/storage/history";
-import {getProvider} from "../lib/ai/providers";
+import {DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL, getProvider} from "../lib/ai/providers";
+import {isChromeAiAvailable, isChromeAiPromptAvailable} from "../lib/ai/chrome-ai";
 
 type WhisperState = "unknown" | "not-downloaded" | "downloading" | "ready";
 
 
-const PROVIDERS = [
-    {id: "openai", label: "OpenAI"},
-    {id: "anthropic", label: "Anthropic"},
-    {id: "google", label: "Google Gemini"},
-] as const;
+const PROVIDERS: { id: AiProviderId; label: string; free: boolean }[] = [
+    {id: "chrome-ai", label: "Chrome AI", free: true},
+    {id: "ollama", label: "Ollama", free: true},
+    {id: "openai", label: "OpenAI", free: false},
+    {id: "anthropic", label: "Anthropic", free: false},
+    {id: "google", label: "Google Gemini", free: false},
+];
 
 export function formatQuota(kb: number): string {
     if (kb >= 1024 * 1024) return `${(kb / (1024 * 1024)).toFixed(1)} GB`;
@@ -39,13 +42,17 @@ const DEFAULT_PREFS: Preferences = {
 
 export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) {
     const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
-    const [selectedProvider, setSelectedProvider] = useState<string>("openai");
+    const [selectedProvider, setSelectedProvider] = useState<AiProviderId>("chrome-ai");
     const [keyInput, setKeyInput] = useState("");
     const [showKey, setShowKey] = useState(false);
     const [keyStatus, setKeyStatus] = useState<KeyStatus>("idle");
     const [storageEstimate, setStorageEstimate] = useState<{usage: number; quota: number} | null>(null);
     const [whisperState, setWhisperState] = useState<WhisperState>("unknown");
     const [whisperProgress, setWhisperProgress] = useState(0);
+    const [chromeAiStatus, setChromeAiStatus] = useState<"checking" | "available" | "summarizer-only" | "unavailable">("checking");
+    const [ollamaUrl, setOllamaUrl] = useState(DEFAULT_OLLAMA_URL);
+    const [ollamaModel, setOllamaModel] = useState(DEFAULT_OLLAMA_MODEL);
+    const [ollamaStatus, setOllamaStatus] = useState<"idle" | "checking" | "ok" | "fail">("idle");
 
     // Load preferences once when the panel opens
     useEffect(() => {
@@ -55,7 +62,27 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
             const p = await getPreferences();
             if (cancelled) return;
             setPrefs(p);
-            setSelectedProvider(p.aiProvider ?? "openai");
+            setSelectedProvider(p.aiProvider ?? "chrome-ai");
+            setOllamaUrl(p.ollamaUrl ?? DEFAULT_OLLAMA_URL);
+            setOllamaModel(p.ollamaModel ?? DEFAULT_OLLAMA_MODEL);
+        })();
+        return () => { cancelled = true; };
+    }, [isOpen]);
+
+    // Detect Chrome built-in AI availability
+    useEffect(() => {
+        if (!isOpen) return;
+        let cancelled = false;
+        void (async () => {
+            const promptOk = await isChromeAiPromptAvailable();
+            if (cancelled) return;
+            if (promptOk) {
+                setChromeAiStatus("available");
+                return;
+            }
+            const summarizerOk = await isChromeAiAvailable();
+            if (cancelled) return;
+            setChromeAiStatus(summarizerOk ? "summarizer-only" : "unavailable");
         })();
         return () => { cancelled = true; };
     }, [isOpen]);
@@ -123,7 +150,7 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
         const valid = await provider.validateKey();
         if (valid) {
             await saveApiKey(selectedProvider, keyInput.trim());
-            updatePref("aiProvider", selectedProvider as Preferences["aiProvider"]);
+            updatePref("aiProvider", selectedProvider);
             setKeyStatus("valid");
         } else {
             setKeyStatus("invalid");
@@ -136,6 +163,29 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
         setKeyStatus("idle");
         if (prefs.aiProvider === selectedProvider) {
             updatePref("aiProvider", null);
+        }
+    };
+
+    const handleSelectChromeAi = () => {
+        if (chromeAiStatus === "unavailable") return;
+        updatePref("aiProvider", "chrome-ai");
+    };
+
+    const handleTestOllama = async () => {
+        setOllamaStatus("checking");
+        const provider = getProvider("ollama", { url: ollamaUrl.trim() || DEFAULT_OLLAMA_URL, model: ollamaModel.trim() || DEFAULT_OLLAMA_MODEL });
+        const ok = await provider.validateKey();
+        setOllamaStatus(ok ? "ok" : "fail");
+        if (ok) {
+            const next = {
+                ...prefs,
+                aiProvider: "ollama" as const,
+                ollamaUrl: ollamaUrl.trim() || DEFAULT_OLLAMA_URL,
+                ollamaModel: ollamaModel.trim() || DEFAULT_OLLAMA_MODEL,
+            };
+            setPrefs(next);
+            void savePreferences(next);
+            onPreferencesChange(next);
         }
     };
 
@@ -187,78 +237,160 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                     <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                         AI Provider
                     </h3>
-                    <div className="mb-3 flex gap-2">
-                        {PROVIDERS.map((p) => (
-                            <button
-                                key={p.id}
-                                onClick={() => setSelectedProvider(p.id)}
-                                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                                    selectedProvider === p.id
-                                        ? "bg-blue-600 text-white"
-                                        : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
-                                }`}
-                            >
-                                {p.label}
-                            </button>
-                        ))}
+                    <div className="mb-3 flex flex-wrap gap-2">
+                        {PROVIDERS.map((p) => {
+                            const isActive = prefs.aiProvider === p.id;
+                            const isSelected = selectedProvider === p.id;
+                            return (
+                                <button
+                                    key={p.id}
+                                    onClick={() => setSelectedProvider(p.id)}
+                                    className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                                        isSelected
+                                            ? "bg-blue-600 text-white"
+                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
+                                    }`}
+                                >
+                                    {p.label}
+                                    {p.free && <span className={`ml-1 text-xs ${isSelected ? "text-blue-100" : "text-green-600 dark:text-green-400"}`}>Free</span>}
+                                    {isActive && <span className="ml-1">✓</span>}
+                                </button>
+                            );
+                        })}
                     </div>
-                    <div className="flex gap-2">
-                        <div className="relative flex-1">
-                            <input
-                                type={showKey ? "text" : "password"}
-                                value={keyInput}
-                                onChange={(e) => {
-                                    setKeyInput(e.target.value);
-                                    setKeyStatus("idle");
-                                }}
-                                placeholder="Paste API key"
-                                className="w-full rounded-lg border bg-white px-3 py-2 pr-10 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                            />
+
+                    {/* Chrome AI panel */}
+                    {selectedProvider === "chrome-ai" && (
+                        <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-600">
+                            <p className="mb-2 text-sm text-gray-700 dark:text-gray-300">
+                                Runs Gemini Nano on-device. No key, no network calls, free.
+                            </p>
+                            <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                                {chromeAiStatus === "checking" && "Checking availability..."}
+                                {chromeAiStatus === "available" && "✅ Available — supports all features."}
+                                {chromeAiStatus === "summarizer-only" && "⚠️ Summarizer only. The Prompt API requires Edge/Chrome 138+ and may need chrome://flags/#prompt-api-for-gemini-nano."}
+                                {chromeAiStatus === "unavailable" && "❌ Not available. Update to Edge/Chrome 138+ or enable chrome://flags/#prompt-api-for-gemini-nano."}
+                            </p>
                             <button
-                                onClick={() => setShowKey(!showKey)}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
-                                aria-label={showKey ? "Hide key" : "Show key"}
+                                onClick={handleSelectChromeAi}
+                                disabled={chromeAiStatus === "unavailable"}
+                                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                             >
-                                {showKey ? (
-                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                              d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
-                                    </svg>
-                                ) : (
-                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                                    </svg>
-                                )}
+                                {prefs.aiProvider === "chrome-ai" ? "Selected" : "Use Chrome AI"}
                             </button>
                         </div>
-                        <button
-                            onClick={() => void handleSaveKey()}
-                            disabled={keyStatus === "validating" || !keyInput.trim()}
-                            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                        >
-                            {keyStatus === "validating" ? "..." : "Save"}
-                        </button>
-                        <button
-                            onClick={() => void handleClearKey()}
-                            className="rounded-lg bg-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300"
-                        >
-                            Clear
-                        </button>
-                    </div>
-                    <div className="mt-2 flex items-center gap-2 text-sm">
-                        {keyStatus === "valid" && (
-                            <span className="text-green-600 dark:text-green-400">Valid key</span>
-                        )}
-                        {keyStatus === "invalid" && (
-                            <span className="text-red-600 dark:text-red-400">Invalid key</span>
-                        )}
-                    </div>
-                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        Your API key is stored only in this browser. It is never sent to our server.
-                    </p>
+                    )}
+
+                    {/* Ollama panel */}
+                    {selectedProvider === "ollama" && (
+                        <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-600">
+                            <p className="mb-2 text-sm text-gray-700 dark:text-gray-300">
+                                Local LLM via Ollama. Free. Install from{" "}
+                                <a href="https://ollama.com/download" target="_blank" rel="noreferrer"
+                                   className="text-blue-600 hover:underline dark:text-blue-400">ollama.com</a>,
+                                run <code className="rounded bg-gray-100 px-1 dark:bg-gray-700">ollama pull llama3.2</code>.
+                            </p>
+                            <div className="mb-2 grid gap-2">
+                                <label className="text-xs text-gray-500 dark:text-gray-400">
+                                    Server URL
+                                    <input
+                                        type="text"
+                                        value={ollamaUrl}
+                                        onChange={(e) => { setOllamaUrl(e.target.value); setOllamaStatus("idle"); }}
+                                        placeholder={DEFAULT_OLLAMA_URL}
+                                        className="mt-1 w-full rounded-lg border bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                    />
+                                </label>
+                                <label className="text-xs text-gray-500 dark:text-gray-400">
+                                    Model
+                                    <input
+                                        type="text"
+                                        value={ollamaModel}
+                                        onChange={(e) => { setOllamaModel(e.target.value); setOllamaStatus("idle"); }}
+                                        placeholder={DEFAULT_OLLAMA_MODEL}
+                                        className="mt-1 w-full rounded-lg border bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                    />
+                                </label>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => void handleTestOllama()}
+                                    disabled={ollamaStatus === "checking"}
+                                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                    {ollamaStatus === "checking" ? "Testing..." : prefs.aiProvider === "ollama" ? "Update" : "Test & Use"}
+                                </button>
+                                {ollamaStatus === "ok" && <span className="text-sm text-green-600 dark:text-green-400">✓ Connected</span>}
+                                {ollamaStatus === "fail" && <span className="text-sm text-red-600 dark:text-red-400">Could not reach Ollama</span>}
+                            </div>
+                            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                The extension needs permission to call localhost. Allow when prompted.
+                            </p>
+                        </div>
+                    )}
+
+                    {/* Paid providers — API key input */}
+                    {(selectedProvider === "openai" || selectedProvider === "anthropic" || selectedProvider === "google") && (
+                        <>
+                            <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                    <input
+                                        type={showKey ? "text" : "password"}
+                                        value={keyInput}
+                                        onChange={(e) => {
+                                            setKeyInput(e.target.value);
+                                            setKeyStatus("idle");
+                                        }}
+                                        placeholder="Paste API key"
+                                        className="w-full rounded-lg border bg-white px-3 py-2 pr-10 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                    />
+                                    <button
+                                        onClick={() => setShowKey(!showKey)}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
+                                        aria-label={showKey ? "Hide key" : "Show key"}
+                                    >
+                                        {showKey ? (
+                                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                      d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+                                            </svg>
+                                        ) : (
+                                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                            </svg>
+                                        )}
+                                    </button>
+                                </div>
+                                <button
+                                    onClick={() => void handleSaveKey()}
+                                    disabled={keyStatus === "validating" || !keyInput.trim()}
+                                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                    {keyStatus === "validating" ? "..." : "Save"}
+                                </button>
+                                <button
+                                    onClick={() => void handleClearKey()}
+                                    className="rounded-lg bg-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300"
+                                >
+                                    Clear
+                                </button>
+                            </div>
+                            <div className="mt-2 flex items-center gap-2 text-sm">
+                                {keyStatus === "valid" && (
+                                    <span className="text-green-600 dark:text-green-400">Valid key</span>
+                                )}
+                                {keyStatus === "invalid" && (
+                                    <span className="text-red-600 dark:text-red-400">Invalid key</span>
+                                )}
+                            </div>
+                            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                Your API key is stored only in this browser. It is never sent to our server.
+                            </p>
+                        </>
+                    )}
                 </section>
 
                 {/* Local Transcription */}

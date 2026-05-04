@@ -252,9 +252,20 @@ export async function fetchTranscript(
 
   let events: unknown[];
   try {
-    const res = await fetch(textUrl, { headers: { "User-Agent": player.userAgent } });
+    const res = await fetch(textUrl, {
+      headers: { "User-Agent": player.userAgent },
+      credentials: "include",
+    });
     if (!res.ok) return { error: "fetch_failed", message: `Transcript fetch HTTP ${res.status}` };
-    events = digArr(await res.json() as Record<string, unknown>, "events");
+    const body = await res.text();
+    if (!body.trim()) return { error: "no_captions", message: "YouTube returned no captions for this video. It may be region-blocked, age-restricted, or have captions disabled." };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return { error: "no_captions", message: "Could not parse caption response from YouTube." };
+    }
+    events = digArr(parsed as Record<string, unknown>, "events");
   } catch (e) {
     return { error: "fetch_failed", message: e instanceof Error ? e.message : String(e) };
   }

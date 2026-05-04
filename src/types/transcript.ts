@@ -76,13 +76,17 @@ export interface SavedTranscript {
 
 export type Platform = "youtube" | "vimeo";
 
+export type AiProviderId = "chrome-ai" | "ollama" | "openai" | "anthropic" | "google";
+
 export interface Preferences {
   viewMode: "raw" | "sentences" | "paragraphs" | "tabular";
   showTimestamps: boolean;
   compactMode: boolean;
   autoScroll: boolean;
-  aiProvider: "openai" | "anthropic" | "google" | null;
+  aiProvider: AiProviderId | null;
   whisperModel: "tiny" | "base";
+  ollamaUrl?: string;
+  ollamaModel?: string;
 }
 
 export interface PlaylistResponse {

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "YouTube & Vimeo Transcript Extractor",
   "description": "Extract, search, and export video transcripts. Free. No signup.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "permissions": [
     "sidePanel",
     "activeTab",
@@ -23,6 +23,14 @@
     "*://generativelanguage.googleapis.com/*",
     "http://localhost:*/*"
   ],
+  "action": {
+    "default_title": "YouTube & Vimeo Transcript Extractor",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
   "side_panel": {
     "default_path": "sidepanel/index.html"
   },
