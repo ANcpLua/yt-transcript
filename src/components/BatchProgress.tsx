@@ -10,29 +10,16 @@ interface BatchProgressProps {
 
 const FORMATS = ["txt", "srt", "vtt", "json", "csv"] as const;
 
-function statusIcon(status: string): string {
+function statusDot(status: string): string {
     switch (status) {
         case "success":
-            return "\u2713";
+            return "bg-emerald-500";
         case "failed":
-            return "\u2717";
+            return "bg-red-500";
         case "processing":
-            return "\u25CB";
+            return "bg-slate-400 animate-pulse";
         default:
-            return "\u2014";
-    }
-}
-
-function statusColor(status: string): string {
-    switch (status) {
-        case "success":
-            return "text-green-600 dark:text-green-400";
-        case "failed":
-            return "text-red-600 dark:text-red-400";
-        case "processing":
-            return "text-blue-600 dark:text-blue-400 animate-pulse";
-        default:
-            return "text-slate-400 dark:text-slate-500";
+            return "bg-slate-200 dark:bg-slate-700";
     }
 }
 
@@ -49,52 +36,45 @@ export function BatchProgress({
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
     return (
-        <div className="w-full max-w-3xl mx-auto space-y-4">
-            {/* Progress bar */}
+        <div className="mx-auto w-full max-w-3xl space-y-4">
+            {/* Progress */}
             <div>
-                <div className="flex justify-between text-sm text-slate-600 dark:text-slate-300 mb-1">
-          <span>
-            {done} of {total} completed
-              {failedCount > 0 && (
-                  <span className="text-red-600 dark:text-red-400 ml-1">
-                ({failedCount} failed)
-              </span>
-              )}
-          </span>
-                    <span>{pct}%</span>
+                <div className="mb-1.5 flex items-baseline justify-between text-xs text-slate-500 dark:text-slate-400">
+                    <span>
+                        {done} of {total}
+                        {failedCount > 0 && <span className="ml-1.5 text-red-500 dark:text-red-400">{failedCount} failed</span>}
+                    </span>
+                    <span className="tabular-nums">{pct}%</span>
                 </div>
-                <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                <div className="h-1 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                     <div
-                        className="h-full bg-blue-600 rounded-full transition-all duration-300"
+                        className="h-full rounded-full bg-slate-500 transition-all duration-300 dark:bg-slate-400"
                         style={{width: `${pct}%`}}
                     />
                 </div>
             </div>
 
             {/* Item list */}
-            <div
-                className="max-h-64 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg divide-y divide-slate-100 dark:divide-slate-700">
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-800">
                 {items.map((item) => (
                     <div
                         key={item.videoId}
-                        className="flex items-center gap-3 px-4 py-2 text-sm"
+                        className="flex items-center gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-0 dark:border-slate-800/60"
                     >
-            <span className={`flex-shrink-0 font-mono ${statusColor(item.status)}`}>
-              {statusIcon(item.status)}
-            </span>
-                        <span className="flex-1 truncate text-slate-800 dark:text-slate-200">
-              {item.title ?? item.videoId}
-            </span>
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDot(item.status)}`} aria-label={item.status}/>
+                        <span className="flex-1 truncate text-slate-700 dark:text-slate-300">
+                            {item.title ?? item.videoId}
+                        </span>
                         {item.status === "failed" && item.error && (
-                            <span className="text-xs text-red-500 dark:text-red-400 truncate max-w-48">
-                {item.error}
-              </span>
+                            <span className="max-w-48 truncate text-xs text-red-500 dark:text-red-400">
+                                {item.error}
+                            </span>
                         )}
                         {item.status === "success" && (
                             <button
                                 type="button"
                                 onClick={() => onViewResult(item.videoId)}
-                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex-shrink-0"
+                                className="shrink-0 text-xs text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
                             >
                                 View
                             </button>
@@ -109,7 +89,7 @@ export function BatchProgress({
                     <button
                         type="button"
                         onClick={onCancel}
-                        className="px-4 py-2 text-sm bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                        className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                     >
                         Cancel
                     </button>
@@ -119,31 +99,30 @@ export function BatchProgress({
                             <button
                                 type="button"
                                 onClick={onRetry}
-                                className="px-4 py-2 text-sm bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors"
+                                className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                             >
-                                Retry Failed ({failedCount})
+                                Retry failed ({failedCount})
                             </button>
                         )}
 
                         {completedCount > 0 && (
-                            <div className="flex items-center gap-2 ml-auto">
+                            <div className="ml-auto flex items-center gap-1">
                                 {FORMATS.map((fmt) => (
-                                    <div key={fmt} className="flex gap-1">
-                                        <button
-                                            type="button"
-                                            onClick={() => onExport(fmt, "separate")}
-                                            className="px-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-sm hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
-                                            title={`Download as separate ${fmt.toUpperCase()} files (ZIP)`}
-                                        >
-                                            .{fmt}
-                                        </button>
-                                    </div>
+                                    <button
+                                        key={fmt}
+                                        type="button"
+                                        onClick={() => onExport(fmt, "separate")}
+                                        title={`Download separate ${fmt.toUpperCase()} files`}
+                                        className="rounded-md px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+                                    >
+                                        .{fmt}
+                                    </button>
                                 ))}
                                 <button
                                     type="button"
                                     onClick={() => onExport("txt", "merged")}
-                                    className="px-3 py-1.5 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-sm hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
-                                    title="Download all as one merged file"
+                                    title="Download all merged into one file"
+                                    className="ml-1 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
                                 >
                                     Merged
                                 </button>

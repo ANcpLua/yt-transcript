@@ -34,20 +34,20 @@ export function TagEditor({tags, onTagsChange}: TagEditorProps): React.JSX.Eleme
     }, [tags, onTagsChange]);
 
     return (
-        <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-600 dark:bg-slate-800">
+        <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800">
             {tags.map(tag => (
                 <span
                     key={tag}
-                    className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                    className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300"
                 >
                     {tag}
                     <button
                         type="button"
                         onClick={() => removeTag(tag)}
-                        className="ml-0.5 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-200"
+                        className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-100"
                         aria-label={`Remove tag ${tag}`}
                     >
-                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                         </svg>
                     </button>
@@ -59,8 +59,8 @@ export function TagEditor({tags, onTagsChange}: TagEditorProps): React.JSX.Eleme
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onBlur={() => { if (input.trim()) addTags(input); }}
-                placeholder={tags.length === 0 ? "Add tags (comma separated)..." : ""}
-                className="min-w-[120px] flex-1 border-none bg-transparent px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-hidden dark:text-slate-200 dark:placeholder:text-slate-500"
+                placeholder={tags.length === 0 ? "Add tags…" : ""}
+                className="min-w-[100px] flex-1 border-none bg-transparent px-1 py-0.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-hidden dark:text-slate-200 dark:placeholder:text-slate-500"
             />
         </div>
     );
