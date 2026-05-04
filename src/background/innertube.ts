@@ -230,6 +230,39 @@ function mapTracks(captionTracks: InnertubeTrack[]): Track[] {
   return captionTracks.map((t) => ({ languageCode: t.languageCode, name: getTrackName(t), kind: t.kind }));
 }
 
+// Fetch + parse the timedtext content for a single track. Returns the raw events
+// array if it succeeded, an ApiError otherwise. Empty bodies and unparseable
+// responses are treated as transient (fetch_failed) so the caller can retry
+// with a different player layer — they don't mean "captions don't exist".
+async function fetchTimedText(textUrl: string, userAgent: string): Promise<unknown[] | ApiError> {
+  try {
+    const res = await fetch(textUrl, { headers: { "User-Agent": userAgent } });
+    if (!res.ok) return { error: "fetch_failed", message: `YouTube returned HTTP ${res.status} when fetching the transcript.` };
+    const body = await res.text();
+    if (!body.trim()) return { error: "fetch_failed", message: "YouTube returned an empty response. Try again, or sign out of YouTube and retry." };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return { error: "fetch_failed", message: "YouTube returned an unexpected response format. The track URL may have expired — try again." };
+    }
+    return digArr(parsed as Record<string, unknown>, "events");
+  } catch (e) {
+    return { error: "fetch_failed", message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+function pickTrack(captionTracks: InnertubeTrack[], lang?: string): InnertubeTrack {
+  return lang
+    ? (captionTracks.find((t) => t.languageCode === lang) ?? captionTracks[0]!)
+    : captionTracks[0]!;
+}
+
+function buildTextUrl(track: InnertubeTrack, translateTo?: string): string {
+  const tlang = translateTo && translateTo !== track.languageCode ? `&tlang=${translateTo}` : "";
+  return track.baseUrl + "&fmt=json3" + tlang;
+}
+
 export async function fetchTranscript(
   videoId: string,
   lang?: string,
@@ -243,37 +276,49 @@ export async function fetchTranscript(
   if (captionTracks.length === 0)
     return { error: "no_captions", message: "This video has no transcript. Captions weren't created for it." };
 
-  const track = lang
-    ? (captionTracks.find((t) => t.languageCode === lang) ?? captionTracks[0]!)
-    : captionTracks[0]!;
+  const track = pickTrack(captionTracks, lang);
+  let events = await fetchTimedText(buildTextUrl(track, translateTo), player.userAgent);
 
-  const language = track.languageCode;
-  const textUrl = track.baseUrl + "&fmt=json3" + (translateTo && translateTo !== language ? `&tlang=${translateTo}` : "");
-
-  let events: unknown[];
-  try {
-    const res = await fetch(textUrl, {
-      headers: { "User-Agent": player.userAgent },
-    });
-    if (!res.ok) return { error: "fetch_failed", message: `YouTube returned HTTP ${res.status} when fetching the transcript.` };
-    const body = await res.text();
-    if (!body.trim()) return { error: "fetch_failed", message: "YouTube returned an empty response. Try again, or sign out of YouTube and retry." };
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(body);
-    } catch {
-      return { error: "fetch_failed", message: "YouTube returned an unexpected response format. The track URL may have expired — try again." };
+  // If the first attempt used the page-extracted player response and the timedtext
+  // fetch came back empty/unparseable, the page URL probably needs a PO token we
+  // don't have. Retry by re-resolving without page data — that forces Innertube
+  // (WEB_EMBEDDED_PLAYER first), which doesn't need PO tokens.
+  if ("error" in events && pagePlayerResponse !== undefined) {
+    const fallbackPlayer = await resolvePlayer(videoId, undefined);
+    if (!("error" in fallbackPlayer) && fallbackPlayer.captionTracks.length > 0) {
+      const fallbackTrack = pickTrack(fallbackPlayer.captionTracks, lang);
+      const fallbackEvents = await fetchTimedText(buildTextUrl(fallbackTrack, translateTo), fallbackPlayer.userAgent);
+      if (!("error" in fallbackEvents)) {
+        events = fallbackEvents;
+        // Use the fallback player's tracks for downstream rendering since they
+        // pair with the URL we actually got data from.
+        const segments = parseSegments(fallbackEvents);
+        if (segments.length === 0) return { error: "fetch_failed", message: "YouTube returned a transcript with no readable segments." };
+        return buildResponse(videoId, fallbackPlayer.title, fallbackTrack, fallbackPlayer.captionTracks, segments, fallbackPlayer.shortDescription, translateTo);
+      }
     }
-    events = digArr(parsed as Record<string, unknown>, "events");
-  } catch (e) {
-    return { error: "fetch_failed", message: e instanceof Error ? e.message : String(e) };
   }
+
+  if ("error" in events) return events;
 
   const segments = parseSegments(events);
   if (segments.length === 0) return { error: "fetch_failed", message: "YouTube returned a transcript with no readable segments." };
 
+  return buildResponse(videoId, title, track, captionTracks, segments, shortDescription, translateTo);
+}
+
+function buildResponse(
+  videoId: string,
+  title: string,
+  track: InnertubeTrack,
+  captionTracks: InnertubeTrack[],
+  segments: Segment[],
+  shortDescription: string,
+  translateTo?: string,
+): TranscriptResponse {
+  const language = track.languageCode;
   const chapters: Chapter[] = parseChapters(shortDescription);
-  const response: TranscriptResponse = {
+  return {
     videoId,
     title,
     language: translateTo ?? language,
@@ -283,8 +328,6 @@ export async function fetchTranscript(
     ...(chapters.length > 0 && { chapters }),
     ...(translateTo && translateTo !== language && { translatedFrom: language, translatedTo: translateTo }),
   };
-
-  return response;
 }
 
 export async function fetchTracks(
