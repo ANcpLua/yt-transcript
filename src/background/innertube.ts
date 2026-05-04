@@ -241,7 +241,7 @@ export async function fetchTranscript(
 
   const { title, captionTracks, shortDescription } = player;
   if (captionTracks.length === 0)
-    return { error: "no_captions", message: "This video has no captions available." };
+    return { error: "no_captions", message: "This video has no transcript. Captions weren't created for it." };
 
   const track = lang
     ? (captionTracks.find((t) => t.languageCode === lang) ?? captionTracks[0]!)
@@ -254,16 +254,15 @@ export async function fetchTranscript(
   try {
     const res = await fetch(textUrl, {
       headers: { "User-Agent": player.userAgent },
-      credentials: "include",
     });
-    if (!res.ok) return { error: "fetch_failed", message: `Transcript fetch HTTP ${res.status}` };
+    if (!res.ok) return { error: "fetch_failed", message: `YouTube returned HTTP ${res.status} when fetching the transcript.` };
     const body = await res.text();
-    if (!body.trim()) return { error: "no_captions", message: "YouTube returned no captions for this video. It may be region-blocked, age-restricted, or have captions disabled." };
+    if (!body.trim()) return { error: "fetch_failed", message: "YouTube returned an empty response. Try again, or sign out of YouTube and retry." };
     let parsed: unknown;
     try {
       parsed = JSON.parse(body);
     } catch {
-      return { error: "no_captions", message: "Could not parse caption response from YouTube." };
+      return { error: "fetch_failed", message: "YouTube returned an unexpected response format. The track URL may have expired — try again." };
     }
     events = digArr(parsed as Record<string, unknown>, "events");
   } catch (e) {
@@ -271,7 +270,7 @@ export async function fetchTranscript(
   }
 
   const segments = parseSegments(events);
-  if (segments.length === 0) return { error: "no_captions", message: "Transcript is empty." };
+  if (segments.length === 0) return { error: "fetch_failed", message: "YouTube returned a transcript with no readable segments." };
 
   const chapters: Chapter[] = parseChapters(shortDescription);
   const response: TranscriptResponse = {
@@ -297,7 +296,7 @@ export async function fetchTracks(
 
   const { title, captionTracks } = player;
   if (captionTracks.length === 0)
-    return { error: "no_captions", message: "This video has no captions available." };
+    return { error: "no_captions", message: "This video has no transcript. Captions weren't created for it." };
 
   return { tracks: mapTracks(captionTracks), title };
 }
