@@ -19,17 +19,15 @@ const providers: Record<Platform, TranscriptProvider> = {
   vimeo: new VimeoProvider(),
 };
 
-// Ask the content script on the active tab for page-extracted player data.
-// Works for both YouTube and Vimeo — content scripts use the same message protocol.
-async function requestPagePlayerData(videoId: string, platform: Platform): Promise<unknown | null> {
+// Vimeo's ISOLATED-world content script still extracts player config from
+// the DOM (Vimeo's auth is simpler — no PO tokens, no SAPISIDHASH). YouTube
+// no longer goes through this path; the MAIN-world interceptor + correlator
+// is the live capture and Innertube WEB_EMBEDDED_PLAYER is the paste-URL
+// fallback.
+async function requestVimeoPlayerData(videoId: string): Promise<unknown | null> {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id || !tab.url) return null;
-
-    const isYouTube = tab.url.includes("youtube.com");
-    const isVimeo = tab.url.includes("vimeo.com");
-    if ((platform === "youtube" && !isYouTube) || (platform === "vimeo" && !isVimeo)) return null;
-
+    if (!tab?.id || !tab.url || !tab.url.includes("vimeo.com")) return null;
     const response = await chrome.tabs.sendMessage(tab.id, {
       type: "request-player-data",
       videoId,
@@ -60,33 +58,43 @@ chrome.runtime.onMessage.addListener(
 
       case "fetch-transcript": {
         const provider = providers[message.platform];
-        requestPagePlayerData(message.videoId, message.platform).then((pageData) =>
-          provider.fetchTranscript(message.videoId, {
-            lang: message.lang,
-            translateTo: message.translateTo,
-            pageData: pageData ?? undefined,
-          }),
-        ).then((result) => {
-          if (isApiError(result)) {
-            sendResponse({ type: "transcript-error", error: result });
-          } else {
-            sendResponse({ type: "transcript-result", data: result });
-          }
-        });
+        const pageDataPromise =
+          message.platform === "vimeo"
+            ? requestVimeoPlayerData(message.videoId)
+            : Promise.resolve(null);
+        pageDataPromise
+          .then((pageData) =>
+            provider.fetchTranscript(message.videoId, {
+              lang: message.lang,
+              translateTo: message.translateTo,
+              pageData: pageData ?? undefined,
+            }),
+          )
+          .then((result) => {
+            if (isApiError(result)) {
+              sendResponse({ type: "transcript-error", error: result });
+            } else {
+              sendResponse({ type: "transcript-result", data: result });
+            }
+          });
         return true;
       }
 
       case "fetch-tracks": {
         const provider = providers[message.platform];
-        requestPagePlayerData(message.videoId, message.platform).then((pageData) =>
-          provider.fetchTracks(message.videoId, pageData ?? undefined),
-        ).then((result) => {
-          if (isApiError(result)) {
-            sendResponse({ type: "tracks-error", error: result });
-          } else {
-            sendResponse({ type: "tracks-result", ...result });
-          }
-        });
+        const pageDataPromise =
+          message.platform === "vimeo"
+            ? requestVimeoPlayerData(message.videoId)
+            : Promise.resolve(null);
+        pageDataPromise
+          .then((pageData) => provider.fetchTracks(message.videoId, pageData ?? undefined))
+          .then((result) => {
+            if (isApiError(result)) {
+              sendResponse({ type: "tracks-error", error: result });
+            } else {
+              sendResponse({ type: "tracks-result", ...result });
+            }
+          });
         return true;
       }
 
