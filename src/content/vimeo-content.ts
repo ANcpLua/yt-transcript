@@ -6,6 +6,32 @@ let lastVideoId: string | null = null;
 let playerTimeInterval: ReturnType<typeof setInterval> | null = null;
 let cachedPlayerConfig: { videoId: string; data: unknown } | null = null;
 
+function isExtensionAlive(): boolean {
+  return Boolean(chrome.runtime?.id);
+}
+
+function shutdown(): void {
+  if (playerTimeInterval) {
+    clearInterval(playerTimeInterval);
+    playerTimeInterval = null;
+  }
+}
+
+function safeSendMessage(message: unknown): void {
+  if (!isExtensionAlive()) {
+    shutdown();
+    return;
+  }
+  try {
+    const result = chrome.runtime.sendMessage(message);
+    if (result && typeof (result as Promise<unknown>).catch === "function") {
+      (result as Promise<unknown>).catch(() => {});
+    }
+  } catch {
+    shutdown();
+  }
+}
+
 function extractVideoId(url: string): string | null {
   const match = VIMEO_ID_RE.exec(url);
   return match?.[1] ?? null;
@@ -56,17 +82,18 @@ function detectAndNotify(): void {
     cachedPlayerConfig = { videoId, data: playerConfig };
   }
 
-  chrome.runtime.sendMessage({ type: "video-detected", videoId, platform: "vimeo" });
+  safeSendMessage({ type: "video-detected", videoId, platform: "vimeo" });
 
   // Start player time relay (1Hz)
   if (playerTimeInterval) clearInterval(playerTimeInterval);
   playerTimeInterval = setInterval(() => {
+    if (!isExtensionAlive()) {
+      shutdown();
+      return;
+    }
     const video = document.querySelector("video");
     if (video && !video.paused) {
-      chrome.runtime.sendMessage({
-        type: "player-time",
-        currentTime: video.currentTime,
-      }).catch(() => {});
+      safeSendMessage({ type: "player-time", currentTime: video.currentTime });
     }
   }, 1000);
 }
@@ -89,7 +116,7 @@ history.pushState = function (...args: Parameters<typeof origPushState>) {
 };
 
 // Handle messages from service worker / side panel
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+if (isExtensionAlive()) chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   switch (message.type) {
     case "seek-to": {
       const video = document.querySelector("video");
