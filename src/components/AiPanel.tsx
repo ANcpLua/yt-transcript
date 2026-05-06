@@ -309,25 +309,15 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
     };
 
     return (
-        <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-            <div className="flex items-baseline justify-between">
-                <h3 className="text-sm font-medium text-slate-900 dark:text-white">Analyze</h3>
-                {hasAnyProvider && (
-                    <span className="text-xs text-slate-400 dark:text-slate-500">
-                        {chromeAiPromptAvailable
-                            ? "Chrome AI · on-device"
-                            : chromeAiAvailable
-                                ? "Chrome AI · summary only"
-                                : "Configured provider"}
+        <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900/40">
+            <div className="flex items-center justify-between">
+                <h3 className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-slate-500">Analyze</h3>
+                {!hasAnyProvider && (
+                    <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-amber-600 dark:text-amber-400">
+                        Pick a provider →
                     </span>
                 )}
             </div>
-
-            {!hasAnyProvider && (
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                    Pick a provider in Settings — Chrome AI or Ollama run locally without a key.
-                </p>
-            )}
 
             {/* Feature buttons */}
             <div className="-mx-1 flex flex-wrap gap-1">

@@ -78,7 +78,23 @@ function buildPlayerSnapshot(rawJson: string, userAgent: string): PlayerSnapshot
   const result = extractPlayerResult(parsed, userAgent);
   if ("error" in result) return null;
 
-  const tracks: Track[] = result.captionTracks.map((t) => ({
+  // Reorder so the original-language track is first. YouTube ships
+  // captionTracks ordered by the user's UI locale, which means a German
+  // browser sees a German auto-translation as tracks[0] for an English
+  // video — surprising and wrong as a default selection.
+  const defaultLang = (((parsed as Record<string, unknown>)["videoDetails"] as
+    Record<string, unknown> | undefined)?.["defaultAudioLanguage"] as string | undefined)
+    ?.split("-")[0]?.toLowerCase();
+  const ordered = [...result.captionTracks].sort((a, b) => {
+    const aMatch = defaultLang && a.languageCode.toLowerCase().startsWith(defaultLang) ? 1 : 0;
+    const bMatch = defaultLang && b.languageCode.toLowerCase().startsWith(defaultLang) ? 1 : 0;
+    if (aMatch !== bMatch) return bMatch - aMatch;
+    const aAsr = a.kind === "asr" ? 1 : 0;
+    const bAsr = b.kind === "asr" ? 1 : 0;
+    return bAsr - aAsr;
+  });
+
+  const tracks: Track[] = ordered.map((t) => ({
     languageCode: t.languageCode,
     name:
       typeof t.name?.simpleText === "string" && t.name.simpleText.length > 0
@@ -87,13 +103,13 @@ function buildPlayerSnapshot(rawJson: string, userAgent: string): PlayerSnapshot
     kind: t.kind,
   }));
 
-  const captionTrackUrls: CaptionTrackUrl[] = result.captionTracks.map((t) => ({
+  const captionTrackUrls: CaptionTrackUrl[] = ordered.map((t) => ({
     baseUrl: t.baseUrl,
     languageCode: t.languageCode,
     ...(t.kind ? { kind: t.kind } : {}),
   }));
 
-  const first = result.captionTracks[0];
+  const first = ordered[0];
   return {
     title: result.title,
     tracks,

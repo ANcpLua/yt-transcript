@@ -84,16 +84,29 @@ function pickCaptionTrack(playerJson: string): CaptionTrack | null {
   let parsed: unknown;
   try { parsed = JSON.parse(playerJson); } catch { return null; }
   if (typeof parsed !== "object" || parsed === null) return null;
-  const tracks = (((parsed as Record<string, unknown>)["captions"] as Record<string, unknown> | undefined)
+  const root = parsed as Record<string, unknown>;
+  const tracks = ((root["captions"] as Record<string, unknown> | undefined)
     ?.["playerCaptionsTracklistRenderer"] as Record<string, unknown> | undefined)
     ?.["captionTracks"];
   if (!Array.isArray(tracks) || tracks.length === 0) return null;
-  // Prefer the ASR English track if present, else the first.
-  const asrEn = tracks.find((t) => {
-    const o = t as Record<string, unknown>;
-    return o["kind"] === "asr" && typeof o["languageCode"] === "string" && (o["languageCode"] as string).startsWith("en");
-  });
-  return (asrEn ?? tracks[0]) as CaptionTrack;
+  // Prefer the original audio track. YouTube orders captionTracks by the
+  // user's UI locale, so tracks[0] is whatever Firefox/Chrome's locale
+  // requested (a translation, in most cases). The original is whichever
+  // matches videoDetails.defaultAudioLanguage; fall back to any track
+  // with kind === "asr" (the source ASR), then to the first track.
+  const defaultLang = (((root["videoDetails"] as Record<string, unknown> | undefined)
+    ?.["defaultAudioLanguage"]) as string | undefined)?.split("-")[0]?.toLowerCase();
+
+  if (defaultLang) {
+    const original = tracks.find((t) => {
+      const o = t as Record<string, unknown>;
+      return typeof o["languageCode"] === "string"
+        && (o["languageCode"] as string).toLowerCase().startsWith(defaultLang);
+    });
+    if (original) return original as CaptionTrack;
+  }
+  const asr = tracks.find((t) => (t as Record<string, unknown>)["kind"] === "asr");
+  return (asr ?? tracks[0]) as CaptionTrack;
 }
 
 // Forward a synthetic player capture to the SW. The correlator
