@@ -6,8 +6,11 @@
   "scripts": {
     "dev": "vite dev",
     "build": "tsc -b && node scripts/build.mjs",
+    "build:firefox": "tsc -b && node scripts/build.mjs && node scripts/build-firefox.mjs",
     "zip": "node scripts/build.mjs && node scripts/package-stores.mjs",
     "zip:chrome": "node scripts/build.mjs && cd dist && zip -r ../yt-transcript-chrome.zip .",
+    "zip:firefox": "node scripts/build.mjs && node scripts/build-firefox.mjs && cd dist-firefox && zip -r ../yt-transcript-firefox.zip .",
+    "test:browser": "node scripts/test-extension.mjs",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -28,6 +31,7 @@
     "esbuild": "^0.27.3",
     "tailwindcss": "^4.1.4",
     "typescript": "^5.8.3",
-    "vite": "^6.3.2"
+    "vite": "^6.3.2",
+    "web-ext": "^10.1.0"
   }
 }
