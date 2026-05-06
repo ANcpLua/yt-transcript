@@ -278,8 +278,19 @@ export function App() {
 
             if (response.type === "transcript-error" && response.error) {
                 if (response.error.error === "no_captions") {
+                    // Auto-start Whisper instead of dead-ending the user with
+                    // a "No transcript / Transcribe" intermediate screen. The
+                    // YouTube tab the SW captures audio from must be active —
+                    // the SW re-checks via chrome.tabs.query when starting.
                     setPendingTitle(response.error.message);
-                    setState("no-captions");
+                    setState("transcribing");
+                    setTranscriptionProgress(0);
+                    setTranscript(null);
+                    chrome.runtime.sendMessage({
+                        type: "start-transcription",
+                        videoId,
+                        title: response.error.message,
+                    });
                 } else {
                     setError(response.error);
                     setState("error");

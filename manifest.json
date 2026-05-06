@@ -14,7 +14,11 @@
   "host_permissions": [
     "*://*.youtube.com/*",
     "*://*.vimeo.com/*",
-    "*://player.vimeo.com/*"
+    "*://player.vimeo.com/*",
+    "*://huggingface.co/*",
+    "*://*.huggingface.co/*",
+    "*://cdn-lfs.huggingface.co/*",
+    "*://cdn-lfs.hf.co/*"
   ],
   "optional_host_permissions": [
     "*://api.openai.com/*",
@@ -22,6 +26,9 @@
     "*://generativelanguage.googleapis.com/*",
     "http://localhost:*/*"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://huggingface.co https://*.huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs.hf.co https://api.openai.com https://api.anthropic.com https://generativelanguage.googleapis.com http://localhost:* http://127.0.0.1:*"
+  },
   "action": {
     "default_title": "YouTube & Vimeo Transcript Extractor",
     "default_icon": {

@@ -47,6 +47,9 @@ interface LanguageModelStatic {
     topK?: number;
     expectedInputs?: LanguageModelExpectation[];
     expectedOutputs?: LanguageModelExpectation[];
+    // Newer field — Chrome 142+/Edge 142+. Single ISO code; takes
+    // precedence over expectedOutputs when supported.
+    outputLanguage?: string;
   }): Promise<LanguageModelSession>;
 }
 
@@ -97,6 +100,7 @@ export async function runChromeAiPrompt(
     initialPrompts: [{ role: "system", content: systemPrompt }],
     expectedInputs: [{ type: "text", languages: ["en", "es", "ja"] }],
     expectedOutputs: [{ type: "text", languages: ["en"] }],
+    outputLanguage: "en",
   });
   try {
     return await session.prompt(userMessage);
