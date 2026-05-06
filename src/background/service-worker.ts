@@ -1,4 +1,5 @@
 import { fetchPlaylist, fetchChannel } from "./innertube-browse";
+import { fetchTrackSegments } from "./innertube";
 import { YouTubeProvider } from "./providers/youtube";
 import { VimeoProvider } from "./providers/vimeo";
 import { isApiError } from "./providers/types";
@@ -6,11 +7,14 @@ import type { TranscriptProvider } from "./providers/types";
 import type { AiRequestMessage, ExtensionMessage } from "../types/messages";
 import type { Platform } from "../types/transcript";
 import {
+  claimAutoFetchTrack,
   clearTab,
   notifyNavigate,
+  recordAutoFetchedSegments,
   recordPlayer,
   recordTimedText,
   recordTranscript,
+  releaseAutoFetch,
   takeIfReady,
 } from "../lib/intercept/correlator";
 
@@ -153,6 +157,12 @@ chrome.runtime.onMessage.addListener(
           chrome.runtime
             .sendMessage({ type: "intercepted-transcript", data: ready })
             .catch(() => {});
+        } else if (message.kind === "player") {
+          // YouTube doesn't fetch /youtubei/v1/get_transcript until the user
+          // opens its transcript panel, so wait-for-segments would stall on
+          // a fresh page load. Auto-fetch the captionTrack baseUrl from the
+          // captured player to close that gap.
+          maybeAutoFetchTimedText(tabId, message.videoId);
         }
         return false;
       }
@@ -166,6 +176,26 @@ chrome.runtime.onMessage.addListener(
     }
   },
 );
+
+function maybeAutoFetchTimedText(tabId: number, videoId: string): void {
+  const track = claimAutoFetchTrack(tabId, videoId);
+  if (!track) return;
+  void fetchTrackSegments(track.baseUrl, track.languageCode)
+    .then((result) => {
+      if (isApiError(result)) {
+        releaseAutoFetch(tabId);
+        return;
+      }
+      recordAutoFetchedSegments(tabId, videoId, result);
+      const ready = takeIfReady(tabId);
+      if (ready) {
+        chrome.runtime
+          .sendMessage({ type: "intercepted-transcript", data: ready })
+          .catch(() => {});
+      }
+    })
+    .catch(() => releaseAutoFetch(tabId));
+}
 
 // Drop correlator state when a tab closes so we don't leak captured
 // JSON across the SW lifetime.
