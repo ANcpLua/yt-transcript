@@ -533,7 +533,7 @@ export function App() {
                     onSubmit={(id, platform) => void fetchTranscript(id, platform)}
                     onSubmitBatch={handleSubmitBatch}
                     isLoading={state === "loading"}
-                    hasTranscript={state === "loaded" || state === "loading" || state === "transcribing"}
+                    compact={state !== "idle"}
                 />
 
                 {batchState && batchViewMode === "result" && batchCompletedItems.length > 0 && (
@@ -612,20 +612,31 @@ export function App() {
                     </div>
                 )}
 
-                {state === "error" && error && (
-                    <ErrorMessage
-                        error={error.error}
-                        message={error.message}
-                        onRetry={handleRetry}
-                        onTranscribeLocal={error.error === "fetch_failed" ? () => {
-                            const videoId = transcript?.videoId ?? pendingVideoId;
-                            if (!videoId) return;
-                            setPendingVideoId(videoId);
-                            setPendingTitle(transcript?.title ?? pendingTitle);
-                            handleStartTranscription();
-                        } : undefined}
-                    />
-                )}
+                {state === "error" && error && (() => {
+                    const failedVideoId = transcript?.videoId ?? pendingVideoId;
+                    const canRecover = error.error === "fetch_failed" && !!failedVideoId;
+                    const watchUrl = canRecover
+                        ? activePlatform === "vimeo"
+                            ? `https://vimeo.com/${failedVideoId}`
+                            : `https://www.youtube.com/watch?v=${failedVideoId}`
+                        : null;
+                    return (
+                        <ErrorMessage
+                            error={error.error}
+                            message={error.message}
+                            onRetry={handleRetry}
+                            onOpenOriginal={watchUrl ? () => {
+                                chrome.tabs.create({url: watchUrl});
+                            } : undefined}
+                            onTranscribeLocal={canRecover ? () => {
+                                if (!failedVideoId) return;
+                                setPendingVideoId(failedVideoId);
+                                setPendingTitle(transcript?.title ?? pendingTitle);
+                                handleStartTranscription();
+                            } : undefined}
+                        />
+                    );
+                })()}
 
                 {state === "loaded" && transcript && (
                     <div className="space-y-4">
