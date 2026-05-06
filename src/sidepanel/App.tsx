@@ -475,7 +475,7 @@ export function App() {
             .map(i => ({videoId: i.videoId, title: i.title ?? i.videoId}));
     }, [batchState]);
 
-    const iconBtnClass = "rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200 transition-colors";
+    const iconBtnClass = "rounded-md p-1 text-slate-500 hover:bg-slate-200/40 hover:text-slate-200 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-100 transition-colors";
 
     // ---------- legal page route ----------
     if (route === "#/legal") {
@@ -499,24 +499,22 @@ export function App() {
 
     // ---------- main app route ----------
     return (
-        <div className="min-h-screen bg-white dark:bg-slate-900">
-            {/* Header */}
-            <header
-                className="border-b border-slate-200 bg-white/80 backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/80">
-                <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-2">
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-slate-900 dark:text-white">Transcript</span>
-                        {liveCaptureVideoId && transcript?.videoId === liveCaptureVideoId && state === "loaded" && (
-                            <span
-                                title="Captured live from the YouTube tab — no API call made"
-                                className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-                            >
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                Live
-                            </span>
-                        )}
-                    </div>
-                    <div className="flex items-center gap-1">
+        <div className="min-h-screen bg-white text-slate-900 dark:bg-[#0b0d10] dark:text-slate-100">
+            {/* Header — single row, mostly negative space */}
+            <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/85 backdrop-blur-md dark:border-slate-800/60 dark:bg-[#0b0d10]/85">
+                <div className="mx-auto flex max-w-5xl items-center gap-2 px-3 py-1.5">
+                    {/* Word-mark — the wordmark IS the only branding here */}
+                    <span className="font-serif text-[15px] italic leading-none tracking-tight text-slate-900 dark:text-slate-100">yt·tx</span>
+                    {liveCaptureVideoId && transcript?.videoId === liveCaptureVideoId && state === "loaded" && (
+                        <span
+                            title="Captured live from the YouTube tab — no API call made"
+                            className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-amber-700 dark:border-amber-300/20 dark:text-amber-300"
+                        >
+                            <span className="h-1 w-1 rounded-full bg-amber-500 dark:bg-amber-400" />
+                            Live
+                        </span>
+                    )}
+                    <div className="ml-auto flex items-center gap-0.5">
                         {state === "loaded" && (
                             <button
                                 onClick={handleSave}
@@ -541,7 +539,7 @@ export function App() {
             </header>
 
             {/* Main content */}
-            <div className="mx-auto max-w-5xl px-4 py-6">
+            <div className="mx-auto max-w-5xl px-3 pt-3 pb-6">
                 <UrlInput
                     onSubmit={(id, platform) => void fetchTranscript(id, platform)}
                     onSubmitBatch={handleSubmitBatch}
