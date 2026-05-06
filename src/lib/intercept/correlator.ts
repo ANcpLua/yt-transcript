@@ -118,14 +118,33 @@ export function recordTranscript(tabId: number, videoId: string, bodyText: strin
   if (segs.length > 0) state.segments = segs;
 }
 
-// timedtext is a fallback. It's the legacy /api/timedtext json3 shape;
-// we already have a parser for that. Wire it in later if needed —
-// get_transcript covers the cases that broke us.
-export function recordTimedText(tabId: number, videoId: string, _bodyText: string): void {
+// timedtext is the legacy /api/timedtext json3 shape — used by the
+// content script's page-context fetch (which inherits the YouTube
+// session's PO token, so &exp=xpe-signed URLs return real content
+// instead of empty bodies).
+export function recordTimedText(tabId: number, videoId: string, bodyText: string): void {
   const state = ensure(tabId);
   if (state.videoId !== videoId) reset(state, videoId);
-  // Reserved for future use; the get_transcript parser is the
-  // primary path.
+  if (!bodyText.trim() || (state.segments && state.segments.length > 0)) return;
+  let parsed: unknown;
+  try { parsed = JSON.parse(bodyText); } catch { return; }
+  if (typeof parsed !== "object" || parsed === null) return;
+  const events = (parsed as Record<string, unknown>)["events"];
+  if (!Array.isArray(events)) return;
+  const segs: Segment[] = [];
+  for (const ev of events) {
+    if (typeof ev !== "object" || ev === null) continue;
+    const e = ev as { tStartMs?: number; dDurationMs?: number; segs?: { utf8?: string }[] };
+    if (!Array.isArray(e.segs) || e.segs.length === 0) continue;
+    const text = e.segs.map((s) => s.utf8 ?? "").join("").trim();
+    if (!text) continue;
+    segs.push({
+      start: (e.tStartMs ?? 0) / 1000,
+      duration: (e.dDurationMs ?? 0) / 1000,
+      text,
+    });
+  }
+  if (segs.length > 0) state.segments = segs;
 }
 
 // Used by the SW auto-fetch path (intercepted player capture →
