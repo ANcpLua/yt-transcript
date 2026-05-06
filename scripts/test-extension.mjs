@@ -7,7 +7,8 @@ import { chromium } from "playwright";
 import { existsSync, mkdirSync } from "fs";
 
 const EXTENSION_PATH = "/Users/ancplua/yt-transcript/dist";
-const PROFILE_DIR = "/tmp/yt-test-profile";
+const BROWSER = process.env.BROWSER || "chromium"; // chromium | msedge | chrome
+const PROFILE_DIR = `/tmp/yt-test-profile-${BROWSER}`;
 const OUT_DIR = "/tmp/yt-screenshots";
 mkdirSync(OUT_DIR, { recursive: true });
 
@@ -21,9 +22,8 @@ if (!existsSync(EXTENSION_PATH)) {
   process.exit(1);
 }
 
-const context = await chromium.launchPersistentContext(PROFILE_DIR, {
+const launchOpts = {
   headless: false,
-  channel: "chromium",
   args: [
     `--disable-extensions-except=${EXTENSION_PATH}`,
     `--load-extension=${EXTENSION_PATH}`,
@@ -34,7 +34,16 @@ const context = await chromium.launchPersistentContext(PROFILE_DIR, {
   ],
   viewport: { width: 1280, height: 800 },
   locale: "en-US",
-});
+};
+if (BROWSER === "msedge") {
+  launchOpts.channel = "msedge";
+} else if (BROWSER === "chrome") {
+  launchOpts.channel = "chrome";
+} else {
+  launchOpts.channel = "chromium";
+}
+console.log("[browser]", BROWSER);
+const context = await chromium.launchPersistentContext(PROFILE_DIR, launchOpts);
 
 // Pre-set consent cookies so YouTube doesn't redirect us to its
 // consent.youtube.com wall, which prevents /youtubei/v1/player from
@@ -161,11 +170,11 @@ for (const videoId of VIDEOS) {
   console.log("  [panel] outcome:", outcome);
 
   await panelPage.screenshot({
-    path: `${OUT_DIR}/panel-${videoId}.png`,
+    path: `${OUT_DIR}/panel-${BROWSER}-${videoId}.png`,
     fullPage: false,
   });
   await watchPage.screenshot({
-    path: `${OUT_DIR}/watch-${videoId}.png`,
+    path: `${OUT_DIR}/watch-${BROWSER}-${videoId}.png`,
     fullPage: false,
   });
 
@@ -187,7 +196,7 @@ await panelPage.evaluate(() => {
 });
 await panelPage.waitForTimeout(1500);
 await panelPage.screenshot({
-  path: `${OUT_DIR}/settings.png`,
+  path: `${OUT_DIR}/settings-${BROWSER}.png`,
   fullPage: false,
 });
 const settingsText = await panelPage.evaluate(() => {
