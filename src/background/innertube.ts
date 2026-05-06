@@ -203,6 +203,25 @@ function buildTextUrl(track: InnertubeTrack, translateTo?: string): string {
   return track.baseUrl + "&fmt=json3" + tlang;
 }
 
+// Fetch + parse a captionTrack baseUrl into Segment[]. Used by the
+// intercept correlator when YouTube's own page hasn't fetched
+// /youtubei/v1/get_transcript (i.e. the user hasn't opened the
+// transcript panel) but we already have a player capture.
+export async function fetchTrackSegments(
+  baseUrl: string,
+  languageCode: string,
+  translateTo?: string,
+): Promise<Segment[] | ApiError> {
+  const url = buildTextUrl({ baseUrl, languageCode }, translateTo);
+  const events = await fetchTimedText(url, WEB_UA);
+  if (!Array.isArray(events)) return events;
+  const segs = parseSegments(events);
+  if (segs.length === 0) {
+    return { error: "fetch_failed", message: "Empty timedtext response" };
+  }
+  return segs;
+}
+
 async function fetchTimedText(textUrl: string, userAgent: string): Promise<unknown[] | ApiError> {
   try {
     const res = await fetch(textUrl, { headers: { "User-Agent": userAgent } });

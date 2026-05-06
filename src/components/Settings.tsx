@@ -8,14 +8,31 @@ import {isChromeAiAvailable, isChromeAiPromptAvailable} from "../lib/ai/chrome-a
 
 type WhisperState = "unknown" | "not-downloaded" | "downloading" | "ready";
 
+// Per-provider readiness:
+//  ready          – usable right now (Chrome AI available, Ollama reachable, key validated this session)
+//  saved          – key/URL persisted but not verified yet (no network call made)
+//  unreachable    – we tested and it failed (server down, no flag, etc.)
+//  needs-config   – nothing saved, user has to set it up
+//  checking       – initial probe in flight
+type ProviderStatus = "ready" | "saved" | "unreachable" | "needs-config" | "checking";
 
-const PROVIDERS: { id: AiProviderId; label: string }[] = [
-    {id: "chrome-ai", label: "Chrome AI"},
-    {id: "ollama", label: "Ollama"},
-    {id: "openai", label: "OpenAI"},
-    {id: "anthropic", label: "Anthropic"},
-    {id: "google", label: "Gemini"},
+const PROVIDERS: { id: AiProviderId; label: string; needsKey: boolean }[] = [
+    {id: "chrome-ai", label: "Chrome AI", needsKey: false},
+    {id: "ollama", label: "Ollama", needsKey: false},
+    {id: "openai", label: "OpenAI", needsKey: true},
+    {id: "anthropic", label: "Anthropic", needsKey: true},
+    {id: "google", label: "Gemini", needsKey: true},
 ];
+
+function StatusDot({status}: {status: ProviderStatus}) {
+    const cls =
+        status === "ready" ? "bg-emerald-500"
+        : status === "saved" ? "bg-amber-400"
+        : status === "unreachable" ? "bg-red-500"
+        : status === "checking" ? "bg-slate-300 dark:bg-slate-600 animate-pulse"
+        : "bg-slate-300 dark:bg-slate-700";
+    return <span className={`inline-block h-2 w-2 rounded-full ${cls}`} aria-hidden="true" />;
+}
 
 export function formatQuota(kb: number): string {
     if (kb >= 1024 * 1024) return `${(kb / (1024 * 1024)).toFixed(1)} GB`;
@@ -40,6 +57,14 @@ const DEFAULT_PREFS: Preferences = {
     whisperModel: "tiny",
 };
 
+const INITIAL_PROVIDER_STATUS: Record<AiProviderId, ProviderStatus> = {
+    "chrome-ai": "checking",
+    ollama: "checking",
+    openai: "checking",
+    anthropic: "checking",
+    google: "checking",
+};
+
 export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) {
     const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
     const [selectedProvider, setSelectedProvider] = useState<AiProviderId>("chrome-ai");
@@ -53,6 +78,7 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
     const [ollamaUrl, setOllamaUrl] = useState(DEFAULT_OLLAMA_URL);
     const [ollamaModel, setOllamaModel] = useState(DEFAULT_OLLAMA_MODEL);
     const [ollamaStatus, setOllamaStatus] = useState<"idle" | "checking" | "ok" | "fail">("idle");
+    const [providerStatus, setProviderStatus] = useState<Record<AiProviderId, ProviderStatus>>(INITIAL_PROVIDER_STATUS);
     const hasWebGpu = typeof (navigator as Navigator & { gpu?: unknown }).gpu !== "undefined";
 
     // Load preferences once when the panel opens
@@ -74,19 +100,61 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
     useEffect(() => {
         if (!isOpen) return;
         let cancelled = false;
+        setProviderStatus((s) => ({...s, "chrome-ai": "checking"}));
         void (async () => {
             const promptOk = await isChromeAiPromptAvailable();
             if (cancelled) return;
             if (promptOk) {
                 setChromeAiStatus("available");
+                setProviderStatus((s) => ({...s, "chrome-ai": "ready"}));
                 return;
             }
             const summarizerOk = await isChromeAiAvailable();
             if (cancelled) return;
             setChromeAiStatus(summarizerOk ? "summarizer-only" : "unavailable");
+            setProviderStatus((s) => ({...s, "chrome-ai": summarizerOk ? "saved" : "unreachable"}));
         })();
         return () => { cancelled = true; };
     }, [isOpen]);
+
+    // Lightweight key-presence probe for paid providers — does NOT call
+    // the upstream API. The dot says "saved" until the user clicks Test.
+    useEffect(() => {
+        if (!isOpen) return;
+        let cancelled = false;
+        void (async () => {
+            const checks = await Promise.all([
+                getApiKey("openai"),
+                getApiKey("anthropic"),
+                getApiKey("google"),
+            ]);
+            if (cancelled) return;
+            setProviderStatus((s) => ({
+                ...s,
+                openai: checks[0] ? "saved" : "needs-config",
+                anthropic: checks[1] ? "saved" : "needs-config",
+                google: checks[2] ? "saved" : "needs-config",
+            }));
+        })();
+        return () => { cancelled = true; };
+    }, [isOpen]);
+
+    // Probe Ollama on open (cheap — local network, /api/tags).
+    useEffect(() => {
+        if (!isOpen) return;
+        let cancelled = false;
+        setProviderStatus((s) => ({...s, ollama: "checking"}));
+        void (async () => {
+            const provider = getProvider("ollama", {
+                url: (ollamaUrl || DEFAULT_OLLAMA_URL).trim(),
+                model: (ollamaModel || DEFAULT_OLLAMA_MODEL).trim(),
+            });
+            const ok = await provider.validateKey();
+            if (cancelled) return;
+            setProviderStatus((s) => ({...s, ollama: ok ? "ready" : "unreachable"}));
+        })();
+        return () => { cancelled = true; };
+    }, [isOpen, ollamaUrl, ollamaModel]);
 
     // Reload the API key whenever the selected provider tab changes
     useEffect(() => {
@@ -96,7 +164,8 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
             const existing = await getApiKey(selectedProvider);
             if (cancelled) return;
             setKeyInput(existing ?? "");
-            setKeyStatus(existing ? "valid" : "idle");
+            // "valid" only after a real validateKey() call this session.
+            setKeyStatus("idle");
         })();
         return () => { cancelled = true; };
     }, [isOpen, selectedProvider]);
@@ -153,8 +222,10 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
             await saveApiKey(selectedProvider, keyInput.trim());
             updatePref("aiProvider", selectedProvider);
             setKeyStatus("valid");
+            setProviderStatus((s) => ({...s, [selectedProvider]: "ready"}));
         } else {
             setKeyStatus("invalid");
+            setProviderStatus((s) => ({...s, [selectedProvider]: "unreachable"}));
         }
     };
 
@@ -162,6 +233,7 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
         await removeApiKey(selectedProvider);
         setKeyInput("");
         setKeyStatus("idle");
+        setProviderStatus((s) => ({...s, [selectedProvider]: "needs-config"}));
         if (prefs.aiProvider === selectedProvider) {
             updatePref("aiProvider", null);
         }
@@ -174,9 +246,11 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
 
     const handleTestOllama = async () => {
         setOllamaStatus("checking");
+        setProviderStatus((s) => ({...s, ollama: "checking"}));
         const provider = getProvider("ollama", { url: ollamaUrl.trim() || DEFAULT_OLLAMA_URL, model: ollamaModel.trim() || DEFAULT_OLLAMA_MODEL });
         const ok = await provider.validateKey();
         setOllamaStatus(ok ? "ok" : "fail");
+        setProviderStatus((s) => ({...s, ollama: ok ? "ready" : "unreachable"}));
         if (ok) {
             const next = {
                 ...prefs,
@@ -234,27 +308,72 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
 
                 {/* AI Provider */}
                 <section className="mb-6">
-                    <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        AI Provider
-                    </h3>
-                    <div className="mb-3 flex flex-wrap gap-1.5">
+                    <div className="mb-3 flex items-center justify-between">
+                        <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            AI Provider
+                        </h3>
+                        {(() => {
+                            const active = prefs.aiProvider;
+                            const activeStatus = active ? providerStatus[active] : null;
+                            if (active && activeStatus === "ready") {
+                                return (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                                        <StatusDot status="ready" /> Active: {PROVIDERS.find(x => x.id === active)?.label}
+                                    </span>
+                                );
+                            }
+                            if (active && activeStatus === "saved") {
+                                return (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                                        <StatusDot status="saved" /> {PROVIDERS.find(x => x.id === active)?.label} — not verified
+                                    </span>
+                                );
+                            }
+                            if (active && activeStatus === "unreachable") {
+                                return (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 dark:bg-red-500/10 dark:text-red-300">
+                                        <StatusDot status="unreachable" /> {PROVIDERS.find(x => x.id === active)?.label} — failing
+                                    </span>
+                                );
+                            }
+                            return (
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                    <StatusDot status="needs-config" /> No AI configured
+                                </span>
+                            );
+                        })()}
+                    </div>
+                    <div className="mb-3 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
                         {PROVIDERS.map((p) => {
                             const isActive = prefs.aiProvider === p.id;
                             const isSelected = selectedProvider === p.id;
+                            const status = providerStatus[p.id];
                             return (
                                 <button
                                     key={p.id}
                                     onClick={() => setSelectedProvider(p.id)}
-                                    className={`relative rounded-md px-3 py-1.5 text-sm transition ${
+                                    title={
+                                        status === "ready" ? "Ready to use"
+                                        : status === "saved" ? "Saved — click to verify"
+                                        : status === "unreachable" ? "Not reachable"
+                                        : status === "checking" ? "Checking…"
+                                        : "Not configured"
+                                    }
+                                    className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-sm transition ${
                                         isSelected
-                                            ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
-                                            : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                                            ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                                            : "border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                                     }`}
                                 >
-                                    {p.label}
-                                    {isActive && !isSelected && (
-                                        <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-blue-500 align-middle" aria-label="active" />
-                                    )}
+                                    <span className="truncate">{p.label}</span>
+                                    <span className="flex items-center gap-1">
+                                        {isActive && (
+                                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
+                                            </svg>
+                                        )}
+                                        <StatusDot status={status} />
+                                    </span>
                                 </button>
                             );
                         })}
@@ -270,7 +389,15 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                                 {chromeAiStatus === "checking" && "Checking…"}
                                 {chromeAiStatus === "available" && "Ready — supports every feature."}
                                 {chromeAiStatus === "summarizer-only" && "Summary only. Enable the Prompt API flag for the rest."}
-                                {chromeAiStatus === "unavailable" && "Needs Edge or Chrome 138+ with the Prompt API flag enabled."}
+                                {chromeAiStatus === "unavailable" && (
+                                    <>
+                                        Not detected. In Edge or Chrome 138+, enable the Prompt API flag at{" "}
+                                        <code className="rounded bg-slate-100 px-1 font-mono text-[11px] dark:bg-slate-800">edge://flags</code>{" "}
+                                        /{" "}
+                                        <code className="rounded bg-slate-100 px-1 font-mono text-[11px] dark:bg-slate-800">chrome://flags</code>
+                                        {" "}then restart.
+                                    </>
+                                )}
                             </p>
                             {prefs.aiProvider === "chrome-ai" ? (
                                 <span className="text-sm text-slate-500 dark:text-slate-400">Active</span>
@@ -333,7 +460,7 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
 
                     {/* Paid providers — API key input */}
                     {(selectedProvider === "openai" || selectedProvider === "anthropic" || selectedProvider === "google") && (
-                        <>
+                        <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                             <div className="flex gap-2">
                                 <input
                                     type={showKey ? "text" : "password"}
@@ -350,7 +477,7 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                                     disabled={keyStatus === "validating" || !keyInput.trim()}
                                     className="rounded-md bg-slate-900 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
                                 >
-                                    {keyStatus === "validating" ? "…" : "Save"}
+                                    {keyStatus === "validating" ? "Testing…" : keyStatus === "valid" ? "Re-test" : "Save & test"}
                                 </button>
                                 {keyInput && (
                                     <button
@@ -363,12 +490,25 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                             </div>
                             <div className="mt-2 flex items-center justify-between">
                                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                                    Stored only in this browser.
+                                    Stored only in this browser. Save & test pings the provider once.
                                 </p>
-                                {keyStatus === "valid" && <span className="text-xs text-slate-500 dark:text-slate-400">Valid</span>}
-                                {keyStatus === "invalid" && <span className="text-xs text-red-600 dark:text-red-400">Invalid</span>}
+                                {keyStatus === "idle" && providerStatus[selectedProvider] === "saved" && (
+                                    <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                                        <StatusDot status="saved" /> Saved (untested)
+                                    </span>
+                                )}
+                                {keyStatus === "valid" && (
+                                    <span className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+                                        <StatusDot status="ready" /> Verified
+                                    </span>
+                                )}
+                                {keyStatus === "invalid" && (
+                                    <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+                                        <StatusDot status="unreachable" /> Rejected
+                                    </span>
+                                )}
                             </div>
-                        </>
+                        </div>
                     )}
                 </section>
 
