@@ -263,6 +263,9 @@ export function App() {
         setError(null);
         setSelectedRange(null);
         setActivePlatform(platform);
+        // Stash the videoId for the whole attempt so error-state recovery
+        // (Open on YouTube, Transcribe locally) has something to act on.
+        setPendingVideoId(videoId);
 
         try {
             const response = await chrome.runtime.sendMessage({
@@ -275,7 +278,6 @@ export function App() {
 
             if (response.type === "transcript-error" && response.error) {
                 if (response.error.error === "no_captions") {
-                    setPendingVideoId(videoId);
                     setPendingTitle(response.error.message);
                     setState("no-captions");
                 } else {
