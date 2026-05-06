@@ -145,6 +145,7 @@ chrome.runtime.onMessage.addListener(
       case "intercepted-capture": {
         const tabId = sender.tab?.id;
         if (!tabId || !message.videoId) return false;
+        console.log(`[intercept] kind=${message.kind} videoId=${message.videoId} bodyLen=${message.bodyText?.length ?? 0}`);
         if (message.kind === "player") {
           recordPlayer(tabId, message.videoId, message.bodyText);
         } else if (message.kind === "get_transcript") {
@@ -154,6 +155,7 @@ chrome.runtime.onMessage.addListener(
         }
         const ready = takeIfReady(tabId);
         if (ready) {
+          console.log(`[intercept] emitting intercepted-transcript videoId=${ready.videoId} segments=${ready.segments.length}`);
           chrome.runtime
             .sendMessage({ type: "intercepted-transcript", data: ready })
             .catch(() => {});
@@ -162,6 +164,7 @@ chrome.runtime.onMessage.addListener(
           // opens its transcript panel, so wait-for-segments would stall on
           // a fresh page load. Auto-fetch the captionTrack baseUrl from the
           // captured player to close that gap.
+          console.log(`[intercept] auto-fetch requested for ${message.videoId}`);
           maybeAutoFetchTimedText(tabId, message.videoId);
         }
         return false;
@@ -179,13 +182,19 @@ chrome.runtime.onMessage.addListener(
 
 function maybeAutoFetchTimedText(tabId: number, videoId: string): void {
   const track = claimAutoFetchTrack(tabId, videoId);
-  if (!track) return;
+  if (!track) {
+    console.log(`[auto-fetch] skip (no track or already claimed) ${videoId}`);
+    return;
+  }
+  console.log(`[auto-fetch] claim ${videoId} ${track.languageCode} ${track.baseUrl.slice(0, 80)}`);
   void fetchTrackSegments(track.baseUrl, track.languageCode)
     .then((result) => {
       if (isApiError(result)) {
+        console.log(`[auto-fetch] failed: ${result.error} ${result.message}`);
         releaseAutoFetch(tabId);
         return;
       }
+      console.log(`[auto-fetch] ok: ${result.length} segments`);
       recordAutoFetchedSegments(tabId, videoId, result);
       const ready = takeIfReady(tabId);
       if (ready) {
@@ -194,7 +203,10 @@ function maybeAutoFetchTimedText(tabId: number, videoId: string): void {
           .catch(() => {});
       }
     })
-    .catch(() => releaseAutoFetch(tabId));
+    .catch((err) => {
+      console.log(`[auto-fetch] error: ${err}`);
+      releaseAutoFetch(tabId);
+    });
 }
 
 // Drop correlator state when a tab closes so we don't leak captured

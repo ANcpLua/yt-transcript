@@ -13,6 +13,10 @@
 
 export {};
 
+// Diagnostic: prove this script actually ran in the page context.
+// Inspectable from Playwright via page.evaluate('window.__ytTxLoaded').
+try { (window as unknown as { __ytTxLoaded?: number }).__ytTxLoaded = Date.now(); } catch {}
+
 const HOT_PATHS = [
   "/youtubei/v1/get_transcript",
   "/youtubei/v1/player",
