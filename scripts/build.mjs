@@ -74,6 +74,19 @@ cpSync(
   resolve(dist, "offscreen/offscreen.html")
 );
 
+// 5b. Vendor ORT runtime so the offscreen Whisper pipeline doesn't load
+// ort-wasm-simd-threaded.jsep.{mjs,wasm} from jsdelivr at runtime —
+// MV3's default CSP forbids that. Same JSEP build serves both WebGPU
+// and the WASM fallback.
+const ortVendor = resolve(dist, "vendor/transformers");
+mkdirSync(ortVendor, { recursive: true });
+for (const f of ["ort-wasm-simd-threaded.jsep.mjs", "ort-wasm-simd-threaded.jsep.wasm"]) {
+  cpSync(
+    resolve(root, "node_modules/@huggingface/transformers/dist", f),
+    resolve(ortVendor, f),
+  );
+}
+
 // 6. Copy static assets
 cpSync(resolve(root, "manifest.json"), resolve(dist, "manifest.json"));
 cpSync(resolve(root, "public/icons"), resolve(dist, "icons"), { recursive: true });

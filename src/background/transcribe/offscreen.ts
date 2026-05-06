@@ -51,7 +51,21 @@ function hasWebGpu(): boolean {
 async function loadPipeline(model: "tiny" | "base"): Promise<WhisperPipeline> {
   if (pipeline) return pipeline;
 
-  const { pipeline: createPipeline } = await import("@huggingface/transformers");
+  const transformers = await import("@huggingface/transformers");
+
+  // Pin the ORT runtime to the bundled vendor copy so MV3's CSP doesn't
+  // try to fetch ort-wasm-simd-threaded.jsep.{mjs,wasm} from jsdelivr.
+  // numThreads=1 because chrome-extension:// pages can't get the
+  // crossOriginIsolated headers the threaded ORT build needs.
+  const wasmEnv = transformers.env.backends.onnx.wasm;
+  if (wasmEnv) {
+    wasmEnv.wasmPaths = chrome.runtime.getURL("vendor/transformers/");
+    wasmEnv.numThreads = 1;
+  }
+  transformers.env.allowLocalModels = false;
+  transformers.env.allowRemoteModels = true;
+
+  const { pipeline: createPipeline } = transformers;
   const modelId = MODEL_MAP[model];
 
   const wantWebGpu = hasWebGpu();

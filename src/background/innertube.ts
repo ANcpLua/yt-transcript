@@ -25,7 +25,16 @@ export const INNERTUBE_BROWSE_URL =
 const WEB_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
+const ANDROID_VR_UA =
+  "com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip";
+
+// Innertube clients we'll cycle through. yt-dlp's current default for
+// unauthenticated extraction is android_vr + tv_simply (via tv) —
+// neither needs PO tokens for player or subs as of 2025-Q4. We keep
+// WEB_EMBEDDED_PLAYER first because it's the lowest-friction match
+// for what the user's actual session would do.
 const EMBEDDED_CLIENT = {
+  name: "WEB_EMBEDDED_PLAYER",
   userAgent: WEB_UA,
   headers: { "Content-Type": "application/json", "User-Agent": WEB_UA },
   context: {
@@ -34,6 +43,46 @@ const EMBEDDED_CLIENT = {
       clientVersion: "1.20260330.00.00",
     },
     thirdParty: { embedUrl: "https://www.youtube.com" },
+  },
+} as const;
+
+const TV_SIMPLY_CLIENT = {
+  name: "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
+  userAgent: WEB_UA,
+  headers: { "Content-Type": "application/json", "User-Agent": WEB_UA },
+  context: {
+    client: {
+      clientName: "TVHTML5_SIMPLY_EMBEDDED_PLAYER",
+      clientVersion: "2.0",
+      hl: "en",
+      gl: "US",
+      utcOffsetMinutes: 0,
+    },
+    thirdParty: { embedUrl: "https://www.youtube.com" },
+  },
+} as const;
+
+const ANDROID_VR_CLIENT = {
+  name: "ANDROID_VR",
+  userAgent: ANDROID_VR_UA,
+  headers: {
+    "Content-Type": "application/json",
+    "User-Agent": ANDROID_VR_UA,
+    "X-Goog-Api-Format-Version": "2",
+  },
+  context: {
+    client: {
+      clientName: "ANDROID_VR",
+      clientVersion: "1.62.27",
+      androidSdkVersion: 32,
+      deviceMake: "Oculus",
+      deviceModel: "Quest 3",
+      osName: "Android",
+      osVersion: "12L",
+      hl: "en",
+      gl: "US",
+      userAgent: ANDROID_VR_UA,
+    },
   },
 } as const;
 
@@ -118,20 +167,35 @@ export function extractPlayerResult(raw: unknown, userAgent: string): PlayerResu
   };
 }
 
-async function callEmbeddedPlayer(videoId: string): Promise<PlayerResult | ApiError> {
+interface InnertubeClient {
+  readonly name: string;
+  readonly userAgent: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly context: Readonly<Record<string, unknown>>;
+}
+
+async function callPlayer(
+  videoId: string,
+  client: InnertubeClient,
+): Promise<PlayerResult | ApiError> {
   let raw: unknown;
   try {
     const res = await fetch(INNERTUBE_PLAYER_URL, {
       method: "POST",
-      headers: EMBEDDED_CLIENT.headers,
-      body: JSON.stringify({ context: EMBEDDED_CLIENT.context, videoId }),
+      headers: client.headers,
+      body: JSON.stringify({
+        context: client.context,
+        videoId,
+        contentCheckOk: true,
+        racyCheckOk: true,
+      }),
     });
     if (!res.ok) return { error: "fetch_failed", message: `HTTP ${res.status}` };
     raw = await res.json();
   } catch (e) {
     return { error: "fetch_failed", message: e instanceof Error ? e.message : String(e) };
   }
-  return extractPlayerResult(raw, EMBEDDED_CLIENT.userAgent);
+  return extractPlayerResult(raw, client.userAgent);
 }
 
 async function scrapeWatchPage(videoId: string): Promise<PlayerResult | ApiError> {
@@ -156,11 +220,42 @@ async function scrapeWatchPage(videoId: string): Promise<PlayerResult | ApiError
   }
 }
 
+function isUsablePlayer(result: PlayerResult | ApiError): result is PlayerResult {
+  if ("error" in result) return false;
+  return result.captionTracks.length > 0;
+}
+
 async function resolvePlayer(videoId: string): Promise<PlayerResult | ApiError> {
-  const embedded = await callEmbeddedPlayer(videoId);
-  if (!("error" in embedded)) return embedded;
-  if (embedded.error === "invalid_id") return embedded;
-  return scrapeWatchPage(videoId);
+  // Try clients in order. Stop on the first hit that has captionTracks.
+  // If a client returns a *playable* response with no captions we
+  // remember it so we can return it as the no_captions answer rather
+  // than misleadingly trying the next client (which won't help).
+  const clients: InnertubeClient[] = [EMBEDDED_CLIENT, TV_SIMPLY_CLIENT, ANDROID_VR_CLIENT];
+  let lastError: ApiError | null = null;
+  let captionlessHit: PlayerResult | null = null;
+
+  for (const client of clients) {
+    const result = await callPlayer(videoId, client);
+    if (isUsablePlayer(result)) return result;
+    if ("error" in result) {
+      if (result.error === "invalid_id") return result;
+      lastError = result;
+      continue;
+    }
+    // Playable but no captions — try the next client (some clients
+    // return empty caption arrays for the same video that another
+    // surfaces fully).
+    captionlessHit = result;
+  }
+
+  // Watch-page scrape as last Innertube-style attempt.
+  const scraped = await scrapeWatchPage(videoId);
+  if (isUsablePlayer(scraped)) return scraped;
+  if (!("error" in scraped) && !captionlessHit) captionlessHit = scraped;
+  if ("error" in scraped) lastError = scraped;
+
+  if (captionlessHit) return captionlessHit;
+  return lastError ?? { error: "fetch_failed", message: "All Innertube clients exhausted." };
 }
 
 function parseSegments(events: unknown[]): Segment[] {
@@ -203,6 +298,14 @@ function buildTextUrl(track: InnertubeTrack, translateTo?: string): string {
   return track.baseUrl + "&fmt=json3" + tlang;
 }
 
+// Strip the `&exp=xpe` flag YouTube started attaching to some
+// engagement-panel baseUrls in 2025-06 — those URLs return HTTP 200
+// with a 0-byte body (the PoTokenRequired signal) until the flag is
+// removed.
+function stripPoTokenExp(url: string): string {
+  return url.replace(/([?&])exp=xpe(&|$)/g, (_, before, after) => (after ? before : ""));
+}
+
 // Fetch + parse a captionTrack baseUrl into Segment[]. Used by the
 // intercept correlator when YouTube's own page hasn't fetched
 // /youtubei/v1/get_transcript (i.e. the user hasn't opened the
@@ -212,14 +315,24 @@ export async function fetchTrackSegments(
   languageCode: string,
   translateTo?: string,
 ): Promise<Segment[] | ApiError> {
-  const url = buildTextUrl({ baseUrl, languageCode }, translateTo);
-  const events = await fetchTimedText(url, WEB_UA);
-  if (!Array.isArray(events)) return events;
-  const segs = parseSegments(events);
-  if (segs.length === 0) {
-    return { error: "fetch_failed", message: "Empty timedtext response" };
+  const primary = buildTextUrl({ baseUrl, languageCode }, translateTo);
+  let events = await fetchTimedText(primary, WEB_UA);
+  if (Array.isArray(events)) {
+    const segs = parseSegments(events);
+    if (segs.length > 0) return segs;
   }
-  return segs;
+
+  const cleaned = stripPoTokenExp(baseUrl);
+  if (cleaned !== baseUrl) {
+    const retry = buildTextUrl({ baseUrl: cleaned, languageCode }, translateTo);
+    events = await fetchTimedText(retry, WEB_UA);
+    if (Array.isArray(events)) {
+      const segs = parseSegments(events);
+      if (segs.length > 0) return segs;
+    }
+  }
+
+  return { error: "fetch_failed", message: "Empty timedtext response" };
 }
 
 async function fetchTimedText(textUrl: string, userAgent: string): Promise<unknown[] | ApiError> {

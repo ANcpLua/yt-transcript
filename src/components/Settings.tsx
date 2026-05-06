@@ -213,6 +213,20 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
         [prefs, onPreferencesChange],
     );
 
+    // Auto-pick the first ready provider when nothing is set yet.
+    // Preference order matches the tab order: Chrome AI > Ollama > saved keys.
+    useEffect(() => {
+        if (!isOpen) return;
+        if (prefs.aiProvider) return;
+        for (const p of PROVIDERS) {
+            if (providerStatus[p.id] === "ready") {
+                updatePref("aiProvider", p.id);
+                setSelectedProvider(p.id);
+                return;
+            }
+        }
+    }, [isOpen, prefs.aiProvider, providerStatus, updatePref]);
+
     const handleSaveKey = async () => {
         if (!keyInput.trim()) return;
         setKeyStatus("validating");
@@ -569,91 +583,86 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                         )}
                     </div>
                     <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-                        Used when a video has no transcript. Runs in your browser.
-                        {hasWebGpu ? (
-                            <span className="ml-1 text-slate-700 dark:text-slate-300">WebGPU on — fast.</span>
-                        ) : (
-                            <span className="ml-1">WebGPU not detected — falls back to WASM.</span>
-                        )}
+                        Auto-runs when a video has no captions. {hasWebGpu ? "WebGPU on." : "WebGPU off — WASM fallback."}
                     </p>
                 </section>
 
-                {/* Preferences */}
-                <section className="mb-6">
-                    <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        Preferences
-                    </h3>
-                    <div className="space-y-3">
-                        <label className="flex items-center justify-between">
-                            <span className="text-sm text-slate-700 dark:text-slate-300">View</span>
-                            <select
-                                value={prefs.viewMode}
-                                onChange={(e) => updatePref("viewMode", e.target.value as Preferences["viewMode"])}
-                                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                            >
-                                <option value="raw">Raw</option>
-                                <option value="sentences">Sentences</option>
-                                <option value="paragraphs">Paragraphs</option>
-                                <option value="tabular">Tabular</option>
-                            </select>
-                        </label>
-                        {(["showTimestamps", "compactMode", "autoScroll"] as const).map((key) => (
-                            <label key={key} className="flex items-center justify-between">
-                                <span className="text-sm text-slate-700 dark:text-slate-300">
-                                    {key === "showTimestamps" ? "Show timestamps" : key === "compactMode" ? "Compact mode" : "Auto-scroll"}
-                                </span>
-                                <input
-                                    type="checkbox"
-                                    checked={prefs[key]}
-                                    onChange={(e) => updatePref(key, e.target.checked)}
-                                    className="h-4 w-4 rounded-sm accent-slate-900 dark:accent-white"
-                                />
-                            </label>
-                        ))}
-                    </div>
-                </section>
-
-                {/* Storage */}
-                <section>
-                    <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        Storage
-                    </h3>
-
-                    {storageEstimate && quotaKB > 0 && (
-                        <div className="mb-3">
-                            <div className="mb-1.5 flex justify-between text-xs text-slate-500 dark:text-slate-400">
-                                <span>{formatQuota(totalUsageKB)} used</span>
-                                <span>of {formatQuota(quotaKB)}</span>
+                {/* Preferences + Storage — collapsed by default */}
+                <details className="mb-2 group">
+                    <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-wide text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+                        <span className="inline-flex items-center gap-1">
+                            <svg className="h-3 w-3 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/>
+                            </svg>
+                            More
+                        </span>
+                    </summary>
+                    <div className="mt-4 space-y-5">
+                        <section>
+                            <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Preferences</h3>
+                            <div className="space-y-2">
+                                <label className="flex items-center justify-between">
+                                    <span className="text-sm text-slate-700 dark:text-slate-300">View</span>
+                                    <select
+                                        value={prefs.viewMode}
+                                        onChange={(e) => updatePref("viewMode", e.target.value as Preferences["viewMode"])}
+                                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                    >
+                                        <option value="raw">Raw</option>
+                                        <option value="sentences">Sentences</option>
+                                        <option value="paragraphs">Paragraphs</option>
+                                        <option value="tabular">Tabular</option>
+                                    </select>
+                                </label>
+                                {(["showTimestamps", "compactMode", "autoScroll"] as const).map((key) => (
+                                    <label key={key} className="flex items-center justify-between">
+                                        <span className="text-sm text-slate-700 dark:text-slate-300">
+                                            {key === "showTimestamps" ? "Show timestamps" : key === "compactMode" ? "Compact mode" : "Auto-scroll"}
+                                        </span>
+                                        <input
+                                            type="checkbox"
+                                            checked={prefs[key]}
+                                            onChange={(e) => updatePref(key, e.target.checked)}
+                                            className="h-4 w-4 rounded-sm accent-slate-900 dark:accent-white"
+                                        />
+                                    </label>
+                                ))}
                             </div>
-                            <div className="h-1 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                                <div
-                                    className={`h-full rounded-full transition-all ${isWarning ? "bg-amber-500" : "bg-slate-400 dark:bg-slate-500"}`}
-                                    style={{width: `${Math.max(usagePercent, 1)}%`}}
-                                />
-                            </div>
-                            {isWarning && (
-                                <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-                                    Usage is high ({usagePercent.toFixed(0)}%). Export or clear old data.
-                                </p>
+                        </section>
+
+                        <section>
+                            <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Storage</h3>
+                            {storageEstimate && quotaKB > 0 && (
+                                <div className="mb-3">
+                                    <div className="mb-1.5 flex justify-between text-xs text-slate-500 dark:text-slate-400">
+                                        <span>{formatQuota(totalUsageKB)} used</span>
+                                        <span>of {formatQuota(quotaKB)}</span>
+                                    </div>
+                                    <div className="h-1 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                                        <div
+                                            className={`h-full rounded-full transition-all ${isWarning ? "bg-amber-500" : "bg-slate-400 dark:bg-slate-500"}`}
+                                            style={{width: `${Math.max(usagePercent, 1)}%`}}
+                                        />
+                                    </div>
+                                </div>
                             )}
-                        </div>
-                    )}
-
-                    <div className="flex gap-2">
-                        <button
-                            onClick={() => void handleExport()}
-                            className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                        >
-                            Export
-                        </button>
-                        <button
-                            onClick={() => void handleClearAll()}
-                            className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-slate-700 dark:text-red-400 dark:hover:bg-red-950/30"
-                        >
-                            Clear all
-                        </button>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => void handleExport()}
+                                    className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                                >
+                                    Export
+                                </button>
+                                <button
+                                    onClick={() => void handleClearAll()}
+                                    className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-slate-700 dark:text-red-400 dark:hover:bg-red-950/30"
+                                >
+                                    Clear all
+                                </button>
+                            </div>
+                        </section>
                     </div>
-                </section>
+                </details>
             </div>
         </div>
     );
