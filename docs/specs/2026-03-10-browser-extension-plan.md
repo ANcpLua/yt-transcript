@@ -445,7 +445,7 @@ if (existsSync(resolve(root, "public/fonts"))) {
   cpSync(resolve(root, "public/fonts"), resolve(dist, "fonts"), { recursive: true });
 }
 
-console.log("\n✅ Extension built to dist/");
+console.log("\nExtension built to dist/");
 ```
 
 - [ ] **Step 2: Update package.json scripts**
@@ -1206,7 +1206,7 @@ Expected: `dist/` directory with `sidepanel/`, `background/`, `content/`, `manif
 
 - [ ] **Step 6: Commit**
 ```
-feat: verified working Chrome extension build
+feat: Chrome extension build skeleton
 ```
 
 ---

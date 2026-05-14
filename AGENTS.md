@@ -50,7 +50,7 @@ We replace youtube-transcript.io feature-for-feature. This is the parity table:
 
 | ID | Their Feature | Their Tier | Our Status | Our Approach |
 |----|---|---|---|---|
-| F-001 | Single transcript extraction | Free (25/mo cap) | **DONE** | Intercept-first: MAIN-world fetch hook (`yt-interceptor.ts`) captures YouTube's own `youtubei/v1/get_transcript` + `player` calls, correlator merges and emits to side panel (`lib/intercept/`). Paste-URL fallback uses WEB_EMBEDDED_PLAYER + watch-page scrape (`innertube.ts:resolvePlayer`). |
+| F-001 | Single transcript extraction | Free (25/mo cap) | **BROKEN** | Intent: intercept-first MAIN-world fetch hook (`yt-interceptor.ts`) + paste-URL Innertube fallback (`innertube.ts`). Current behaviour on a paste from the side panel: error "Extension has not been invoked for the current page (see activeTab permission). Chrome pages cannot be captured." No captions are fetched. Every downstream feature in this table is gated on F-001 being repaired. |
 | F-002 | Playlist bulk extraction | Plus ($9.99/mo) | **DONE** | `UrlInput.tsx` detects playlist URLs → `chrome.runtime.sendMessage({type:"fetch-playlist"})` → video selection panel → batch queue |
 | F-003 | CSV bulk upload | Plus | **DONE** | `UrlInput.tsx` file input accepts `.csv/.txt`, parses video IDs via `parseVideoId`, feeds into `onSubmitBatch` |
 | F-004 | Channel ID finder + transcripts | Plus/Pro | **DONE** | `UrlInput.tsx` detects channel URLs → `chrome.runtime.sendMessage({type:"fetch-channel"})` → selection panel → batch |
@@ -84,9 +84,14 @@ Priority order is strict:
 
 <priority_classification>
 
-All P0–P3 items are complete. Only EXTRA-004 (Bilingual side-by-side) remains unwired — it exists as a
-standalone component but is not integrated into the main UI flow. This is a future enhancement, not a
-parity blocker.
+P0 — repair F-001 (Single transcript extraction). The side panel currently surfaces an `activeTab` /
+`captureVisibleTab` error before any captions are returned, which means every "DONE" row in the parity
+table that consumes a `TranscriptResponse` is unreachable in practice. Until an E2E run shows ≥10 caption
+rows for a real video, treat the table as wiring-only — the pipeline is not proven end-to-end.
+
+Lower-tier items (EXTRA-004 Bilingual side-by-side, the `TranscriptView.tsx` / `AiPanel.tsx` splits,
+icon-set consolidation, Hugging Face host-permission opt-in) remain out of scope until F-001 is verified
+green by the harness under `e2e/`.
 
 </priority_classification>
 
@@ -418,12 +423,6 @@ asked, otherwise leave alone:
   Vimeo MAIN-world interceptor, packaged offline Whisper, floating overlay,
   Web Neural Network API.**
 
-## Gap Detail (legacy)
-
-`docs/runs/run-1to4-remaining.md` is preserved for historical reference but
-the gaps it describes are mostly closed by the rewrite. Check the parity
-table above for current state before consulting it.
-
 ## Validation Checklist
 
 After completing any work session, verify:
@@ -442,10 +441,7 @@ After completing any work session, verify:
 
 ## Store Publishing
 
-When the extension is published and verified on Chrome Web Store, Firefox Add-ons, or Edge Add-ons,
-update the `yt-transcript` skill (`~/.claude/skills/yt-transcript/SKILL.md`) and
-`AGENTS.md` with:
-
-- Store listing URLs for each verified platform
-- Install instructions (link to store instead of "Load unpacked")
-- Badge/status indicating which stores are live
+The extension is not in a publishable state until F-001 is repaired and proven by the E2E harness.
+When that happens and a build is genuinely accepted by Chrome Web Store / Firefox Add-ons / Edge
+Add-ons, this section can be replaced with the actual listing URLs and install instructions. Do not
+add store badges or "live" status before that point.
