@@ -14,9 +14,11 @@ dist-firefox/
 # Build artifacts
 yt-transcript-*.zip
 test-results/
+playwright-report/
+e2e/.tmp-profile*/
 
 # Temp screenshots
 *.png
 !public/**/*.png
-!e2e/screenshots/*.png
+!e2e/screenshots/**/*.png
 !store/**/*.png
