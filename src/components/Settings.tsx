@@ -235,10 +235,19 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
             if (!cancelled) setHfPermissionGranted(false);
         });
 
-        chrome.runtime.sendMessage({type: "check-whisper-status"}, (response: {downloaded?: boolean} | undefined) => {
-            if (cancelled) return;
-            setWhisperState(response?.downloaded ? "ready" : "not-downloaded");
-        });
+        // Scope the readiness check to the currently selected model — a
+        // user with Tiny cached but Base selected should see
+        // "Not downloaded", not a stale "Ready" that hides the upcoming
+        // on-demand download.
+        const askingForModel = prefs.whisperModel;
+        chrome.runtime.sendMessage(
+            {type: "check-whisper-status", model: askingForModel},
+            (response: {downloaded?: boolean; model?: "tiny" | "base"} | undefined) => {
+                if (cancelled) return;
+                const matchesCurrent = response?.model === askingForModel;
+                setWhisperState(response?.downloaded && matchesCurrent ? "ready" : "not-downloaded");
+            },
+        );
 
         const listener = (msg: {type: string; progress?: number}) => {
             if (msg.type === "download-whisper-progress") {
@@ -268,7 +277,7 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
             cancelled = true;
             chrome.runtime.onMessage.removeListener(listener);
         };
-    }, [isOpen]);
+    }, [isOpen, prefs.whisperModel]);
 
     // ----- Storage estimate -----
     useEffect(() => {

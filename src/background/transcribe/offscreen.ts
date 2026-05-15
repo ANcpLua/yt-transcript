@@ -430,31 +430,42 @@ chrome.runtime.onMessage.addListener(
         stopCapture();
         break;
 
-      case "offscreen-check-whisper":
+      case "offscreen-check-whisper": {
+        const model = (message["model"] as "tiny" | "base") ?? "tiny";
+        const modelId = MODEL_MAP[model];
         void (async () => {
+          // transformers.js v3 keeps a single "transformers-cache"
+          // CacheStorage entry and stores each weight as its source URL.
+          // We probe the cache *contents* (not just the cache name) so a
+          // user with Tiny cached but Base selected gets "not-downloaded"
+          // instead of being told the wrong model is ready.
+          let downloaded = false;
           try {
             const keys = await self.caches.keys();
-            const hasModel = keys.some((k) => k.includes("transformers"));
-            chrome.runtime
-              .sendMessage({
-                type: "whisper-status-response",
-                downloaded: hasModel,
-                modelId: "whisper-tiny",
-                device: pipelineDevice,
-              })
-              .catch(() => {});
+            for (const cacheName of keys) {
+              if (!cacheName.includes("transformers")) continue;
+              const cache = await self.caches.open(cacheName);
+              const requests = await cache.keys();
+              if (requests.some((r) => r.url.includes(modelId))) {
+                downloaded = true;
+                break;
+              }
+            }
           } catch {
-            chrome.runtime
-              .sendMessage({
-                type: "whisper-status-response",
-                downloaded: false,
-                modelId: "whisper-tiny",
-                device: null,
-              })
-              .catch(() => {});
+            downloaded = false;
           }
+          chrome.runtime
+            .sendMessage({
+              type: "whisper-status-response",
+              downloaded,
+              modelId,
+              model,
+              device: pipelineDevice,
+            })
+            .catch(() => {});
         })();
         break;
+      }
 
       case "offscreen-download-whisper": {
         const model = (message["model"] as "tiny" | "base") ?? "tiny";
