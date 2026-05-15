@@ -131,7 +131,7 @@ chrome.runtime.onMessage.addListener(
         return false;
 
       case "check-whisper-status":
-        handleCheckWhisperStatus().then((status) => sendResponse(status));
+        handleCheckWhisperStatus(message.model).then((status) => sendResponse(status));
         return true;
 
       case "download-whisper":
@@ -310,24 +310,30 @@ function handleStopTranscription(): void {
   chrome.runtime.sendMessage({ type: "offscreen-stop-capture" }).catch(() => {});
 }
 
-async function handleCheckWhisperStatus(): Promise<{ type: string; downloaded: boolean; modelId: string }> {
-  // Check is delegated to offscreen document which has IndexedDB access
+async function handleCheckWhisperStatus(
+  model: "tiny" | "base" = "tiny",
+): Promise<{ type: string; downloaded: boolean; modelId: string; model: "tiny" | "base" }> {
+  // Check is delegated to offscreen document which has CacheStorage access.
+  // Carry the model through so the caller can verify the response is scoped
+  // to the same model they asked about (avoids a stale "ready" if the user
+  // flipped the selector between request and response).
   await ensureOffscreen();
   return new Promise((resolve) => {
-    const listener = (msg: { type: string; downloaded?: boolean; modelId?: string }) => {
-      if (msg.type === "whisper-status-response") {
-        chrome.runtime.onMessage.removeListener(listener);
-        resolve({
-          type: "whisper-status",
-          downloaded: msg.downloaded ?? false,
-          modelId: msg.modelId ?? "whisper-tiny",
-        });
-      }
+    const listener = (msg: { type: string; downloaded?: boolean; modelId?: string; model?: "tiny" | "base" }) => {
+      if (msg.type !== "whisper-status-response") return;
+      if (msg.model && msg.model !== model) return;
+      chrome.runtime.onMessage.removeListener(listener);
+      resolve({
+        type: "whisper-status",
+        downloaded: msg.downloaded ?? false,
+        modelId: msg.modelId ?? `whisper-${model}`,
+        model,
+      });
     };
     chrome.runtime.onMessage.addListener(listener);
-    chrome.runtime.sendMessage({ type: "offscreen-check-whisper" }).catch(() => {
+    chrome.runtime.sendMessage({ type: "offscreen-check-whisper", model }).catch(() => {
       chrome.runtime.onMessage.removeListener(listener);
-      resolve({ type: "whisper-status", downloaded: false, modelId: "whisper-tiny" });
+      resolve({ type: "whisper-status", downloaded: false, modelId: `whisper-${model}`, model });
     });
   });
 }

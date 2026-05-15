@@ -144,12 +144,14 @@ export interface TranscriptionErrorMessage {
 
 export interface CheckWhisperStatusMessage {
   type: "check-whisper-status";
+  model?: "tiny" | "base";
 }
 
 export interface WhisperStatusMessage {
   type: "whisper-status";
   downloaded: boolean;
   modelId: string;
+  model: "tiny" | "base";
 }
 
 export interface DownloadWhisperMessage {
