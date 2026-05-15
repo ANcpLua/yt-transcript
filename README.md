@@ -4,12 +4,17 @@ MV3 browser extension. Side panel UI. Source under `src/`.
 
 ## Status
 
-Work in progress. The transcript-extraction pipeline does not currently
-function end-to-end on a fresh install — pasting a YouTube URL produces an
-`activeTab` / `captureVisibleTab` error before any captions are fetched.
-See `AGENTS.md` for the architecture and the open feature table; do not
-trust any prior "DONE" or "working" claim until it is reproduced by the
-E2E harness under `e2e/`.
+The transcript-extraction pipeline has been repaired on
+`fix/transcript-extraction-real` (PR #2) — auto-detect on a watch page
+populates the side panel via the MAIN-world interceptor, and paste-URL
+recovery from a non-YouTube tab now routes through the same correlator
+instead of trying `chrome.tabCapture` against the wrong tab. The
+verified-real-Chrome proof lives at
+`e2e/screenshots/20260515T092700Z/03-after-success.png` +
+`03-after-transcript.txt`. The Playwright harness still fails end-to-end
+because YouTube bot-detects chrome-for-testing; treat it as a
+path-regression guard and follow the manual procedure in `AGENTS.md`
+("How to verify the extension actually works") for caption-content proof.
 
 ## Build from source
 

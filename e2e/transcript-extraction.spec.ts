@@ -135,25 +135,25 @@ test("paste-URL produces ≥10 caption rows", async () => {
     await input.fill(VIDEO_URL);
     await page.getByRole("button", {name: /get transcript/i}).click();
 
-    // Race: either the transcript list fills with ≥10 listitems, or an
-    // error/no-transcript state appears. We wait up to 45 s — Innertube +
-    // optional watch-page scrape + segment parse is normally well under
-    // 10 s; the extra headroom is for the broken-state fallback paths.
+    // Wait for either the transcript list to fill with ≥10 listitems
+    // OR an error/no-transcript state to appear. Up to 45 s — Innertube
+    // + optional watch-page scrape + segment parse is normally well
+    // under 10 s; the extra headroom is for the broken-state fallback
+    // paths. We use `allSettled` (not `race`) so the post-hoc log can
+    // tell whether the rows leg fulfilled, the alert leg fulfilled,
+    // both timed out, or both fired at once.
     const segmentRows = page.locator('[role="list"][aria-label="Transcript segments"] [role="listitem"]');
     const alert = page.locator('[role="alert"]');
 
-    const settled = await Promise.race([
-        segmentRows
-            .nth(REQUIRED_ROWS - 1)
-            .waitFor({state: "attached", timeout: 45_000})
-            .then(() => "rows" as const)
-            .catch(() => "rows-timeout" as const),
-        alert
-            .first()
-            .waitFor({state: "visible", timeout: 45_000})
-            .then(() => "alert" as const)
-            .catch(() => "alert-timeout" as const),
+    const [rowsLeg, alertLeg] = await Promise.allSettled([
+        segmentRows.nth(REQUIRED_ROWS - 1).waitFor({state: "attached", timeout: 45_000}),
+        alert.first().waitFor({state: "visible", timeout: 45_000}),
     ]);
+    const settled =
+        rowsLeg.status === "fulfilled" && alertLeg.status === "fulfilled" ? "rows+alert" :
+        rowsLeg.status === "fulfilled" ? "rows" :
+        alertLeg.status === "fulfilled" ? "alert" :
+        "both-timeout";
 
     const result = await dumpFailureArtifacts(page, "01-repro-fail");
 

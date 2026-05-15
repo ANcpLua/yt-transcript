@@ -84,14 +84,18 @@ Priority order is strict:
 
 <priority_classification>
 
-P0 — repair F-001 (Single transcript extraction). The side panel currently surfaces an `activeTab` /
-`captureVisibleTab` error before any captions are returned, which means every "DONE" row in the parity
-table that consumes a `TranscriptResponse` is unreachable in practice. Until an E2E run shows ≥10 caption
-rows for a real video, treat the table as wiring-only — the pipeline is not proven end-to-end.
+P0 — F-001 fix has landed (CSP allowlist, ANDROID_VR-first ordering, page-context
+`/youtubei/v1/player` fetch in `content.ts`, `captureViaYouTubeTab` recovery, removal of the
+`no_captions → start-transcription` auto-cascade). The legacy `activeTab` / `captureVisibleTab`
+error has been removed at its source and a real-Chrome capture is preserved at
+`e2e/screenshots/20260515T092700Z/03-after-success.png` + `03-after-transcript.txt`. The
+Playwright harness still fails for content because YouTube bot-detects chrome-for-testing —
+treat the harness as a path-regression guard, not as a caption-content proof. See "How to
+verify the extension actually works" below for the real-Chrome verification procedure.
 
-Lower-tier items (EXTRA-004 Bilingual side-by-side, the `TranscriptView.tsx` / `AiPanel.tsx` splits,
-icon-set consolidation, Hugging Face host-permission opt-in) remain out of scope until F-001 is verified
-green by the harness under `e2e/`.
+Lower-tier items (EXTRA-004 Bilingual side-by-side, the `TranscriptView.tsx` / `AiPanel.tsx`
+splits, icon-set consolidation, Hugging Face host-permission opt-in) remain out of scope
+unless a regression in F-001 surfaces.
 
 </priority_classification>
 
@@ -391,15 +395,13 @@ they won't broadcast captures until refreshed).
 
 ### Node version
 
-Homebrew Node 25 on Apple Silicon currently fails to start (missing
-`libsimdjson.31.dylib` after a Homebrew simdjson upgrade). Until that's
-relinked, prefer the nvm-installed Node v22:
-
-```bash
-PATH="/Users/ancplua/.nvm/versions/node/v22.21.1/bin:$PATH" npm run build
-```
-
-Or fix Homebrew once with `brew reinstall node`.
+The build runs cleanly on Node 22.x or 25.x. If your Homebrew Node 25
+on Apple Silicon fails to start (missing `libsimdjson.31.dylib` after
+a Homebrew simdjson upgrade), either `brew reinstall node` once or use
+`nvm use 22` before running build commands. The verification snippets
+below use plain `npm run build` and assume whichever Node the project
+sees on PATH is usable — add an `.nvmrc` if you want `nvm` to switch
+automatically.
  
 ## Deferred / out of scope
 
@@ -456,7 +458,7 @@ session:
 
 ```bash
 # 1. Build fresh
-PATH="/Users/ancplua/.nvm/versions/node/v22.21.1/bin:$PATH" npm run build
+npm run build
 
 # 2. Load unpacked
 #    Chrome → chrome://extensions → enable Developer mode →
@@ -485,8 +487,7 @@ PATH="/Users/ancplua/.nvm/versions/node/v22.21.1/bin:$PATH" npm run build
 The Playwright spec is still useful for the path test. Run it with:
 
 ```bash
-PATH="/Users/ancplua/.nvm/versions/node/v22.21.1/bin:$PATH" \
-  npm run build && \
+npm run build && \
   npx playwright install chromium && \
   npx playwright test e2e/transcript-extraction.spec.ts
 ```

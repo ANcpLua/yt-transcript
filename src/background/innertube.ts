@@ -28,11 +28,16 @@ const WEB_UA =
 const ANDROID_VR_UA =
   "com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip";
 
-// Innertube clients we'll cycle through. yt-dlp's current default for
-// unauthenticated extraction is android_vr + tv_simply (via tv) —
-// neither needs PO tokens for player or subs as of 2025-Q4. We keep
-// WEB_EMBEDDED_PLAYER first because it's the lowest-friction match
-// for what the user's actual session would do.
+// Innertube clients we cycle through, in the order `resolvePlayer`
+// tries them: ANDROID_VR first, then TVHTML5_SIMPLY_EMBEDDED_PLAYER,
+// then WEB_EMBEDDED_PLAYER. yt-dlp uses ANDROID_VR (and tv_simply via
+// TV) as its current default for unauthenticated extraction because
+// neither client needs PO tokens for player or subs as of 2025-Q4 —
+// importantly, ANDROID_VR's captionTrack baseUrls do NOT include
+// `exp=xpe` in `sparams`, so /api/timedtext returns real bytes
+// instead of the 0-byte PoTokenRequired signal that WEB_EMBEDDED_PLAYER
+// triggers. WEB_EMBEDDED_PLAYER stays in the chain as a final fallback
+// for the rare video where ANDROID_VR returns nothing.
 const EMBEDDED_CLIENT = {
   name: "WEB_EMBEDDED_PLAYER",
   userAgent: WEB_UA,
