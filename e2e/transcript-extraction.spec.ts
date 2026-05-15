@@ -26,7 +26,7 @@ const REPO_ROOT = path.resolve(__dirname, "..");
 const DIST = path.join(REPO_ROOT, "dist");
 const SIDE_PANEL_PATH = "sidepanel/index.html";
 
-const VIDEO_URL = "https://www.youtube.com/watch?v=JHDfWOzIFlo";
+const VIDEO_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
 const REQUIRED_ROWS = 10;
 
 function utcStamp(): string {
@@ -114,12 +114,12 @@ test.afterAll(async () => {
     }
 });
 
-test("paste-URL produces ≥10 caption rows for JHDfWOzIFlo", async () => {
+test("paste-URL produces ≥10 caption rows", async () => {
     const page = await context.newPage();
     page.on("console", (msg) => {
-        // Surface SW + page logs into Playwright output so a failure trace
-        // shows the chain (Innertube → no_captions → start-transcription →
-        // tabCapture error) instead of just "0 rows".
+        // Surface side-panel console errors into the Playwright trace so
+        // a failure shows the activeTab/tabCapture path instead of just
+        // "0 rows".
         if (msg.type() === "error" || msg.text().includes("[intercept]") ||
             msg.text().includes("tabCapture") || msg.text().includes("activeTab")) {
             console.log(`[page:${msg.type()}] ${msg.text()}`);

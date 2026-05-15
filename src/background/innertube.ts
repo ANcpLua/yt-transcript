@@ -227,10 +227,16 @@ function isUsablePlayer(result: PlayerResult | ApiError): result is PlayerResult
 
 async function resolvePlayer(videoId: string): Promise<PlayerResult | ApiError> {
   // Try clients in order. Stop on the first hit that has captionTracks.
-  // If a client returns a *playable* response with no captions we
-  // remember it so we can return it as the no_captions answer rather
-  // than misleadingly trying the next client (which won't help).
-  const clients: InnertubeClient[] = [EMBEDDED_CLIENT, TV_SIMPLY_CLIENT, ANDROID_VR_CLIENT];
+  // ANDROID_VR is intentionally first: its captionTrack baseUrls are
+  // signed WITHOUT `exp=xpe` in `sparams`, so YouTube returns real
+  // bodies without a PO token. WEB_EMBEDDED_PLAYER returns identical
+  // captionTracks but with `exp=xpe` in the signed params, which
+  // currently makes /api/timedtext respond `HTTP 200` + 0 bytes
+  // (the "PO token required" signal) — that broke every paste-URL
+  // fetch attempt for several months. Keep TV_SIMPLY and the
+  // watch-page scrape as additional fallbacks for the rare video
+  // where ANDROID_VR returns nothing.
+  const clients: InnertubeClient[] = [ANDROID_VR_CLIENT, TV_SIMPLY_CLIENT, EMBEDDED_CLIENT];
   let lastError: ApiError | null = null;
   let captionlessHit: PlayerResult | null = null;
 
