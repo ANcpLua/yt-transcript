@@ -202,7 +202,12 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                 url: (ollamaUrl || DEFAULT_OLLAMA_URL).trim(),
                 model: (ollamaModel || DEFAULT_OLLAMA_MODEL).trim(),
             });
-            const ok = await provider.validateKey();
+            let ok = false;
+            try {
+                ok = await provider.validateKey();
+            } catch {
+                ok = false;
+            }
             if (cancelled) return;
             setProviderStatus((s) => ({...s, ollama: ok ? "ready" : "unreachable"}));
         })();
@@ -321,7 +326,15 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
         if (!expandedProvider || !keyInput.trim()) return;
         setKeyStatus("validating");
         const provider = getProvider(expandedProvider, keyInput.trim());
-        const valid = await provider.validateKey();
+        let valid = false;
+        try {
+            valid = await provider.validateKey();
+        } catch {
+            // Network / CORS / runtime errors land the user in the same
+            // "invalid" UI state as an explicit false from the provider —
+            // the key isn't usable right now, that's all the user needs.
+            valid = false;
+        }
         if (valid) {
             await saveApiKey(expandedProvider, keyInput.trim());
             updatePref("aiProvider", expandedProvider);
@@ -356,7 +369,12 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
             url: ollamaUrl.trim() || DEFAULT_OLLAMA_URL,
             model: ollamaModel.trim() || DEFAULT_OLLAMA_MODEL,
         });
-        const ok = await provider.validateKey();
+        let ok = false;
+        try {
+            ok = await provider.validateKey();
+        } catch {
+            ok = false;
+        }
         setOllamaStatus(ok ? "ok" : "fail");
         setProviderStatus((s) => ({...s, ollama: ok ? "ready" : "unreachable"}));
         if (ok) {
@@ -423,13 +441,13 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
     // Reset visible progress + state when the model selection changes —
     // the cached pipeline (if any) is now for the wrong model, so the
     // user is effectively back to "not downloaded" until they click again.
+    // The per-model readiness check (effect deps on prefs.whisperModel)
+    // will flip us back to "ready" if the new model is already cached.
     const handleWhisperModelChange = (model: "tiny" | "base") => {
         updatePref("whisperModel", model);
         setWhisperProgress(0);
         setWhisperError(null);
-        if (whisperState === "downloading" || whisperState === "ready") {
-            setWhisperState("not-downloaded");
-        }
+        setWhisperState(hfPermissionGranted === false ? "needs-permission" : "not-downloaded");
     };
 
     if (!isOpen) return null;
