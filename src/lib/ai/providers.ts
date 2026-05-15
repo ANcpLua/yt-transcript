@@ -1,3 +1,5 @@
+import { isChromeAiPromptAvailable, runChromeAiPrompt } from "./chrome-ai";
+
 export interface AiProvider {
     name: string;
 
@@ -271,77 +273,29 @@ export interface OllamaConfig {
 export const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 export const DEFAULT_OLLAMA_MODEL = "llama3.2";
 
-interface LanguageModelSession {
-    prompt(text: string): Promise<string>;
-    destroy?(): void;
-}
-
-interface LanguageModelStatic {
-    availability(): Promise<"unavailable" | "downloadable" | "downloading" | "available">;
-    create(options?: {
-        systemPrompt?: string;
-        initialPrompts?: { role: string; content: string }[];
-        expectedInputs?: { type: "text"; languages?: string[] }[];
-        expectedOutputs?: { type: "text"; languages?: string[] }[];
-        // Chrome 142+ / Edge 142+: explicit ISO code. Required to
-        // silence the "No output language was specified" attestation
-        // warning; takes precedence over expectedOutputs when present.
-        outputLanguage?: string;
-    }): Promise<LanguageModelSession>;
-}
-
-function getLanguageModel(): LanguageModelStatic | undefined {
-    const w = globalThis as { LanguageModel?: LanguageModelStatic };
-    return w.LanguageModel;
-}
-
-export async function isChromeAiAvailable(): Promise<boolean> {
-    const lm = getLanguageModel();
-    if (!lm) return false;
-    try {
-        const status = await lm.availability();
-        return status === "available" || status === "downloadable" || status === "downloading";
-    } catch {
-        return false;
-    }
-}
-
 function createChromeAiProvider(): AiProvider {
     return {
         name: "chrome-ai",
 
         async sendMessage({ systemPrompt, userMessage }) {
-            const lm = getLanguageModel();
-            if (!lm) {
-                throw new AiError(
-                    "Chrome built-in AI is not available in this browser. Update to Edge/Chrome 138+ or enable chrome://flags/#prompt-api-for-gemini-nano.",
-                    0,
-                    "Chrome AI",
-                );
-            }
-            const status = await lm.availability();
-            if (status === "unavailable") {
-                throw new AiError(
-                    "Chrome built-in AI is unavailable on this device.",
-                    0,
-                    "Chrome AI",
-                );
-            }
-            const session = await lm.create({
-                initialPrompts: [{ role: "system", content: systemPrompt }],
-                expectedInputs: [{ type: "text", languages: ["en", "es", "ja"] }],
-                expectedOutputs: [{ type: "text", languages: ["en"] }],
-                outputLanguage: "en",
-            });
             try {
-                return await session.prompt(userMessage);
-            } finally {
-                session.destroy?.();
+                return await runChromeAiPrompt(systemPrompt, userMessage);
+            } catch (e) {
+                // Surface as a structured AiError so the SW handler /
+                // AiPanel error UI gets a provider tag and the existing
+                // status-based switch behaves consistently with the
+                // remote providers below. Chrome AI failures are not
+                // HTTP-shaped, so `status: 0` marks "non-HTTP".
+                throw new AiError(
+                    e instanceof Error ? e.message : String(e),
+                    0,
+                    "Chrome AI",
+                );
             }
         },
 
         async validateKey() {
-            return isChromeAiAvailable();
+            return isChromeAiPromptAvailable();
         },
     };
 }
