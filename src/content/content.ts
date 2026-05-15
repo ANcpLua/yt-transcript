@@ -73,6 +73,46 @@ function extractInitialPlayerResponse(): string | null {
   return null;
 }
 
+// Call /youtubei/v1/player from the page's youtube.com origin with the
+// ANDROID_VR client. From this origin, YouTube returns captionTracks
+// whose baseUrls are signed WITHOUT `exp=xpe` in sparams — i.e. they
+// work without a PO token. From chrome-extension:// the same call is
+// 403'd, and the inline ytInitialPlayerResponse (WEB client) ships
+// `exp=xpe` URLs that return HTTP 200 + 0 bytes for anonymous
+// sessions. ANDROID_VR is the only client we have access to here
+// that consistently produces playable caption URLs in 2026.
+async function fetchAndroidVrPlayer(videoId: string): Promise<string | null> {
+  try {
+    const res = await fetch("/youtubei/v1/player?prettyPrint=false", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      credentials: "include",
+      body: JSON.stringify({
+        context: {
+          client: {
+            clientName: "ANDROID_VR",
+            clientVersion: "1.62.27",
+            androidSdkVersion: 32,
+            deviceMake: "Oculus",
+            deviceModel: "Quest 3",
+            osName: "Android",
+            osVersion: "12L",
+            hl: "en",
+            gl: "US",
+          },
+        },
+        videoId,
+        contentCheckOk: true,
+        racyCheckOk: true,
+      }),
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
 interface CaptionTrack {
   baseUrl: string;
   languageCode: string;
@@ -121,9 +161,39 @@ function pickCaptionTrack(playerJson: string): CaptionTrack | null {
 // timedtext capture, the correlator gets segments without the SW
 // ever needing to make the cross-origin call.
 function forwardInitialPlayerResponse(videoId: string): void {
-  let tries = 0;
+  // Two parallel sources of captionTracks:
+  //   ANDROID_VR — page-context fetch of /youtubei/v1/player with the
+  //     Oculus VR client config. yt-dlp's go-to client for anonymous
+  //     extraction: returns caption URLs signed WITHOUT `exp=xpe` in
+  //     `sparams`, so /api/timedtext serves real bodies without a PO
+  //     token. SW-context fetches of the same endpoint get 403'd from
+  //     `chrome-extension://`; running the request inside content.js
+  //     puts the call on the youtube.com origin where YouTube accepts
+  //     it. This is the path that actually delivers captions for
+  //     anonymous viewers.
+  //   DOM `ytInitialPlayerResponse` — inline blob YouTube ships in the
+  //     watch-page HTML. Its captionTrack baseUrls have `exp=xpe` in
+  //     sparams (returns 0-byte for anonymous) but the player payload
+  //     itself still carries chapters, description, title, etc., so we
+  //     forward it for the correlator to read those side-channel
+  //     fields. The non-gated URLs from ANDROID_VR replace its tracks.
+  void (async () => {
+    const androidJson = await fetchAndroidVrPlayer(videoId);
+    if (!androidJson) return;
+    safeSendMessage({
+      type: "intercepted-capture",
+      kind: "player",
+      videoId,
+      url: `android-vr://${videoId}`,
+      status: 200,
+      bodyText: androidJson,
+    });
+    void fetchTimedTextFromPage(videoId, androidJson);
+  })();
+
+  let domTries = 0;
   const tryOnce = () => {
-    tries++;
+    domTries++;
     const json = extractInitialPlayerResponse();
     if (json) {
       safeSendMessage({
@@ -137,7 +207,7 @@ function forwardInitialPlayerResponse(videoId: string): void {
       void fetchTimedTextFromPage(videoId, json);
       return;
     }
-    if (tries < 6) setTimeout(tryOnce, 500);
+    if (domTries < 6) setTimeout(tryOnce, 500);
   };
   tryOnce();
 }
@@ -145,7 +215,12 @@ function forwardInitialPlayerResponse(videoId: string): void {
 async function fetchTimedTextFromPage(videoId: string, playerJson: string): Promise<void> {
   const track = pickCaptionTrack(playerJson);
   if (!track) return;
-  const url = track.baseUrl + (track.baseUrl.includes("fmt=") ? "" : "&fmt=json3");
+  // Force fmt=json3 — YouTube signs the URL over `sparams`, and fmt is
+  // never in sparams, so an explicit append is accepted regardless of
+  // what the client embedded. Without it the endpoint defaults to
+  // legacy XML which `parseGetTranscript` doesn't speak.
+  const sep = track.baseUrl.includes("?") ? "&" : "?";
+  const url = `${track.baseUrl}${sep}fmt=json3`;
   try {
     const res = await fetch(url, { credentials: "include" });
     if (!res.ok) return;
@@ -160,7 +235,7 @@ async function fetchTimedTextFromPage(videoId: string, playerJson: string): Prom
       bodyText,
     });
   } catch {
-    // network blocked — SW will still try its own (likely failing) path.
+    // network blocked — interceptor may still catch YouTube's own fetches.
   }
 }
 

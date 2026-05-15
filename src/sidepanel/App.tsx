@@ -41,6 +41,47 @@ interface TranscriptData {
     chapters?: Chapter[];
 }
 
+// ---------- helpers ----------
+
+const CAPTURE_VIA_TAB_TIMEOUT_MS = 20_000;
+
+// Paste-URL recovery: when the SW's Innertube fallback fails for a
+// video the user is not currently watching, open the watch page in a
+// background tab and wait for the MAIN-world interceptor + correlator
+// to broadcast a transcript for this videoId. YouTube's own page JS
+// makes the authenticated /youtubei/v1/player call we cannot replicate
+// from MV3, the interceptor rides it, and the SW emits
+// `intercepted-transcript` once segments are resolved. The 20 s ceiling
+// is generous — a normal capture lands in 2–6 s.
+async function captureViaYouTubeTab(videoId: string): Promise<boolean> {
+    let createdTabId: number | null = null;
+    return new Promise<boolean>((resolve) => {
+        let resolved = false;
+        const finish = (ok: boolean) => {
+            if (resolved) return;
+            resolved = true;
+            chrome.runtime.onMessage.removeListener(listener);
+            if (!ok && createdTabId !== null) {
+                chrome.tabs.remove(createdTabId).catch(() => {});
+            }
+            resolve(ok);
+        };
+        const listener = (message: { type?: string; data?: { videoId?: string } }) => {
+            if (message?.type === "intercepted-transcript" && message.data?.videoId === videoId) {
+                finish(true);
+            }
+        };
+        chrome.runtime.onMessage.addListener(listener);
+        chrome.tabs
+            .create({url: `https://www.youtube.com/watch?v=${videoId}`, active: true})
+            .then((tab) => {
+                if (typeof tab.id === "number") createdTabId = tab.id;
+            })
+            .catch(() => finish(false));
+        setTimeout(() => finish(false), CAPTURE_VIA_TAB_TIMEOUT_MS);
+    });
+}
+
 // ---------- header icons ----------
 
 function GearIcon() {
@@ -277,24 +318,35 @@ export function App() {
             }) as { type: string; data?: TranscriptData; error?: ApiError };
 
             if (response.type === "transcript-error" && response.error) {
-                if (response.error.error === "no_captions") {
-                    // Auto-start Whisper instead of dead-ending the user with
-                    // a "No transcript / Transcribe" intermediate screen. The
-                    // YouTube tab the SW captures audio from must be active —
-                    // the SW re-checks via chrome.tabs.query when starting.
-                    setPendingTitle(response.error.message);
-                    setState("transcribing");
-                    setTranscriptionProgress(0);
-                    setTranscript(null);
-                    chrome.runtime.sendMessage({
-                        type: "start-transcription",
-                        videoId,
-                        title: response.error.message,
-                    });
-                } else {
-                    setError(response.error);
-                    setState("error");
+                // YouTube's anonymous Innertube clients (WEB_EMBEDDED_PLAYER,
+                // TVHTML5_SIMPLY_EMBEDDED_PLAYER, ANDROID_VR + watch-page
+                // scrape) drop captions for a non-trivial fraction of public
+                // videos because the captionTrack URLs are gated by PO
+                // tokens we cannot mint from MV3. The MAIN-world interceptor
+                // (src/content/yt-interceptor.ts) rides on YouTube's own
+                // authenticated /youtubei/v1/player + /get_transcript calls
+                // — opening the watch page in a background tab lets the
+                // correlator deliver the captions for any video YouTube's
+                // own page can render them for. This replaces the previous
+                // auto-cascade into `start-transcription` (chrome.tabCapture
+                // against the active tab), which surfaced the misleading
+                // "activeTab permission … Chrome pages cannot be captured."
+                // error whenever the foreground tab was not the target.
+                // Whisper is still reachable behind the explicit
+                // "Transcribe locally" button on the error UI.
+                if (platform === "youtube" &&
+                    (response.error.error === "no_captions" ||
+                        response.error.error === "fetch_failed")) {
+                    const captured = await captureViaYouTubeTab(videoId);
+                    if (captured) {
+                        // The shared `intercepted-transcript` listener above
+                        // has already set state="loaded" and populated the
+                        // transcript; nothing more to do here.
+                        return;
+                    }
                 }
+                setError(response.error);
+                setState("error");
                 return;
             }
 

@@ -1,0 +1,9 @@
+timestamp: 2026-05-14T21:18:21.613Z
+video_url: https://www.youtube.com/watch?v=JHDfWOzIFlo
+required_rows: 10
+actual_rows: 0
+heading: Couldn't fetch transcript
+alert_text: Couldn't fetch transcriptSome videos (Premium-gated, age-restricted, region-locked, VEVO) need an authenticated session we can't replicate from a paste-URL flow. Open the video on YouTube and we'll capture the transcript automatically the moment the page loads. Or transcribe the audio locally.Open on YouTubeTry againTranscribe locally
+
+--- body snapshot ---
+yt·txCouldn't fetch transcriptSome videos (Premium-gated, age-restricted, region-locked, VEVO) need an authenticated session we can't replicate from a paste-URL flow. Open the video on YouTube and we'll capture the transcript automatically the moment the page loads. Or transcribe the audio locally.Open on YouTubeTry againTranscribe locallyLegal & Privacy

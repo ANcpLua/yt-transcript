@@ -1,0 +1,54 @@
+Source: extracted from https://www.youtube.com/watch?v=yPYZpwSpKmA
+Title:  Rick Astley - Together Forever (Official Video) [4K Remaster]
+Note:   captions verified end-to-end on real Chrome with the unpacked
+        fix/transcript-extraction-real build loaded; side-panel UI
+        shows the same lines (see 03-after-success.png).
+
+[00:00:00] [♪♪♪]
+[00:00:19] ♪ If there's anything you need ♪
+[00:00:22] ♪ All you have to do is say ♪
+[00:00:26] ♪ You know you satisfy everything in me ♪
+[00:00:31] ♪ We shouldn't waste a single day ♪
+[00:00:35] ♪ So don't stop me falling ♪
+[00:00:37] ♪ It's destiny calling ♪
+[00:00:39] ♪ A power I just can't deny ♪
+[00:00:43] ♪ It's never changing ♪
+[00:00:45] ♪ Can't you hear me, I'm saying ♪
+[00:00:47] ♪ I want you for the rest of my life ♪
+[00:00:51] ♪ Together forever and never to part ♪
+[00:00:56] ♪ Together forever, we two ♪
+[00:01:00] ♪ And don't you know I would move heaven and earth ♪
+[00:01:04] ♪ To be together forever with you ♪
+[00:01:09] ♪ If they ever get you down ♪
+[00:01:12] ♪ There's always something I can do ♪
+[00:01:15] ♪ Because I wouldn't ever wanna see you frown ♪
+[00:01:21] ♪ I'll always do what's best for you ♪
+[00:01:25] ♪ There ain't no mistaking ♪
+[00:01:27] ♪ It's true love we're making ♪
+[00:01:29] ♪ Something to last for all time ♪
+[00:01:33] ♪ It's never changing ♪
+[00:01:35] ♪ Can't you hear me, I'm saying ♪
+[00:01:37] ♪ I want you for the rest of my life ♪
+[00:01:42] ♪ Together forever and never to part ♪
+[00:01:45] ♪ Together forever, we two ♪
+[00:01:50] ♪ And don't you know I would move heaven and earth ♪
+[00:01:54] ♪ To be together forever with you ♪
+[00:01:58] [♪♪♪]
+[00:02:15] ♪ So don't stop me falling ♪
+[00:02:17] ♪ It's destiny calling ♪
+[00:02:19] ♪ A power I just can't deny ♪
+[00:02:23] ♪ It's never changing ♪
+[00:02:25] ♪ Can't you hear me, I'm saying ♪
+[00:02:27] ♪ I want you for the rest of my life ♪
+[00:02:31] ♪ Together forever and never to part ♪
+[00:02:35] ♪ Together forever, we two ♪
+[00:02:40] ♪ And don't you know I would move heaven and earth ♪
+[00:02:43] ♪ To be together forever with you ♪
+[00:02:48] ♪ Together forever and never to part ♪
+[00:02:52] ♪ Together forever, we two ♪
+[00:02:56] ♪ And don't you know I would move heaven and earth ♪
+[00:03:00] ♪ To be together forever with you ♪
+[00:03:05] ♪ Together forever and never to part ♪
+[00:03:09] ♪ Together forever, we two ♪
+[00:03:13] ♪ And don't you know I would move heaven and earth ♪
+[00:03:17] ♪ To be together forever with you ♪
