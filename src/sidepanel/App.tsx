@@ -157,12 +157,14 @@ export function App() {
     const lastFetchRef = useRef(0);
     const batchRef = useRef<BatchProcessor | null>(null);
     const lastPlayerTimeRef = useRef(0);
-    // Tracks videoIds whose paste-URL recovery is mid-flight inside
-    // `captureViaYouTubeTab`. Without this, the background tab we spawn
-    // fires its own `video-info` message which re-triggers `fetchTranscript`,
-    // which fails again, which spawns another tab — an infinite cascade
-    // of YouTube tabs for any video the SW Innertube path can't resolve.
-    const captureInFlightRef = useRef<Set<string>>(new Set());
+    // Tracks the live capture promise per videoId. The background tab
+    // we spawn fires its own `video-info` which would re-enter
+    // `fetchTranscript` and start an infinite tab cascade for videos the
+    // SW Innertube path can't resolve. Holding the promise here lets the
+    // listener bail (has() check) AND lets overlapping fetchTranscript
+    // calls for the same videoId share a single capture instead of each
+    // spawning their own helper tab.
+    const captureInFlightRef = useRef<Map<string, Promise<boolean>>>(new Map());
 
     // Shim YTPlayer interface using message-based currentTime
     const playerRef = useRef<YTPlayer | null>(null);
@@ -350,17 +352,24 @@ export function App() {
                 if (platform === "youtube" &&
                     (response.error.error === "no_captions" ||
                         response.error.error === "fetch_failed")) {
-                    // Mark this videoId as actively being captured so the
-                    // `video-info` listener doesn't fire a parallel fetch
-                    // for the tab we're about to open. Set BEFORE the
-                    // chrome.tabs.create call inside captureViaYouTubeTab.
-                    captureInFlightRef.current.add(videoId);
-                    let captured = false;
-                    try {
-                        captured = await captureViaYouTubeTab(videoId);
-                    } finally {
-                        captureInFlightRef.current.delete(videoId);
+                    // De-duplicate concurrent recoveries for the same
+                    // videoId: cache the in-flight promise, share it with
+                    // any overlapping fetchTranscript, and clear the slot
+                    // only when this single capture settles. Two paste-X
+                    // submits in quick succession now wait on the same
+                    // helper tab instead of spawning two.
+                    const map = captureInFlightRef.current;
+                    let captureP = map.get(videoId);
+                    if (!captureP) {
+                        captureP = captureViaYouTubeTab(videoId).finally(() => {
+                            // Only delete if our promise is still the one
+                            // cached — defensive against the rare case of
+                            // a parallel write replacing it.
+                            if (map.get(videoId) === captureP) map.delete(videoId);
+                        });
+                        map.set(videoId, captureP);
                     }
+                    const captured = await captureP;
                     if (captured) {
                         // The shared `intercepted-transcript` listener above
                         // has already set state="loaded" and populated the
