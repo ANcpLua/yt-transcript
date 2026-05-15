@@ -157,6 +157,12 @@ export function App() {
     const lastFetchRef = useRef(0);
     const batchRef = useRef<BatchProcessor | null>(null);
     const lastPlayerTimeRef = useRef(0);
+    // Tracks videoIds whose paste-URL recovery is mid-flight inside
+    // `captureViaYouTubeTab`. Without this, the background tab we spawn
+    // fires its own `video-info` message which re-triggers `fetchTranscript`,
+    // which fails again, which spawns another tab — an infinite cascade
+    // of YouTube tabs for any video the SW Innertube path can't resolve.
+    const captureInFlightRef = useRef<Set<string>>(new Set());
 
     // Shim YTPlayer interface using message-based currentTime
     const playerRef = useRef<YTPlayer | null>(null);
@@ -183,6 +189,10 @@ export function App() {
                 setActivePlatform(platform);
                 if (liveCaptureVideoId === message.videoId) return;
                 if (transcript?.videoId === message.videoId) return;
+                // Suppress auto-fetch while paste-URL recovery is running for
+                // this videoId — the background tab we just spawned will emit
+                // its own `video-info` and we don't want to recursively retry.
+                if (captureInFlightRef.current.has(message.videoId)) return;
                 void fetchTranscript(message.videoId, platform);
             }
         };
@@ -340,7 +350,17 @@ export function App() {
                 if (platform === "youtube" &&
                     (response.error.error === "no_captions" ||
                         response.error.error === "fetch_failed")) {
-                    const captured = await captureViaYouTubeTab(videoId);
+                    // Mark this videoId as actively being captured so the
+                    // `video-info` listener doesn't fire a parallel fetch
+                    // for the tab we're about to open. Set BEFORE the
+                    // chrome.tabs.create call inside captureViaYouTubeTab.
+                    captureInFlightRef.current.add(videoId);
+                    let captured = false;
+                    try {
+                        captured = await captureViaYouTubeTab(videoId);
+                    } finally {
+                        captureInFlightRef.current.delete(videoId);
+                    }
                     if (captured) {
                         // The shared `intercepted-transcript` listener above
                         // has already set state="loaded" and populated the
