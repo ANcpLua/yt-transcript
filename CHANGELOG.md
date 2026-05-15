@@ -2,7 +2,7 @@
 
 Rolling log of completed task sessions (max 20). Oldest first.
 
-## 2026-05-15 — Fix paste-URL transcript extraction; remove activeTab cascade
+## 2026-05-15 — Fix paste-URL transcript extraction; remove activeTab cascade (earlier session)
 
 Changed
 
@@ -45,3 +45,57 @@ Notes
 - JHDfWOzIFlo (the URL named in the original brief) returns
   "Video unavailable" via yt-dlp — switched the test to dQw4w9WgXcQ
   (Rick Astley, real captions in many languages).
+
+## 2026-05-15 — Whisper download progress + HF permission opt-in + Settings overhaul
+
+Changed
+
+- `src/background/transcribe/offscreen.ts`: wire transformers.js
+  `progress_callback` into `pipeline(...)` and aggregate per-file
+  `initiate/progress/done` events into a single 1–99% bar, throttled to
+  one `download-whisper-progress` message every 200 ms. Final 100% is
+  emitted after `createPipeline` resolves so the UI flips cleanly
+  Downloading → Ready. Model switches now invalidate the cached
+  pipeline (`pipelineModel` tracking) so a Tiny→Base toggle actually
+  triggers a fresh download.
+- `src/background/transcribe/offscreen.ts`: failure path now emits
+  `download-whisper-progress` with `progress: -1` alongside the
+  existing `transcription-error`, so Settings can flip out of the
+  "Downloading…" state without listening for a separate failure type.
+- `manifest.json`: move `huggingface.co` / `*.huggingface.co` /
+  `cdn-lfs.huggingface.co` / `cdn-lfs.hf.co` from `host_permissions`
+  to `optional_host_permissions`. Also moved the BYOK AI hosts and
+  Ollama localhost to optional. CSP `connect-src` keeps every host
+  listed so the extension can use them once the user opts in.
+- `src/components/Settings.tsx`: full rewrite around three tabs (AI /
+  Audio / Data). Provider cards replace the 2-column button grid;
+  each card collapses its own config block. New Whisper section has
+  five explicit states (`not-downloaded`, `needs-permission`,
+  `downloading`, `ready`, `error`), a model picker that resets
+  progress on switch, and a `chrome.permissions.request({origins:
+  [...HF_ORIGINS]})` call gated by the user-gesture click on
+  "Download". Permission-denied state shows a "Try again" button;
+  download-failure state shows the underlying error and a Retry.
+- Version bumped `manifest.json` 1.2.0 → 1.3.0 and `package.json` to
+  match.
+
+Verified
+
+- `npm run lint` passes (zero TS errors).
+- `npm run build` succeeds; eight bundles emit including the rebuilt
+  offscreen.js (~2.2 MB, transformers.js bundled).
+- Playwright extraction spec continues to pass the path test
+  (correlator wiring intact). Content-level proof of Whisper-tiny
+  on a captionless video must be done in real Chrome by the user
+  (see Notes).
+
+Notes
+
+- Existing users with a cached Whisper model carry over fine: Chrome
+  preserves the granted origins across the manifest move from required
+  to optional. New installs see the permission prompt the first time
+  they click Settings → Download.
+- The store-published v1.2.0 ships without the optional_host_permissions
+  refactor — once 1.3.0 is uploaded, the upgrade will demote the HF /
+  AI provider origins to optional automatically. No re-prompt for
+  users who already granted them.

@@ -94,8 +94,8 @@ treat the harness as a path-regression guard, not as a caption-content proof. Se
 verify the extension actually works" below for the real-Chrome verification procedure.
 
 Lower-tier items (EXTRA-004 Bilingual side-by-side, the `TranscriptView.tsx` / `AiPanel.tsx`
-splits, icon-set consolidation, Hugging Face host-permission opt-in) remain out of scope
-unless a regression in F-001 surfaces.
+splits, icon-set consolidation) remain out of scope unless a regression in F-001 surfaces.
+The Hugging Face host-permission opt-in landed in 1.3.0 — see the Settings.tsx Audio tab.
 
 </priority_classification>
 
@@ -416,11 +416,6 @@ asked, otherwise leave alone:
   splitting carries regression risk for no immediate user-visible win.
 - **Inline-SVG → `components/icons.tsx` consolidation** — four files
   duplicate the close-X glyph; the rest are unique. Low-impact.
-- **Hugging Face Hub host-permission opt-in** — `manifest.json` does *not*
-  list `huggingface.co`. Whisper still works because transformers.js
-  fetches via standard CORS. To strictly honour the "no surprise network
-  requests" privacy line, ask the user via `chrome.permissions.request`
-  before the first model download.
 - **YouTube Music app, YouTube Live captions, Prompt-API audio multimodal,
   Vimeo MAIN-world interceptor, packaged offline Whisper, floating overlay,
   Web Neural Network API.**
@@ -471,17 +466,45 @@ npm run build
 
 # 4. Open the side panel on a YouTube watch page. The "Live" pill
 #    should appear under the wordmark within a few seconds and the
-#    transcript should auto-populate. Paste-URL from a non-YouTube
-#    tab is the alternative test — that exercises
-#    `captureViaYouTubeTab` in `App.tsx`.
+#    transcript should auto-populate.
 
-# 5. To inspect the chain when something goes wrong:
+# 5. Paste-URL recovery (architecturally separate from auto-detect):
+#    a. Switch to a non-YouTube tab (e.g. a blank `about:blank` tab).
+#    b. Open the side panel from the toolbar.
+#    c. Paste a YouTube URL like
+#       `https://www.youtube.com/watch?v=dQw4w9WgXcQ` into the input.
+#    d. Within ~2–6 s a temporary background tab opens, the MAIN-world
+#       interceptor fires for it, and the side panel populates. The
+#       background tab auto-closes once segments arrive (see
+#       `captureViaYouTubeTab` in `App.tsx`).
+
+# 6. Whisper-tiny on a captionless video (post-1.3.0):
+#    a. Settings (gear) → Audio tab. State should read
+#       "Not downloaded · permission required".
+#    b. Click "Download". Chrome's native permission prompt asks for
+#       `huggingface.co` access; allow it.
+#    c. Progress bar advances smoothly 1% → ~99% (throttled to one
+#       update every 200 ms) and flips to "Ready" with the WebGPU/WASM
+#       badge once the pipeline initialises.
+#    d. Switch model from Tiny → Base in the same tab. State must
+#       reset to "Not downloaded" with progress 0 (the cached Tiny
+#       pipeline is invalidated by `pipelineModel` tracking).
+#    e. Find a captionless YouTube video (e.g. an old upload with
+#       captions disabled) and open it. Side panel surfaces the
+#       "Transcribe locally" CTA; clicking it pipes tab audio through
+#       AudioWorkletNode into the offscreen Whisper pipeline. Segments
+#       stream in every ~30 s of decoded audio.
+
+# 7. To inspect the chain when something goes wrong:
 #    a. chrome://extensions → yt-transcript → "service worker"
 #       opens DevTools for the SW. Look for `[intercept] kind=...`,
 #       `[auto-fetch] ...` log lines.
 #    b. On the YouTube tab, the page console shows content-script
 #       output (the ANDROID_VR + DOM player fetches in content.ts).
 #    c. The side panel itself: right-click → Inspect.
+#    d. The offscreen document: chrome://extensions → yt-transcript →
+#       "Inspect views: offscreen.html" — shows transformers.js
+#       download progress events as they fire.
 ```
 
 The Playwright spec is still useful for the path test. Run it with:
@@ -500,7 +523,24 @@ branch.
 
 ## Store Publishing
 
-The extension is not in a publishable state until F-001 is repaired and proven by the E2E harness.
-When that happens and a build is genuinely accepted by Chrome Web Store / Firefox Add-ons / Edge
-Add-ons, this section can be replaced with the actual listing URLs and install instructions. Do not
-add store badges or "live" status before that point.
+The published v1.2.0 .crx is the broken pre-intercept-first build.
+v1.3.0 includes the F-001 fix, the Whisper download progress fix, and
+the HF host-permission opt-in. Before uploading a new build, run the
+manual verification above and confirm:
+
+1. `npm run zip` produces `yt-transcript-chrome.zip` (≈ 5.7 MB,
+   Chrome + Edge) and `yt-transcript-firefox.zip` (Firefox).
+2. Chrome Web Store: upload to
+   <https://chrome.google.com/webstore/devconsole>. The 1.3.0 upgrade
+   demotes HF + BYOK AI hosts to `optional_host_permissions` — the
+   review flow lists this as a permissions diff but it is a *reduction*
+   in surface area, not an expansion, so it should pass.
+3. Edge Add-ons: upload the same chrome.zip to
+   <https://partner.microsoft.com/dashboard/microsoftedge>.
+4. Firefox Add-ons: upload `yt-transcript-firefox.zip` to
+   <https://addons.mozilla.org/developers/>. `chrome.tabCapture` /
+   `chrome.offscreen` aren't available, so Whisper local transcription
+   stays Chrome/Edge-only on Firefox.
+5. Screenshots in `store/images/` predate the Settings redesign. Refresh
+   `settings-chrome.png` (Settings → Audio tab) before submitting if
+   the store listing displays it.
