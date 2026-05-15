@@ -85,7 +85,7 @@ function StatusDot({status}: {status: ProviderStatus}) {
 
 function CloseIcon() {
     return (
-        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
         </svg>
     );
@@ -93,7 +93,7 @@ function CloseIcon() {
 
 function ChevronIcon({open}: {open: boolean}) {
     return (
-        <svg className={`h-4 w-4 transition-transform ${open ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg aria-hidden="true" className={`h-4 w-4 transition-transform ${open ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/>
         </svg>
     );
@@ -446,8 +446,9 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                     </button>
                 </header>
 
-                {/* Tab bar */}
-                <nav className="flex border-b border-slate-100 dark:border-slate-800" role="tablist">
+                {/* Tab bar — div, not nav, because ARIA tabs pattern uses
+                    role="tablist" on a generic container. */}
+                <div className="flex border-b border-slate-100 dark:border-slate-800" role="tablist">
                     {([
                         {id: "ai" as TabId, label: "AI"},
                         {id: "audio" as TabId, label: "Audio"},
@@ -473,7 +474,7 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                             </button>
                         );
                     })}
-                </nav>
+                </div>
 
                 {/* Tab content */}
                 <div className="max-h-[68vh] overflow-y-auto px-5 py-4">
