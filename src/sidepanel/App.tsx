@@ -61,7 +61,10 @@ async function captureViaYouTubeTab(videoId: string): Promise<boolean> {
             if (resolved) return;
             resolved = true;
             chrome.runtime.onMessage.removeListener(listener);
-            if (!ok && createdTabId !== null) {
+            // Close the helper tab whether we captured or timed out — it
+            // was only opened to wake the MAIN-world interceptor; the
+            // user is on the side panel, not watching the video here.
+            if (createdTabId !== null) {
                 chrome.tabs.remove(createdTabId).catch(() => {});
             }
             resolve(ok);
@@ -73,7 +76,7 @@ async function captureViaYouTubeTab(videoId: string): Promise<boolean> {
         };
         chrome.runtime.onMessage.addListener(listener);
         chrome.tabs
-            .create({url: `https://www.youtube.com/watch?v=${videoId}`, active: true})
+            .create({url: `https://www.youtube.com/watch?v=${videoId}`, active: false})
             .then((tab) => {
                 if (typeof tab.id === "number") createdTabId = tab.id;
             })
