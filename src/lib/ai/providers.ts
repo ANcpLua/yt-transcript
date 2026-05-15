@@ -283,6 +283,10 @@ interface LanguageModelStatic {
         initialPrompts?: { role: string; content: string }[];
         expectedInputs?: { type: "text"; languages?: string[] }[];
         expectedOutputs?: { type: "text"; languages?: string[] }[];
+        // Chrome 142+ / Edge 142+: explicit ISO code. Required to
+        // silence the "No output language was specified" attestation
+        // warning; takes precedence over expectedOutputs when present.
+        outputLanguage?: string;
     }): Promise<LanguageModelSession>;
 }
 
@@ -327,6 +331,7 @@ function createChromeAiProvider(): AiProvider {
                 initialPrompts: [{ role: "system", content: systemPrompt }],
                 expectedInputs: [{ type: "text", languages: ["en", "es", "ja"] }],
                 expectedOutputs: [{ type: "text", languages: ["en"] }],
+                outputLanguage: "en",
             });
             try {
                 return await session.prompt(userMessage);
