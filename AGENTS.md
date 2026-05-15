@@ -50,7 +50,7 @@ We replace youtube-transcript.io feature-for-feature. This is the parity table:
 
 | ID | Their Feature | Their Tier | Our Status | Our Approach |
 |----|---|---|---|---|
-| F-001 | Single transcript extraction | Free (25/mo cap) | **BROKEN** | Intent: intercept-first MAIN-world fetch hook (`yt-interceptor.ts`) + paste-URL Innertube fallback (`innertube.ts`). Current behaviour on a paste from the side panel: error "Extension has not been invoked for the current page (see activeTab permission). Chrome pages cannot be captured." No captions are fetched. Every downstream feature in this table is gated on F-001 being repaired. |
+| F-001 | Single transcript extraction | Free (25/mo cap) | **FIX LANDED — NEEDS REAL-CHROME VERIFICATION** | Intercept-first MAIN-world fetch hook (`yt-interceptor.ts`) + paste-URL recovery that opens the watch page in a tab and waits for the correlator (`App.tsx:captureViaYouTubeTab`). Content script (`content.ts`) fires a page-context ANDROID_VR `/youtubei/v1/player` call so the captionTrack URLs are not `exp=xpe`-gated. CSP in `manifest.json` now allows `*.youtube.com` / `*.googlevideo.com` so the SW Innertube path is no longer denied by `connect-src`. Auto-Whisper cascade on `no_captions` removed — that was the trigger of the visible "activeTab / Chrome pages cannot be captured" error. Test harness under Playwright is bot-detected by YouTube (returns 0-byte timedtext), so end-to-end caption proof requires a real Chrome with a real YouTube session — procedure documented under "How to verify the extension actually works". |
 | F-002 | Playlist bulk extraction | Plus ($9.99/mo) | **DONE** | `UrlInput.tsx` detects playlist URLs → `chrome.runtime.sendMessage({type:"fetch-playlist"})` → video selection panel → batch queue |
 | F-003 | CSV bulk upload | Plus | **DONE** | `UrlInput.tsx` file input accepts `.csv/.txt`, parses video IDs via `parseVideoId`, feeds into `onSubmitBatch` |
 | F-004 | Channel ID finder + transcripts | Plus/Pro | **DONE** | `UrlInput.tsx` detects channel URLs → `chrome.runtime.sendMessage({type:"fetch-channel"})` → selection panel → batch |
@@ -438,6 +438,64 @@ After completing any work session, verify:
 7. **Type safety**: No `any` types, no `@ts-ignore`, no `as unknown as X` hacks
 
 </validation>
+
+## How to verify the extension actually works
+
+The Playwright spec under `e2e/transcript-extraction.spec.ts` is the
+test harness, but it runs against Playwright's chrome-for-testing
+build which YouTube actively bot-detects (anonymous session, no
+PO token, no storage-access permission). That environment will report
+`HTTP 200 + 0 bytes` for every signed `/api/timedtext` URL and the
+test will fail end-to-end — even when the code is correct. Treat the
+Playwright run as a regression guard for the **path** (does the
+side panel reach the intercept correlator? does it stop firing the
+activeTab cascade?), not for **content** (do captions render?).
+
+For content verification you need a real Chrome with a real YouTube
+session:
+
+```bash
+# 1. Build fresh
+PATH="/Users/ancplua/.nvm/versions/node/v22.21.1/bin:$PATH" npm run build
+
+# 2. Load unpacked
+#    Chrome → chrome://extensions → enable Developer mode →
+#    "Load unpacked" → select dist/. Disable / remove the published
+#    Web Store version first to avoid two copies fighting for the
+#    side-panel slot.
+
+# 3. Reload any open YouTube tabs (the MAIN-world interceptor only
+#    attaches at document_start; existing tabs ran without it).
+
+# 4. Open the side panel on a YouTube watch page. The "Live" pill
+#    should appear under the wordmark within a few seconds and the
+#    transcript should auto-populate. Paste-URL from a non-YouTube
+#    tab is the alternative test — that exercises
+#    `captureViaYouTubeTab` in `App.tsx`.
+
+# 5. To inspect the chain when something goes wrong:
+#    a. chrome://extensions → yt-transcript → "service worker"
+#       opens DevTools for the SW. Look for `[intercept] kind=...`,
+#       `[auto-fetch] ...` log lines.
+#    b. On the YouTube tab, the page console shows content-script
+#       output (the ANDROID_VR + DOM player fetches in content.ts).
+#    c. The side panel itself: right-click → Inspect.
+```
+
+The Playwright spec is still useful for the path test. Run it with:
+
+```bash
+PATH="/Users/ancplua/.nvm/versions/node/v22.21.1/bin:$PATH" \
+  npm run build && \
+  npx playwright install chromium && \
+  npx playwright test e2e/transcript-extraction.spec.ts
+```
+
+A previous run's failure artifacts live in
+`e2e/screenshots/20260514T211816Z/` — the side panel surfacing
+"Couldn't fetch transcript" with the three recovery buttons, taken
+from the broken `main` state before any of the commits on this
+branch.
 
 ## Store Publishing
 
