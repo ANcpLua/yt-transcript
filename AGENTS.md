@@ -50,7 +50,7 @@ We replace youtube-transcript.io feature-for-feature. This is the parity table:
 
 | ID | Their Feature | Their Tier | Our Status | Our Approach |
 |----|---|---|---|---|
-| F-001 | Single transcript extraction | Free (25/mo cap) | **DONE** | Intercept-first: MAIN-world fetch hook (`yt-interceptor.ts`) captures YouTube's own `youtubei/v1/get_transcript` + `player` calls, correlator merges and emits to side panel (`lib/intercept/`). Paste-URL fallback uses WEB_EMBEDDED_PLAYER + watch-page scrape (`innertube.ts:resolvePlayer`). |
+| F-001 | Single transcript extraction | Free (25/mo cap) | **FIX LANDED — NEEDS REAL-CHROME VERIFICATION** | Intercept-first MAIN-world fetch hook (`yt-interceptor.ts`) + paste-URL recovery that opens the watch page in a tab and waits for the correlator (`App.tsx:captureViaYouTubeTab`). Content script (`content.ts`) fires a page-context ANDROID_VR `/youtubei/v1/player` call so the captionTrack URLs are not `exp=xpe`-gated. CSP in `manifest.json` now allows `*.youtube.com` / `*.googlevideo.com` so the SW Innertube path is no longer denied by `connect-src`. Auto-Whisper cascade on `no_captions` removed — that was the trigger of the visible "activeTab / Chrome pages cannot be captured" error. Test harness under Playwright is bot-detected by YouTube (returns 0-byte timedtext), so end-to-end caption proof requires a real Chrome with a real YouTube session — procedure documented under "How to verify the extension actually works". |
 | F-002 | Playlist bulk extraction | Plus ($9.99/mo) | **DONE** | `UrlInput.tsx` detects playlist URLs → `chrome.runtime.sendMessage({type:"fetch-playlist"})` → video selection panel → batch queue |
 | F-003 | CSV bulk upload | Plus | **DONE** | `UrlInput.tsx` file input accepts `.csv/.txt`, parses video IDs via `parseVideoId`, feeds into `onSubmitBatch` |
 | F-004 | Channel ID finder + transcripts | Plus/Pro | **DONE** | `UrlInput.tsx` detects channel URLs → `chrome.runtime.sendMessage({type:"fetch-channel"})` → selection panel → batch |
@@ -84,9 +84,14 @@ Priority order is strict:
 
 <priority_classification>
 
-All P0–P3 items are complete. Only EXTRA-004 (Bilingual side-by-side) remains unwired — it exists as a
-standalone component but is not integrated into the main UI flow. This is a future enhancement, not a
-parity blocker.
+P0 — repair F-001 (Single transcript extraction). The side panel currently surfaces an `activeTab` /
+`captureVisibleTab` error before any captions are returned, which means every "DONE" row in the parity
+table that consumes a `TranscriptResponse` is unreachable in practice. Until an E2E run shows ≥10 caption
+rows for a real video, treat the table as wiring-only — the pipeline is not proven end-to-end.
+
+Lower-tier items (EXTRA-004 Bilingual side-by-side, the `TranscriptView.tsx` / `AiPanel.tsx` splits,
+icon-set consolidation, Hugging Face host-permission opt-in) remain out of scope until F-001 is verified
+green by the harness under `e2e/`.
 
 </priority_classification>
 
@@ -418,12 +423,6 @@ asked, otherwise leave alone:
   Vimeo MAIN-world interceptor, packaged offline Whisper, floating overlay,
   Web Neural Network API.**
 
-## Gap Detail (legacy)
-
-`docs/runs/run-1to4-remaining.md` is preserved for historical reference but
-the gaps it describes are mostly closed by the rewrite. Check the parity
-table above for current state before consulting it.
-
 ## Validation Checklist
 
 After completing any work session, verify:
@@ -440,12 +439,67 @@ After completing any work session, verify:
 
 </validation>
 
+## How to verify the extension actually works
+
+The Playwright spec under `e2e/transcript-extraction.spec.ts` is the
+test harness, but it runs against Playwright's chrome-for-testing
+build which YouTube actively bot-detects (anonymous session, no
+PO token, no storage-access permission). That environment will report
+`HTTP 200 + 0 bytes` for every signed `/api/timedtext` URL and the
+test will fail end-to-end — even when the code is correct. Treat the
+Playwright run as a regression guard for the **path** (does the
+side panel reach the intercept correlator? does it stop firing the
+activeTab cascade?), not for **content** (do captions render?).
+
+For content verification you need a real Chrome with a real YouTube
+session:
+
+```bash
+# 1. Build fresh
+PATH="/Users/ancplua/.nvm/versions/node/v22.21.1/bin:$PATH" npm run build
+
+# 2. Load unpacked
+#    Chrome → chrome://extensions → enable Developer mode →
+#    "Load unpacked" → select dist/. Disable / remove the published
+#    Web Store version first to avoid two copies fighting for the
+#    side-panel slot.
+
+# 3. Reload any open YouTube tabs (the MAIN-world interceptor only
+#    attaches at document_start; existing tabs ran without it).
+
+# 4. Open the side panel on a YouTube watch page. The "Live" pill
+#    should appear under the wordmark within a few seconds and the
+#    transcript should auto-populate. Paste-URL from a non-YouTube
+#    tab is the alternative test — that exercises
+#    `captureViaYouTubeTab` in `App.tsx`.
+
+# 5. To inspect the chain when something goes wrong:
+#    a. chrome://extensions → yt-transcript → "service worker"
+#       opens DevTools for the SW. Look for `[intercept] kind=...`,
+#       `[auto-fetch] ...` log lines.
+#    b. On the YouTube tab, the page console shows content-script
+#       output (the ANDROID_VR + DOM player fetches in content.ts).
+#    c. The side panel itself: right-click → Inspect.
+```
+
+The Playwright spec is still useful for the path test. Run it with:
+
+```bash
+PATH="/Users/ancplua/.nvm/versions/node/v22.21.1/bin:$PATH" \
+  npm run build && \
+  npx playwright install chromium && \
+  npx playwright test e2e/transcript-extraction.spec.ts
+```
+
+A previous run's failure artifacts live in
+`e2e/screenshots/20260514T211816Z/` — the side panel surfacing
+"Couldn't fetch transcript" with the three recovery buttons, taken
+from the broken `main` state before any of the commits on this
+branch.
+
 ## Store Publishing
 
-When the extension is published and verified on Chrome Web Store, Firefox Add-ons, or Edge Add-ons,
-update the `yt-transcript` skill (`~/.claude/skills/yt-transcript/SKILL.md`) and
-`AGENTS.md` with:
-
-- Store listing URLs for each verified platform
-- Install instructions (link to store instead of "Load unpacked")
-- Badge/status indicating which stores are live
+The extension is not in a publishable state until F-001 is repaired and proven by the E2E harness.
+When that happens and a build is genuinely accepted by Chrome Web Store / Firefox Add-ons / Edge
+Add-ons, this section can be replaced with the actual listing URLs and install instructions. Do not
+add store badges or "live" status before that point.
