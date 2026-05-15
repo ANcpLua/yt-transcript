@@ -94,8 +94,8 @@ treat the harness as a path-regression guard, not as a caption-content proof. Se
 verify the extension actually works" below for the real-Chrome verification procedure.
 
 Lower-tier items (EXTRA-004 Bilingual side-by-side, the `TranscriptView.tsx` / `AiPanel.tsx`
-splits, icon-set consolidation, Hugging Face host-permission opt-in) remain out of scope
-unless a regression in F-001 surfaces.
+splits, icon-set consolidation) remain out of scope unless a regression in F-001 surfaces.
+The Hugging Face host-permission opt-in landed in 1.3.0 — see the Settings.tsx Audio tab.
 
 </priority_classification>
 
@@ -416,11 +416,6 @@ asked, otherwise leave alone:
   splitting carries regression risk for no immediate user-visible win.
 - **Inline-SVG → `components/icons.tsx` consolidation** — four files
   duplicate the close-X glyph; the rest are unique. Low-impact.
-- **Hugging Face Hub host-permission opt-in** — `manifest.json` does *not*
-  list `huggingface.co`. Whisper still works because transformers.js
-  fetches via standard CORS. To strictly honour the "no surprise network
-  requests" privacy line, ask the user via `chrome.permissions.request`
-  before the first model download.
 - **YouTube Music app, YouTube Live captions, Prompt-API audio multimodal,
   Vimeo MAIN-world interceptor, packaged offline Whisper, floating overlay,
   Web Neural Network API.**
