@@ -35,11 +35,15 @@ const PROVIDERS: ProviderInfo[] = [
     {id: "google", label: "Gemini", needsKey: true, blurb: "Gemini 1.5/2.0 via Google AI Studio. BYOK."},
 ];
 
+// Match the patterns in manifest.json's optional_host_permissions verbatim
+// so chrome.permissions.contains / .request resolve against the same key.
+// Anything narrower (e.g. "https://...") risks a false negative on
+// .contains() when the user already granted the broader "*://..." pattern.
 const HF_ORIGINS = [
-    "https://huggingface.co/*",
-    "https://*.huggingface.co/*",
-    "https://cdn-lfs.huggingface.co/*",
-    "https://cdn-lfs.hf.co/*",
+    "*://huggingface.co/*",
+    "*://*.huggingface.co/*",
+    "*://cdn-lfs.huggingface.co/*",
+    "*://cdn-lfs.hf.co/*",
 ];
 
 const DEFAULT_PREFS: Preferences = {

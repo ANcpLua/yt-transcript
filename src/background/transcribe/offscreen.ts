@@ -56,6 +56,11 @@ const PROGRESS_THROTTLE_MS = 200;
 let pipeline: WhisperPipeline | null = null;
 let pipelineModel: "tiny" | "base" | null = null;
 let pipelineDevice: "webgpu" | "wasm" | null = null;
+// Serialises concurrent loadPipeline calls so two clicks in quick succession
+// — or a Download click that races with an auto-start — can't write to the
+// global pipeline state out of order.
+let pipelinePromise: Promise<WhisperPipeline> | null = null;
+let pipelinePromiseModel: "tiny" | "base" | null = null;
 let mediaStream: MediaStream | null = null;
 let audioContext: AudioContext | null = null;
 let isCapturing = false;
@@ -68,15 +73,34 @@ async function loadPipeline(
   model: "tiny" | "base",
   onProgress?: (percent: number) => void,
 ): Promise<WhisperPipeline> {
-  // Re-use a cached pipeline only when it matches the requested model —
-  // a user who flips Tiny → Base in Settings must trigger a fresh load.
+  // Cached + matching model — done.
   if (pipeline && pipelineModel === model) return pipeline;
-  if (pipeline && pipelineModel !== model) {
-    pipeline = null;
-    pipelineDevice = null;
-    pipelineModel = null;
+  // Load already in flight for the same model — join it instead of starting
+  // a parallel transformers.js download.
+  if (pipelinePromise && pipelinePromiseModel === model) return pipelinePromise;
+  // Load in flight for a different model — wait for it to settle before
+  // we wipe the global state, so it can't land on top of our pipeline.
+  if (pipelinePromise) {
+    try { await pipelinePromise; } catch { /* swallow — caller will see our own error if we fail */ }
+    if (pipeline && pipelineModel === model) return pipeline;
   }
+  pipelinePromiseModel = model;
+  pipelinePromise = doLoadPipeline(model, onProgress);
+  try {
+    const p = await pipelinePromise;
+    pipeline = p;
+    pipelineModel = model;
+    return p;
+  } finally {
+    pipelinePromise = null;
+    pipelinePromiseModel = null;
+  }
+}
 
+async function doLoadPipeline(
+  model: "tiny" | "base",
+  onProgress?: (percent: number) => void,
+): Promise<WhisperPipeline> {
   const transformers = await import("@huggingface/transformers");
 
   // Pin the ORT runtime to the bundled vendor copy so MV3's CSP doesn't
@@ -101,21 +125,31 @@ async function loadPipeline(
   // chrome.runtime.sendMessage.
   const fileProgress = new Map<string, number>();
   let lastEmit = 0;
+  // Track the highest percent we've actually surfaced to the UI. When a new
+  // file `initiate`s mid-download the file-count denominator grows and the
+  // arithmetic average drops — that would make the bar jump backwards, which
+  // looks broken. Holding the floor at the last value smooths that out: the
+  // bar pauses until the new file catches up, then resumes climbing.
+  let lastEmittedPct = 0;
   const emit = (force = false): void => {
     if (!onProgress) return;
     const now = Date.now();
     if (!force && now - lastEmit < PROGRESS_THROTTLE_MS) return;
     lastEmit = now;
+    let avg: number;
     if (fileProgress.size === 0) {
-      onProgress(1);
-      return;
+      avg = 1;
+    } else {
+      let sum = 0;
+      for (const v of fileProgress.values()) sum += v;
+      avg = sum / fileProgress.size;
     }
-    let sum = 0;
-    for (const v of fileProgress.values()) sum += v;
-    const avg = sum / fileProgress.size;
     // Clamp to 1..99 — the caller emits the final 100% once the awaited
     // createPipeline resolves so the UI flips cleanly from progress → ready.
-    onProgress(Math.max(1, Math.min(99, Math.floor(avg))));
+    const next = Math.max(1, Math.min(99, Math.floor(avg)));
+    if (next <= lastEmittedPct) return;
+    lastEmittedPct = next;
+    onProgress(next);
   };
 
   const progress_callback = (raw: unknown): void => {
@@ -152,17 +186,17 @@ async function loadPipeline(
         { device: "webgpu", dtype: "q4f16", progress_callback },
       );
       pipelineDevice = "webgpu";
-      pipelineModel = model;
-      pipeline = wrapPipeline(pipe);
-      return pipeline;
+      return wrapPipeline(pipe);
     } catch (err) {
       // Fall through to WASM below.
       // eslint-disable-next-line no-console
       console.warn("[whisper] WebGPU init failed, falling back to WASM", err);
       // Reset per-file tracking — the WASM retry below will replay all the
       // initiate/progress events. We don't want stale 100% entries from a
-      // half-completed WebGPU attempt skewing the average.
+      // half-completed WebGPU attempt skewing the average, and the monotonic
+      // floor needs to slide back to zero so the WASM round can re-emit.
       fileProgress.clear();
+      lastEmittedPct = 0;
     }
   }
 
@@ -172,9 +206,7 @@ async function loadPipeline(
     { device: "wasm", dtype: "q8", progress_callback },
   );
   pipelineDevice = "wasm";
-  pipelineModel = model;
-  pipeline = wrapPipeline(pipe);
-  return pipeline;
+  return wrapPipeline(pipe);
 }
 
 // transformers.js' pipeline returns a polymorphic value; we narrow it once.
