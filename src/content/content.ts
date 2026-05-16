@@ -73,44 +73,89 @@ function extractInitialPlayerResponse(): string | null {
   return null;
 }
 
-// Call /youtubei/v1/player from the page's youtube.com origin with the
-// ANDROID_VR client. From this origin, YouTube returns captionTracks
-// whose baseUrls are signed WITHOUT `exp=xpe` in sparams — i.e. they
-// work without a PO token. From chrome-extension:// the same call is
-// 403'd, and the inline ytInitialPlayerResponse (WEB client) ships
-// `exp=xpe` URLs that return HTTP 200 + 0 bytes for anonymous
-// sessions. ANDROID_VR is the only client we have access to here
-// that consistently produces playable caption URLs in 2026.
-async function fetchAndroidVrPlayer(videoId: string): Promise<string | null> {
+// Call /youtubei/v1/player from the page's youtube.com origin. We try
+// a series of mobile/embedded clients in order; the inline DOM
+// ytInitialPlayerResponse (WEB client) ships `exp=xpe`-gated caption
+// URLs that return HTTP 200 + 0 bytes, and from `chrome-extension://`
+// these endpoints are 403'd outright. From the youtube.com origin
+// these clients return non-PO-token-gated captionTrack URLs that
+// serve real bodies.
+//
+// Why an array, not a single client:
+//   - ANDROID_VR covers most videos with human/uploaded captions.
+//   - IOS covers ASR-only videos where ANDROID_VR returns an empty
+//     captionTracks array (observed on 6e9B7q3gvYY — Microservices
+//     Scam; ANDROID_VR ⇒ 0 tracks, IOS ⇒ 1 ASR track that fetches
+//     to a parseable 632-event json3 body).
+// Stop on the first client that returns a non-empty captionTracks.
+type InnertubeClient = {readonly name: string; readonly context: Record<string, unknown>};
+
+const PAGE_CONTEXT_CLIENTS: readonly InnertubeClient[] = [
+  {
+    name: "ANDROID_VR",
+    context: {
+      client: {
+        clientName: "ANDROID_VR",
+        clientVersion: "1.62.27",
+        androidSdkVersion: 32,
+        deviceMake: "Oculus",
+        deviceModel: "Quest 3",
+        osName: "Android",
+        osVersion: "12L",
+        hl: "en",
+        gl: "US",
+      },
+    },
+  },
+  {
+    name: "IOS",
+    context: {
+      client: {
+        clientName: "IOS",
+        clientVersion: "20.10.4",
+        deviceMake: "Apple",
+        deviceModel: "iPhone16,2",
+        osName: "iOS",
+        osVersion: "18.5.1.22F76",
+        hl: "en",
+        gl: "US",
+      },
+    },
+  },
+];
+
+function playerHasCaptionTracks(body: string): boolean {
   try {
-    const res = await fetch("/youtubei/v1/player?prettyPrint=false", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      credentials: "include",
-      body: JSON.stringify({
-        context: {
-          client: {
-            clientName: "ANDROID_VR",
-            clientVersion: "1.62.27",
-            androidSdkVersion: 32,
-            deviceMake: "Oculus",
-            deviceModel: "Quest 3",
-            osName: "Android",
-            osVersion: "12L",
-            hl: "en",
-            gl: "US",
-          },
-        },
-        videoId,
-        contentCheckOk: true,
-        racyCheckOk: true,
-      }),
-    });
-    if (!res.ok) return null;
-    return await res.text();
+    const j = JSON.parse(body) as {captions?: {playerCaptionsTracklistRenderer?: {captionTracks?: unknown[]}}};
+    return Array.isArray(j?.captions?.playerCaptionsTracklistRenderer?.captionTracks)
+      && (j.captions!.playerCaptionsTracklistRenderer!.captionTracks!.length > 0);
   } catch {
-    return null;
+    return false;
   }
+}
+
+async function fetchPageContextPlayer(videoId: string): Promise<string | null> {
+  for (const client of PAGE_CONTEXT_CLIENTS) {
+    try {
+      const res = await fetch("/youtubei/v1/player?prettyPrint=false", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        credentials: "include",
+        body: JSON.stringify({
+          context: client.context,
+          videoId,
+          contentCheckOk: true,
+          racyCheckOk: true,
+        }),
+      });
+      if (!res.ok) continue;
+      const body = await res.text();
+      if (playerHasCaptionTracks(body)) return body;
+    } catch {
+      // try next client
+    }
+  }
+  return null;
 }
 
 interface CaptionTrack {
@@ -162,33 +207,37 @@ function pickCaptionTrack(playerJson: string): CaptionTrack | null {
 // ever needing to make the cross-origin call.
 function forwardInitialPlayerResponse(videoId: string): void {
   // Two parallel sources of captionTracks:
-  //   ANDROID_VR — page-context fetch of /youtubei/v1/player with the
-  //     Oculus VR client config. yt-dlp's go-to client for anonymous
+  //   Mobile/embedded clients — page-context fetch of
+  //     /youtubei/v1/player cycling through ANDROID_VR then IOS (see
+  //     PAGE_CONTEXT_CLIENTS). yt-dlp's go-to chain for anonymous
   //     extraction: returns caption URLs signed WITHOUT `exp=xpe` in
   //     `sparams`, so /api/timedtext serves real bodies without a PO
   //     token. SW-context fetches of the same endpoint get 403'd from
   //     `chrome-extension://`; running the request inside content.js
   //     puts the call on the youtube.com origin where YouTube accepts
-  //     it. This is the path that actually delivers captions for
+  //     it. ANDROID_VR covers most videos; IOS picks up ASR-only
+  //     videos that ANDROID_VR returns as an empty captionTracks
+  //     array. This is the path that actually delivers captions for
   //     anonymous viewers.
   //   DOM `ytInitialPlayerResponse` — inline blob YouTube ships in the
   //     watch-page HTML. Its captionTrack baseUrls have `exp=xpe` in
   //     sparams (returns 0-byte for anonymous) but the player payload
   //     itself still carries chapters, description, title, etc., so we
   //     forward it for the correlator to read those side-channel
-  //     fields. The non-gated URLs from ANDROID_VR replace its tracks.
+  //     fields. The non-gated URLs from the mobile clients replace
+  //     its tracks.
   void (async () => {
-    const androidJson = await fetchAndroidVrPlayer(videoId);
-    if (!androidJson) return;
+    const playerJson = await fetchPageContextPlayer(videoId);
+    if (!playerJson) return;
     safeSendMessage({
       type: "intercepted-capture",
       kind: "player",
       videoId,
-      url: `android-vr://${videoId}`,
+      url: `page-ctx://${videoId}`,
       status: 200,
-      bodyText: androidJson,
+      bodyText: playerJson,
     });
-    void fetchTimedTextFromPage(videoId, androidJson);
+    void fetchTimedTextFromPage(videoId, playerJson);
   })();
 
   let domTries = 0;
