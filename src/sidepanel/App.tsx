@@ -44,6 +44,35 @@ interface TranscriptData {
 // ---------- helpers ----------
 
 const CAPTURE_VIA_TAB_TIMEOUT_MS = 20_000;
+// How long to wait for the MAIN-world interceptor on the user's
+// existing YouTube tab to deliver an `intercepted-transcript` for
+// this videoId before falling back to opening a helper tab. Capture
+// from the existing tab normally lands in 2–4 s.
+const INTERCEPT_GRACE_MS = 6_000;
+
+// Wait for an `intercepted-transcript` broadcast that matches this
+// videoId without spawning any tabs. Used as a quiet pre-check
+// before the captureViaYouTubeTab fallback so the common case (user
+// already sits on the watch page, content.ts + correlator deliver on
+// their own) doesn't open a duplicate helper tab.
+function waitForInterceptedTranscript(videoId: string, timeoutMs: number): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+        let resolved = false;
+        const finish = (ok: boolean) => {
+            if (resolved) return;
+            resolved = true;
+            chrome.runtime.onMessage.removeListener(listener);
+            resolve(ok);
+        };
+        const listener = (message: { type?: string; data?: { videoId?: string } }) => {
+            if (message?.type === "intercepted-transcript" && message.data?.videoId === videoId) {
+                finish(true);
+            }
+        };
+        chrome.runtime.onMessage.addListener(listener);
+        setTimeout(() => finish(false), timeoutMs);
+    });
+}
 
 // Paste-URL recovery: when the SW's Innertube fallback fails for a
 // video the user is not currently watching, open the watch page in a
@@ -352,6 +381,17 @@ export function App() {
                 if (platform === "youtube" &&
                     (response.error.error === "no_captions" ||
                         response.error.error === "fetch_failed")) {
+                    // The user almost always already has the watch page open
+                    // in some tab — the MAIN-world interceptor there fires
+                    // `intercepted-transcript` for free in 2–4 s. Wait a
+                    // bounded window for that broadcast BEFORE deciding to
+                    // open a helper tab; without this, every side-panel
+                    // open on a video the SW Innertube path can't resolve
+                    // spawned a duplicate YouTube tab that flashed on
+                    // screen for a few seconds before closing itself again.
+                    if (await waitForInterceptedTranscript(videoId, INTERCEPT_GRACE_MS)) {
+                        return;
+                    }
                     // De-duplicate concurrent recoveries for the same
                     // videoId: cache the in-flight promise, share it with
                     // any overlapping fetchTranscript, and clear the slot
