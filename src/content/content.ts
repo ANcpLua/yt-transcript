@@ -125,13 +125,15 @@ const PAGE_CONTEXT_CLIENTS: readonly InnertubeClient[] = [
 ];
 
 function playerHasCaptionTracks(body: string): boolean {
-  try {
-    const j = JSON.parse(body) as {captions?: {playerCaptionsTracklistRenderer?: {captionTracks?: unknown[]}}};
-    return Array.isArray(j?.captions?.playerCaptionsTracklistRenderer?.captionTracks)
-      && (j.captions!.playerCaptionsTracklistRenderer!.captionTracks!.length > 0);
-  } catch {
-    return false;
-  }
+  let parsed: unknown;
+  try { parsed = JSON.parse(body); } catch { return false; }
+  if (typeof parsed !== "object" || parsed === null) return false;
+  const captions = (parsed as Record<string, unknown>)["captions"];
+  if (typeof captions !== "object" || captions === null) return false;
+  const renderer = (captions as Record<string, unknown>)["playerCaptionsTracklistRenderer"];
+  if (typeof renderer !== "object" || renderer === null) return false;
+  const tracks = (renderer as Record<string, unknown>)["captionTracks"];
+  return Array.isArray(tracks) && tracks.length > 0;
 }
 
 async function fetchPageContextPlayer(videoId: string): Promise<string | null> {
