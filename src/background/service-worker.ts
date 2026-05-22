@@ -310,6 +310,8 @@ function handleStopTranscription(): void {
   chrome.runtime.sendMessage({ type: "offscreen-stop-capture" }).catch(() => {});
 }
 
+const WHISPER_STATUS_TIMEOUT_MS = 10_000;
+
 async function handleCheckWhisperStatus(
   model: "tiny" | "base" = "tiny",
 ): Promise<{ type: string; downloaded: boolean; modelId: string; model: "tiny" | "base" }> {
@@ -317,24 +319,34 @@ async function handleCheckWhisperStatus(
   // Carry the model through so the caller can verify the response is scoped
   // to the same model they asked about (avoids a stale "ready" if the user
   // flipped the selector between request and response).
+  //
+  // Race the listener against a 10s timeout so a crashed/silent offscreen
+  // document doesn't leave the side panel spinning forever — fall back
+  // to `downloaded: false`, which makes the UI show the download button
+  // (worst case the user re-clicks).
   await ensureOffscreen();
   return new Promise((resolve) => {
-    const listener = (msg: { type: string; downloaded?: boolean; modelId?: string; model?: "tiny" | "base" }) => {
-      if (msg.type !== "whisper-status-response") return;
-      if (msg.model && msg.model !== model) return;
+    let settled = false;
+    const finish = (downloaded: boolean, modelId?: string): void => {
+      if (settled) return;
+      settled = true;
       chrome.runtime.onMessage.removeListener(listener);
+      clearTimeout(timer);
       resolve({
         type: "whisper-status",
-        downloaded: msg.downloaded ?? false,
-        modelId: msg.modelId ?? `whisper-${model}`,
+        downloaded,
+        modelId: modelId ?? `whisper-${model}`,
         model,
       });
     };
+    const listener = (msg: { type: string; downloaded?: boolean; modelId?: string; model?: "tiny" | "base" }) => {
+      if (msg.type !== "whisper-status-response") return;
+      if (msg.model && msg.model !== model) return;
+      finish(msg.downloaded ?? false, msg.modelId);
+    };
+    const timer = setTimeout(() => finish(false), WHISPER_STATUS_TIMEOUT_MS);
     chrome.runtime.onMessage.addListener(listener);
-    chrome.runtime.sendMessage({ type: "offscreen-check-whisper", model }).catch(() => {
-      chrome.runtime.onMessage.removeListener(listener);
-      resolve({ type: "whisper-status", downloaded: false, modelId: `whisper-${model}`, model });
-    });
+    chrome.runtime.sendMessage({ type: "offscreen-check-whisper", model }).catch(() => finish(false));
   });
 }
 
