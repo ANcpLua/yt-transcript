@@ -4,10 +4,6 @@ const PREFS_KEY = "preferences";
 const API_KEY_PREFIX = "apiKey:";
 
 const DEFAULTS: Preferences = {
-    viewMode: "raw",
-    showTimestamps: true,
-    compactMode: false,
-    autoScroll: true,
     aiProvider: null,
     whisperModel: "tiny",
 };

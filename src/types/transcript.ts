@@ -79,10 +79,6 @@ export type Platform = "youtube" | "vimeo";
 export type AiProviderId = "chrome-ai" | "ollama" | "openai" | "anthropic" | "google";
 
 export interface Preferences {
-  viewMode: "raw" | "sentences" | "paragraphs" | "tabular";
-  showTimestamps: boolean;
-  compactMode: boolean;
-  autoScroll: boolean;
   aiProvider: AiProviderId | null;
   whisperModel: "tiny" | "base";
   ollamaUrl?: string;

@@ -526,19 +526,19 @@ v1.3.0 includes the F-001 fix, the Whisper download progress fix, and
 the HF host-permission opt-in. Before uploading a new build, run the
 manual verification above and confirm:
 
-1. `npm run zip` produces `yt-transcript-chrome.zip` (≈ 5.7 MB,
-   Chrome + Edge) and `yt-transcript-firefox.zip` (Firefox).
+1. `npm run zip` produces `yt-transcript-chrome.zip` (≈ 5.7 MB).
 2. Chrome Web Store: upload to
    <https://chrome.google.com/webstore/devconsole>. The 1.3.0 upgrade
    demotes HF + BYOK AI hosts to `optional_host_permissions` — the
    review flow lists this as a permissions diff but it is a *reduction*
    in surface area, not an expansion, so it should pass.
-3. Edge Add-ons: upload the same chrome.zip to
-   <https://partner.microsoft.com/dashboard/microsoftedge>.
-4. Firefox Add-ons: upload `yt-transcript-firefox.zip` to
-   <https://addons.mozilla.org/developers/>. `chrome.tabCapture` /
-   `chrome.offscreen` aren't available, so Whisper local transcription
-   stays Chrome/Edge-only on Firefox.
-5. Screenshots in `store/images/` predate the Settings redesign. Refresh
+3. Edge and Firefox are not supported targets. Edge happens to load the
+   Chrome zip because both are Chromium with the MV3 surface we use,
+   but we don't test or ship there. Firefox was dropped on 2026-05-23
+   along with `manifest.firefox.json` and the build-firefox script —
+   `chrome.tabCapture` / `chrome.offscreen` / `chrome.sidePanel` aren't
+   available there and Chrome built-in AI (`window.ai`) is Chromium-only,
+   so the free-tier UX collapsed.
+4. Screenshots in `store/images/` predate the Settings redesign. Refresh
    `settings-chrome.png` (Settings → Audio tab) before submitting if
    the store listing displays it.

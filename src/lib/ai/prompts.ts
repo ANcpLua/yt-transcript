@@ -23,21 +23,24 @@ export function truncateForProvider(text: string, kind: ProviderKind): string {
 }
 
 const BASE_SYSTEM =
-    "You analyze YouTube video transcripts. Be concise and accurate. Use timestamps (MM:SS) when referencing specific moments.";
+    "You analyze YouTube video transcripts. Be brief. Prefer terse answers over thorough ones. " +
+    "Use timestamps (MM:SS) only when referencing a specific moment. " +
+    "If the transcript does not contain the information needed to answer, say so explicitly — " +
+    "e.g. \"The transcript doesn't mention that.\" — instead of inventing an answer from related material.";
 
 export const promptTemplates: Record<AiFeature, PromptTemplate> = {
     summary: {
         system: BASE_SYSTEM,
-        instructions: "Provide a 3-5 sentence concise summary of this transcript:",
+        instructions: "Write a 3-sentence summary of this transcript. Plain prose, no headings.",
     },
     bulletPoints: {
         system: BASE_SYSTEM,
-        instructions: "Extract 5-10 key points as a bullet list from this transcript:",
+        instructions: "List 5 key points from this transcript as short bullets. One line each. No nesting.",
     },
     qaExtract: {
         system: BASE_SYSTEM,
         instructions:
-            "Find direct answers to common questions within this transcript. For each, provide:\n- The implicit or explicit question being answered\n- The direct answer from the transcript\n- The approximate timestamp\n\nExtract 5-15 Q&A pairs. Focus on factual, actionable answers.",
+            "Extract 5 direct Q&A pairs from this transcript. Format each as a markdown bold label:\n\n**Q:** question\n**A:** answer (timestamp)\n\nKeep each answer to one short sentence. No preamble, no closing remarks.",
     },
 };
 

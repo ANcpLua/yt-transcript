@@ -150,7 +150,7 @@ function makeMdComponents(onSeek: (t: number) => void): Components {
 function RenderedContent({text, onSeek}: { text: string; onSeek: (t: number) => void }) {
     const components = makeMdComponents(onSeek);
     return (
-        <div className="prose prose-sm prose-slate max-w-none dark:prose-invert">
+        <div className="prose prose-slate max-w-none text-[14.5px] leading-relaxed prose-p:my-2 prose-li:my-0.5 prose-strong:text-amber-700 dark:prose-invert dark:prose-strong:text-amber-300">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
                 {text}
             </ReactMarkdown>
@@ -372,15 +372,16 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
     const renderFeatureButton = (f: { id: AiFeature; label: string }) => {
         const enabled = canRunFeature(f.id);
+        const isActive = activeFeature === f.id;
         return (
             <button
                 key={f.id}
                 onClick={() => void runFeature(f.id)}
                 disabled={!enabled}
-                className={`rounded-md px-3 py-1.5 text-sm transition disabled:opacity-30 ${
-                    activeFeature === f.id
-                        ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
-                        : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                className={`flex-1 rounded-md px-3 py-2 text-[15px] font-medium transition disabled:opacity-30 ${
+                    isActive
+                        ? "bg-amber-400 text-slate-950 shadow-sm ring-1 ring-amber-300 dark:bg-amber-300 dark:text-slate-950 dark:ring-amber-400"
+                        : "bg-slate-100 text-slate-700 hover:bg-amber-100 hover:text-amber-900 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-amber-300/20 dark:hover:text-amber-200"
                 }`}
             >
                 {f.label}
@@ -389,9 +390,9 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
     };
 
     return (
-        <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900/40">
+        <div className="flex flex-col gap-3 rounded-xl border border-amber-200/40 bg-gradient-to-b from-amber-50/40 to-white p-4 dark:border-amber-300/10 dark:from-amber-300/[0.04] dark:to-slate-900/40">
             <div className="flex items-center justify-between">
-                <h3 className="font-mono text-[10px] uppercase tracking-[0.12em] text-slate-500 dark:text-slate-500">Analyze</h3>
+                <h3 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700 dark:text-amber-300">Analyze</h3>
                 {!hasAnyProvider && (
                     <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-amber-600 dark:text-amber-400">
                         Pick a provider →
@@ -399,19 +400,19 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                 )}
             </div>
 
-            {/* Feature buttons */}
-            <div className="-mx-1 flex flex-wrap gap-1">
+            {/* Feature buttons — each one flex-1 so they stretch the full row */}
+            <div className="flex gap-1.5">
                 {FEATURES.map(renderFeatureButton)}
             </div>
 
             {/* Results */}
             {loading && (
-                <div className="flex items-center gap-2 py-2 text-sm text-slate-500 dark:text-slate-400">
-                    <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600 dark:border-slate-700 dark:border-t-slate-300"/>
+                <div className="flex items-center gap-2 py-2 text-[14px] text-slate-600 dark:text-slate-300">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-200 border-t-amber-500 dark:border-amber-300/20 dark:border-t-amber-300"/>
                     <span>Analyzing…</span>
                     <button
                         onClick={cancelActiveRequest}
-                        className="ml-1 rounded px-1.5 text-xs text-slate-500 underline-offset-2 hover:underline dark:text-slate-400"
+                        className="ml-1 rounded px-1.5 text-xs text-amber-700 underline-offset-2 hover:underline dark:text-amber-300"
                     >
                         Stop
                     </button>
@@ -419,7 +420,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
             )}
 
             {error && (
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                <p className="text-[14px] text-red-600 dark:text-red-400">{error}</p>
             )}
 
             {result && !loading && (
@@ -440,9 +441,9 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
             )}
 
             {/* Chat */}
-            <div className="border-t border-slate-200 pt-4 dark:border-slate-800">
+            <div className="border-t border-amber-200/30 pt-4 dark:border-amber-300/10">
                 <div className="mb-3 flex items-center justify-between">
-                    <h4 className="text-sm font-medium text-slate-900 dark:text-white">Ask</h4>
+                    <h4 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700 dark:text-amber-300">Ask</h4>
                     {chatMessages.length > 0 && (
                         <button
                             onClick={() => setChatMessages([])}
@@ -474,12 +475,12 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                         onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && void sendChat()}
                         placeholder={canChat ? "Ask about this video" : "Pick an AI provider in Settings"}
                         disabled={!canChat || chatLoading}
-                        className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm placeholder:text-slate-400 focus:border-slate-400 focus:outline-hidden disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-[14px] placeholder:text-slate-400 focus:border-amber-400 focus:outline-hidden focus:ring-1 focus:ring-amber-300 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:border-amber-300 dark:focus:ring-amber-300/40"
                     />
                     <button
                         onClick={() => void sendChat()}
                         disabled={!canChat || chatLoading || !chatInput.trim()}
-                        className="rounded-md bg-slate-900 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-30 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+                        className="rounded-md bg-amber-400 px-4 py-2 text-[14px] font-semibold text-slate-950 transition hover:bg-amber-300 disabled:opacity-30 dark:bg-amber-300 dark:text-slate-950 dark:hover:bg-amber-200"
                     >
                         Send
                     </button>
