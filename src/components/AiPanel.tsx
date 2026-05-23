@@ -1,4 +1,6 @@
-import {useCallback, useEffect, useRef, useState} from "react";
+import {Children, createElement, type ReactNode, useCallback, useEffect, useRef, useState} from "react";
+import ReactMarkdown, {type Components} from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type {AiFeature, TranscriptResponse} from "../types/transcript";
 import {buildUserMessage, CHAT_BASE_SYSTEM, getChatSystemPrompt, promptTemplates, truncateForProvider} from "../lib/ai/prompts";
 import {getApiKey, getPreferences} from "../lib/storage/preferences";
@@ -72,26 +74,67 @@ function sendAiRequest(payload: AiRequestPayload): Promise<string> {
     });
 }
 
-function RenderedContent({text, onSeek}: { text: string; onSeek: (t: number) => void }) {
-    const parts = text.split(TIMESTAMP_SPLIT_RE);
+const TIMESTAMP_BUTTON_CLASS =
+    "mx-0.5 rounded font-mono text-xs text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-slate-900 hover:decoration-slate-500 dark:text-slate-400 dark:decoration-slate-600 dark:hover:text-white";
+
+function TimestampButton({ts, onSeek}: { ts: string; onSeek: (t: number) => void }) {
     return (
-        <div className="prose prose-sm prose-slate max-w-none whitespace-pre-wrap dark:prose-invert">
-            {parts.map((part, i) =>
-                TIMESTAMP_TEST_RE.test(part) ? (
-                    <button
-                        key={i}
-                        onClick={() => onSeek(parseTimestamp(part))}
-                        className="mx-0.5 rounded font-mono text-xs text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-slate-900 hover:decoration-slate-500 dark:text-slate-400 dark:decoration-slate-600 dark:hover:text-white"
-                    >
-                        {part}
-                    </button>
-                ) : (
-                    <span key={i}>{part}</span>
-                ),
-            )}
+        <button onClick={() => onSeek(parseTimestamp(ts))} className={TIMESTAMP_BUTTON_CLASS}>
+            {ts}
+        </button>
+    );
+}
+
+/** Walk children; in plain string nodes, replace MM:SS substrings with clickable buttons. */
+function processTimestampsInChildren(children: ReactNode, onSeek: (t: number) => void): ReactNode {
+    return Children.map(children, (child, i) => {
+        if (typeof child !== "string") return child;
+        if (!TIMESTAMP_SPLIT_RE.test(child)) return child;
+        const parts = child.split(TIMESTAMP_SPLIT_RE);
+        return parts.map((part, j) =>
+            TIMESTAMP_TEST_RE.test(part)
+                ? <TimestampButton key={`${i}-${j}`} ts={part} onSeek={onSeek}/>
+                : part,
+        );
+    });
+}
+
+function makeMdComponents(onSeek: (t: number) => void): Components {
+    const wrap = (tag: "p" | "li" | "td" | "th") =>
+        ({children}: { children?: ReactNode }) =>
+            createElement(tag, null, processTimestampsInChildren(children, onSeek));
+    return {
+        p: wrap("p"),
+        li: wrap("li"),
+        td: wrap("td"),
+        th: wrap("th"),
+        // Backtick-wrapped timestamps like `02:55` become inline buttons; other code stays code.
+        code: ({children, ...rest}) => {
+            if (typeof children === "string" && TIMESTAMP_TEST_RE.test(children.trim())) {
+                return <TimestampButton ts={children.trim()} onSeek={onSeek}/>;
+            }
+            if (Array.isArray(children) && children.length === 1 && typeof children[0] === "string"
+                && TIMESTAMP_TEST_RE.test(children[0].trim())) {
+                return <TimestampButton ts={children[0].trim()} onSeek={onSeek}/>;
+            }
+            return <code {...rest}>{children}</code>;
+        },
+        // Anchors from autolinked URLs — render but never wrap timestamps inside.
+        a: ({children, href}) => <a href={href} target="_blank" rel="noreferrer noopener">{children}</a>,
+    };
+}
+
+function RenderedContent({text, onSeek}: { text: string; onSeek: (t: number) => void }) {
+    const components = makeMdComponents(onSeek);
+    return (
+        <div className="prose prose-sm prose-slate max-w-none dark:prose-invert">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+                {text}
+            </ReactMarkdown>
         </div>
     );
 }
+
 
 export function AiPanel({transcript, onSeek}: AiPanelProps) {
     const [result, setResult] = useState<string | null>(null);
