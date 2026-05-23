@@ -348,6 +348,35 @@ function stripPoTokenExp(url: string): string {
   return url.replace(/([?&])exp=xpe(&|$)/g, (_, before, after) => (after ? before : ""));
 }
 
+// Core retry/fallback logic shared by fetchTrackSegments and
+// fetchSegmentsWithPoTokenRetry. Tries the primary baseUrl first, then
+// strips `exp=xpe` and retries if the first attempt returns no segments.
+async function fetchWithPoTokenRetryCore(
+  baseUrl: string,
+  languageCode: string,
+  userAgent: string,
+  translateTo?: string,
+): Promise<Segment[] | ApiError> {
+  const primary = buildTextUrl({ baseUrl, languageCode }, translateTo);
+  let events = await fetchTimedText(primary, userAgent);
+  if (Array.isArray(events)) {
+    const segs = parseSegments(events);
+    if (segs.length > 0) return segs;
+  }
+
+  const cleaned = stripPoTokenExp(baseUrl);
+  if (cleaned !== baseUrl) {
+    const retry = buildTextUrl({ baseUrl: cleaned, languageCode }, translateTo);
+    events = await fetchTimedText(retry, userAgent);
+    if (Array.isArray(events)) {
+      const segs = parseSegments(events);
+      if (segs.length > 0) return segs;
+    }
+  }
+
+  return "error" in events ? events : { error: "fetch_failed", message: "Empty timedtext response" };
+}
+
 // Fetch + parse a captionTrack baseUrl into Segment[]. Used by the
 // intercept correlator when YouTube's own page hasn't fetched
 // /youtubei/v1/get_transcript (i.e. the user hasn't opened the
@@ -357,24 +386,7 @@ export async function fetchTrackSegments(
   languageCode: string,
   translateTo?: string,
 ): Promise<Segment[] | ApiError> {
-  const primary = buildTextUrl({ baseUrl, languageCode }, translateTo);
-  let events = await fetchTimedText(primary, WEB_UA);
-  if (Array.isArray(events)) {
-    const segs = parseSegments(events);
-    if (segs.length > 0) return segs;
-  }
-
-  const cleaned = stripPoTokenExp(baseUrl);
-  if (cleaned !== baseUrl) {
-    const retry = buildTextUrl({ baseUrl: cleaned, languageCode }, translateTo);
-    events = await fetchTimedText(retry, WEB_UA);
-    if (Array.isArray(events)) {
-      const segs = parseSegments(events);
-      if (segs.length > 0) return segs;
-    }
-  }
-
-  return { error: "fetch_failed", message: "Empty timedtext response" };
+  return fetchWithPoTokenRetryCore(baseUrl, languageCode, WEB_UA, translateTo);
 }
 
 async function fetchTimedText(textUrl: string, userAgent: string): Promise<unknown[] | ApiError> {
@@ -435,36 +447,19 @@ export async function fetchTranscript(
 }
 
 /**
- * Mirror of fetchTrackSegments' two-attempt retry: try the captionTrack
- * baseUrl as-is, and if YouTube returns the 0-byte "PO token required"
- * signal, strip `&exp=xpe` from the signed sparams and retry. Without
- * this, paste-URL requests for the (rare) video where ANDROID_VR's
- * baseUrl still carries `exp=xpe` would surface as "empty timedtext
- * response" even though the realtime intercept path could load them.
+ * Try the captionTrack baseUrl as-is, and if YouTube returns the 0-byte
+ * "PO token required" signal, strip `&exp=xpe` from the signed sparams
+ * and retry. Without this, paste-URL requests for the (rare) video where
+ * ANDROID_VR's baseUrl still carries `exp=xpe` would surface as "empty
+ * timedtext response" even though the realtime intercept path could load
+ * them.
  */
 async function fetchSegmentsWithPoTokenRetry(
   track: InnertubeTrack,
   userAgent: string,
   translateTo?: string,
 ): Promise<Segment[] | ApiError> {
-  const primary = buildTextUrl(track, translateTo);
-  let events = await fetchTimedText(primary, userAgent);
-  if (Array.isArray(events)) {
-    const segs = parseSegments(events);
-    if (segs.length > 0) return segs;
-  }
-
-  const cleanedBaseUrl = stripPoTokenExp(track.baseUrl);
-  if (cleanedBaseUrl !== track.baseUrl) {
-    const retry = buildTextUrl({ ...track, baseUrl: cleanedBaseUrl }, translateTo);
-    events = await fetchTimedText(retry, userAgent);
-    if (Array.isArray(events)) {
-      const segs = parseSegments(events);
-      if (segs.length > 0) return segs;
-    }
-  }
-
-  return "error" in events ? events : { error: "fetch_failed", message: "Empty timedtext response" };
+  return fetchWithPoTokenRetryCore(track.baseUrl, track.languageCode, userAgent, translateTo);
 }
 
 export async function fetchTracks(

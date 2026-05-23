@@ -356,7 +356,7 @@ async function handleCheckWhisperStatus(
     };
     const listener = (msg: { type: string; downloaded?: boolean; modelId?: string; model?: "tiny" | "base" }) => {
       if (msg.type !== "whisper-status-response") return;
-      if (msg.model && msg.model !== model) return;
+      if (msg.model !== model) return;
       finish(msg.downloaded ?? false, msg.modelId);
     };
     const timer = setTimeout(() => finish(false), WHISPER_STATUS_TIMEOUT_MS);
