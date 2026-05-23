@@ -41,6 +41,18 @@ interface TabState {
 
 const tabs = new Map<number, TabState>();
 
+// Tab id of the most recently emitted transcript. Used by the side panel's
+// seek-to forwarding so it can find the YouTube player it's looking at.
+let lastBroadcastTabId: number | null = null;
+
+export function getBroadcastingTabId(): number | null {
+  return lastBroadcastTabId;
+}
+
+export function recordBroadcast(tabId: number): void {
+  lastBroadcastTabId = tabId;
+}
+
 function ensure(tabId: number): TabState {
   let s = tabs.get(tabId);
   if (!s) {
@@ -60,6 +72,7 @@ function reset(state: TabState, videoId: string): void {
 
 export function clearTab(tabId: number): void {
   tabs.delete(tabId);
+  if (lastBroadcastTabId === tabId) lastBroadcastTabId = null;
 }
 
 export function notifyNavigate(tabId: number, videoId: string | null): void {

@@ -9,8 +9,10 @@ import type { Platform } from "../types/transcript";
 import {
   claimAutoFetchTrack,
   clearTab,
+  getBroadcastingTabId,
   notifyNavigate,
   recordAutoFetchedSegments,
+  recordBroadcast,
   recordPlayer,
   recordTimedText,
   recordTranscript,
@@ -59,6 +61,17 @@ chrome.runtime.onMessage.addListener(
       case "player-time":
         chrome.runtime.sendMessage(message).catch(() => {});
         return false;
+
+      case "seek-to": {
+        // chrome.runtime.sendMessage from the side panel doesn't reach
+        // content scripts; we must forward via chrome.tabs.sendMessage to
+        // the tab that produced the currently-displayed transcript.
+        const tabId = getBroadcastingTabId();
+        if (tabId !== null) {
+          chrome.tabs.sendMessage(tabId, message).catch(() => {});
+        }
+        return false;
+      }
 
       case "fetch-transcript": {
         const provider = providers[message.platform];
@@ -156,6 +169,7 @@ chrome.runtime.onMessage.addListener(
         const ready = takeIfReady(tabId);
         if (ready) {
           console.log(`[intercept] emitting intercepted-transcript videoId=${ready.videoId} segments=${ready.segments.length}`);
+          recordBroadcast(tabId);
           chrome.runtime
             .sendMessage({ type: "intercepted-transcript", data: ready })
             .catch(() => {});
@@ -198,6 +212,7 @@ function maybeAutoFetchTimedText(tabId: number, videoId: string): void {
       recordAutoFetchedSegments(tabId, videoId, result);
       const ready = takeIfReady(tabId);
       if (ready) {
+        recordBroadcast(tabId);
         chrome.runtime
           .sendMessage({ type: "intercepted-transcript", data: ready })
           .catch(() => {});
