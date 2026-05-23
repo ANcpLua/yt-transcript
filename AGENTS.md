@@ -32,9 +32,10 @@ is in this file.
   (`WEB_EMBEDDED_PLAYER`) plus a watch-page scrape — keep it slim.
 - Side panel width is ~400px. Components designed for full-page layouts must
   be adapted.
-- `TranscriptView.tsx` (~26KB after the cleanup pass) and `AiPanel.tsx`
-  (~16KB) are still on the chunky side. Split only if you're already
-  modifying them and the change is non-trivial.
+- `TranscriptView.tsx` (~36KB / 695 lines) is still on the chunky side.
+  `AiPanel.tsx` shrank in the 2026-05-23 cut (was ~20KB, now ~16KB)
+  but added react-markdown rendering and AbortController. Split only if
+  you're already modifying them and the change is non-trivial.
 - Inline SVGs still appear in several components. Four files duplicate the
   same close-X glyph; consolidate when you touch icon code.
 - Local Whisper runs in an offscreen document via `chrome.tabCapture` +
@@ -50,30 +51,32 @@ We replace youtube-transcript.io feature-for-feature. This is the parity table:
 
 | ID | Their Feature | Their Tier | Our Status | Our Approach |
 |----|---|---|---|---|
-| F-001 | Single transcript extraction | Free (25/mo cap) | **FIX LANDED — NEEDS REAL-CHROME VERIFICATION** | Intercept-first MAIN-world fetch hook (`yt-interceptor.ts`) + paste-URL recovery that opens the watch page in a tab and waits for the correlator (`App.tsx:captureViaYouTubeTab`). Content script (`content.ts`) fires a page-context ANDROID_VR `/youtubei/v1/player` call so the captionTrack URLs are not `exp=xpe`-gated. CSP in `manifest.json` now allows `*.youtube.com` / `*.googlevideo.com` so the SW Innertube path is no longer denied by `connect-src`. Auto-Whisper cascade on `no_captions` removed — that was the trigger of the visible "activeTab / Chrome pages cannot be captured" error. Test harness under Playwright is bot-detected by YouTube (returns 0-byte timedtext), so end-to-end caption proof requires a real Chrome with a real YouTube session — procedure documented under "How to verify the extension actually works". |
+| F-001 | Single transcript extraction | Free (25/mo cap) | **DONE — NEEDS REAL-CHROME VERIFICATION** | Intercept-first MAIN-world fetch hook (`yt-interceptor.ts`) + paste-URL recovery that opens the watch page in a tab and waits for the correlator (`App.tsx:captureViaYouTubeTab`). Content script (`content.ts`) fires a page-context ANDROID_VR `/youtubei/v1/player` call so captionTrack URLs are not `exp=xpe`-gated. Playwright harness is bot-detected by YouTube — treat as a path-regression guard, not caption-content proof. |
 | F-002 | Playlist bulk extraction | Plus ($9.99/mo) | **DONE** | `UrlInput.tsx` detects playlist URLs → `chrome.runtime.sendMessage({type:"fetch-playlist"})` → video selection panel → batch queue |
 | F-003 | CSV bulk upload | Plus | **DONE** | `UrlInput.tsx` file input accepts `.csv/.txt`, parses video IDs via `parseVideoId`, feeds into `onSubmitBatch` |
 | F-004 | Channel ID finder + transcripts | Plus/Pro | **DONE** | `UrlInput.tsx` detects channel URLs → `chrome.runtime.sendMessage({type:"fetch-channel"})` → selection panel → batch |
 | F-005 | Transcript history | 3d free / 90d paid / unlimited Pro | **DONE** | `lib/storage/history.ts` + `History.tsx` modal |
-| F-006 | AI Summary | Login + credits | **DONE** | `promptTemplates.summary` in `prompts.ts`, button in `AiPanel.tsx` |
-| F-007 | AI Sentiment analysis | Login + credits | **DONE** | `promptTemplates.sentiment` — tone, bias, emotional arc analysis |
-| F-008 | AI Topic extraction / hashtags | Login + credits | **DONE** | `promptTemplates.topics` — primary/secondary topics + hashtags |
-| F-009 | AI Q&A from transcript | Login + credits | **DONE** | `promptTemplates.qaExtract` — direct answers with timestamps |
-| F-010 | Chat with transcript | Beta/paid | **DONE** | `AiPanel.tsx` chat section with `getChatSystemPrompt` |
-| F-011 | Summarize transcript | Credits | **DONE** | Same as F-006 |
-| F-012 | Mindmap | Credits | **DONE** | `promptTemplates.mindmap` — outputs mermaid diagram syntax |
-| F-013 | Key Quotes | Credits | **DONE** | `promptTemplates.quotes` — notable quotes with timestamps |
-| F-014 | Study Guide | Credits | **DONE** | `promptTemplates.studyGuide` — objectives, concepts, notes, review questions |
-| F-015 | Q&A Generation | Credits | **DONE** | `promptTemplates.qaGenerate` — factual/conceptual/application Q&A pairs |
-| F-016 | Quiz | Credits | **DONE** | `promptTemplates.quiz` — 10-question multiple choice with explanations |
-| F-017 | Flash Cards | Credits | **DONE** | `promptTemplates.flashcards` + `FlashcardView` component in `AiPanel.tsx` |
-| F-018 | Highlights | Credits | **DONE** | Per-segment highlight/note icons in `TranscriptView.tsx:510-582`, IndexedDB persistence via `App.tsx:274-295`, "Highlights" copy button in `ExportBar.tsx` |
-| EXTRA-001 | Filler word removal | They don't have this | **DONE** | Toggle in `TranscriptView.tsx:419-421`, applies `removeFillersFromSegments` in `displaySegments` memo, exports respect toggle via `ExportBar.tsx:39-41` |
-| EXTRA-002 | Speaker labels | They don't have this | **DONE** | `detectSpeakers()` at `TranscriptView.tsx:168`, colored tags at `:497-501`, filter dropdown at `:424-435` |
-| EXTRA-003 | Chapter extraction | They don't have this | **DONE** | `parseChapters.ts` parses description timestamps, `innertube.ts:265` includes chapters, collapsible dividers in `TranscriptView.tsx:516-530`, chapter headings in Markdown export via `exportMarkdown.ts:renderBody` |
-| EXTRA-004 | Bilingual side-by-side | They don't have this | **EXISTS** | `BilingualView.tsx` component exists, not wired to main UI |
+| F-006 | AI Summary | Login + credits | **DONE** | `promptTemplates.summary` + Summary button. Chrome AI uses `session.measureInputUsage` for adaptive truncation (`chrome-ai.ts:fitToQuota`). |
+| F-007 | AI Sentiment analysis | Login + credits | **REMOVED 2026-05-23** | Cut in the feature-trim pass. Users who want sentiment can ask via the Chat box. |
+| F-008 | AI Topic extraction / hashtags | Login + credits | **REMOVED 2026-05-23** | Cut. Ask via Chat. |
+| F-009 | AI Q&A from transcript | Login + credits | **DONE** | `promptTemplates.qaExtract` + Q&A button. Output now renders as markdown via `react-markdown` so `**Q:**` no longer shows literally. |
+| F-010 | Chat with transcript | Beta/paid | **DONE** | `AiPanel.tsx` Ask box. Chrome AI path puts transcript in `trimmableContent` so the session quota is measured, not blown. |
+| F-011 | Summarize transcript | Credits | **DONE** | Folded into F-006 (Summary). |
+| F-012 | Mindmap | Credits | **REMOVED 2026-05-23** | Cut. The panel never rendered mermaid visually; output was raw code. |
+| F-013 | Key Quotes | Credits | **REMOVED 2026-05-23** | Cut. Low discoverability ("no idea what quotes is"); ask via Chat. |
+| F-014 | Study Guide | Credits | **REMOVED 2026-05-23** | Cut, redundant with F-015/F-016. |
+| F-015 | Q&A Generation | Credits | **REMOVED 2026-05-23** | Cut, overlapped with F-009. |
+| F-016 | Quiz | Credits | **REMOVED 2026-05-23** | Cut, study-app feature not central to a transcript extractor. |
+| F-017 | Flash Cards | Credits | **REMOVED 2026-05-23** | Cut, same rationale as F-016. |
+| F-018 | Highlights | Credits | **DONE** | Per-segment highlight/note icons in `TranscriptView.tsx`, IndexedDB persistence via `App.tsx`, "Highlights" copy button in `ExportBar.tsx` |
+| EXTRA-001 | Filler word removal | They don't have this | **DONE** | Toggle in `TranscriptView.tsx`, applies `removeFillersFromSegments` in `displaySegments` memo, exports respect toggle via `ExportBar.tsx` |
+| EXTRA-002 | Speaker labels | They don't have this | **DONE** | `detectSpeakers()` in `TranscriptView.tsx`, colored tags, filter dropdown |
+| EXTRA-003 | Chapter extraction | They don't have this | **DONE** | `parseChapters.ts` parses description timestamps, collapsible dividers in `TranscriptView.tsx`, chapter headings in Markdown export |
+| EXTRA-004 | Bilingual side-by-side | They don't have this | **REMOVED 2026-05-23** | `BilingualView.tsx` deleted; never wired to UI. |
 | EXTRA-005 | 6 export formats | They only have copy | **DONE** | TXT, SRT, VTT, JSON, CSV, Markdown + Notion + Obsidian variants |
 | EXTRA-006 | Offline | They don't have this | **DONE** | Works without internet once fetched |
+| EXTRA-007 | Cancel mid-AI-request | They don't have this | **DONE** | AbortController in `AiPanel.tsx`: switching feature aborts the prior request, "Stop" link next to the spinner, new transcript navigation aborts via cleanup effect. |
+| EXTRA-008 | Click-timestamp scrubs player | They have this | **DONE** | `AiPanel.tsx` post-processes `MM:SS` in markdown text + inline code into clickable buttons; SW forwards `seek-to` to the broadcasting tab via `chrome.tabs.sendMessage`. |
 
 </feature_parity>
 
@@ -84,17 +87,17 @@ Priority order is strict:
 
 <priority_classification>
 
-P0 — F-001 fix has landed (CSP allowlist, ANDROID_VR-first ordering, page-context
-`/youtubei/v1/player` fetch in `content.ts`, `captureViaYouTubeTab` recovery, removal of the
-`no_captions → start-transcription` auto-cascade). The legacy `activeTab` / `captureVisibleTab`
-error has been removed at its source and a real-Chrome capture is preserved at
-`e2e/screenshots/20260515T092700Z/03-after-success.png` + `03-after-transcript.txt`. The
-Playwright harness still fails for content because YouTube bot-detects chrome-for-testing —
-treat the harness as a path-regression guard, not as a caption-content proof. See "How to
-verify the extension actually works" below for the real-Chrome verification procedure.
+P0 — F-001 transcript extraction works in real Chrome (still needs a fresh sign-off
+on every release per "How to verify the extension actually works"). The 2026-05-23
+stabilization pass cut 15 AI prompts (Sentiment, Topics, Mindmap, Quotes, Quiz,
+Flashcards, Study guide, Study notes, Generate Q&A, Blog outline, Social posts, SEO
+keywords, Entities, Chapter summary, Action items) and the BilingualView component.
+The 4 surviving AI surfaces are Summary, Key points, Q&A, and Chat. See `feature_parity`
+above for status, and `docs/superpowers/specs/2026-05-23-cut-features-and-fix-bugs-design.md`
+for the rationale.
 
-Lower-tier items (EXTRA-004 Bilingual side-by-side, the `TranscriptView.tsx` / `AiPanel.tsx`
-splits, icon-set consolidation) remain out of scope unless a regression in F-001 surfaces.
+Lower-tier items (`TranscriptView.tsx` / `AiPanel.tsx` splits, icon-set
+consolidation) remain out of scope unless a regression surfaces.
 The Hugging Face host-permission opt-in landed in 1.3.0 — see the Settings.tsx Audio tab.
 
 </priority_classification>
@@ -237,35 +240,36 @@ means adding a prompt template to `lib/ai/prompts.ts` and a button/section in `A
 
 <ai_prompt_inventory>
 
-| Prompt ID | Feature | Status | Notes |
-|-----------|---------|--------|-------|
-| summary | F-006, F-011 | **DONE** | Key points + TLDR |
-| sentiment | F-007 | **DONE** | Tone, bias, emotional arc |
-| topics | F-008 | **DONE** | Tags, hashtags, main themes |
-| qaExtract | F-009 | **DONE** | Direct answers found in transcript |
-| chat | F-010 | **DONE** | Conversational Q&A grounded in transcript |
-| mindmap | F-012 | **DONE** | Output as mermaid diagram syntax |
-| quotes | F-013 | **DONE** | Notable quotes with timestamps |
-| studyGuide | F-014 | **DONE** | Structured study material |
-| qaGenerate | F-015 | **DONE** | Question-answer pairs for review |
-| quiz | F-016 | **DONE** | Multiple choice with correct answers marked |
-| flashcards | F-017 | **DONE** | Flashcard deck |
-| action-items | — | **DONE** | Action items (our extra, they don't have it) |
-| chapterSummary | — | **DONE** | One-line summary per detected chapter |
-| bulletPoints | — | **DONE** | Standalone key-points feature (separate from summary's TLDR) |
-| studyNotes | — | **DONE** | Cornell-style study notes |
-| blogOutline | — | **DONE** | Long-form blog outline from transcript |
-| socialPosts | — | **DONE** | Twitter/LinkedIn-shaped post drafts |
-| seoKeywords | — | **DONE** | SEO keyword extraction |
-| entities | — | **DONE** | Named entity extraction |
+| Prompt ID    | Feature | Status   | Notes                                                              |
+|--------------|---------|----------|--------------------------------------------------------------------|
+| summary      | F-006   | **DONE** | 3-5 sentence summary                                               |
+| bulletPoints | —       | **DONE** | "Key points" button — 5-10 bullets                                 |
+| qaExtract    | F-009   | **DONE** | Q&A button — 5-15 timestamped pairs                                |
+| chat         | F-010   | **DONE** | Bottom "Ask" input — conversational Q&A grounded in the transcript |
 
-The user-facing buttons are split into 6 essentials shown by default and
-the rest behind a "More" disclosure in `AiPanel.tsx`.
+Previously shipped prompts (sentiment, topics, quotes, mindmap, quiz, flashcards,
+studyGuide, studyNotes, qaGenerate, blogOutline, socialPosts, seoKeywords, entities,
+chapterSummary, actionItems) were removed on 2026-05-23. Anything they did is reachable
+via the Ask box on demand.
+
+The user-facing surface is now 3 buttons + the Ask box. There is no "More" disclosure.
 
 To add a new prompt:
-1. Add the template function to `lib/ai/prompts.ts` following existing pattern
-2. Add an entry to `ESSENTIAL_FEATURES` or `MORE_FEATURES` in `AiPanel.tsx`
-3. Use the existing `sendMessage()` from the provider — no new wiring needed
+
+1. Add an entry to `AiFeature` in `src/types/transcript.ts`
+2. Add a `PromptTemplate` to `promptTemplates` in `lib/ai/prompts.ts` (instructions only —
+   the caller appends the transcript; Chrome AI measures it via `fitToQuota`)
+3. Add a button entry to `FEATURES` in `AiPanel.tsx`
+
+**Provider sizing rules** (`lib/ai/prompts.ts:STATIC_LIMITS`, `chrome-ai.ts:fitToQuota`):
+
+- **Chrome AI** — adaptive. `session.measureInputUsage` drives a binary head+tail trim
+  to fit the actual quota of the user's Gemini Nano build. Never throws "Input is too
+  large" again.
+- **Ollama** — 32 000 char cap on transcript (~8K tokens), fits modern 7B-13B local
+  models. Bump the cap if anyone needs more.
+- **Paid (OpenAI / Anthropic / Google)** — 400 000 char cap on transcript (~100K
+  tokens), fits Claude / GPT-4o / Gemini context windows comfortably.
 
 </ai_prompt_inventory>
 
@@ -312,7 +316,6 @@ yt-transcript/
       SavedList.tsx                # Saved transcripts modal
       BatchProgress.tsx            # Batch processing progress + per-item exports
       BatchResultsNav.tsx          # Navigate between batch results
-      BilingualView.tsx            # Side-by-side original + translated (NOT WIRED)
       ErrorMessage.tsx             # Quiet error block + optional Transcribe-locally CTA
       LoadingSpinner.tsx           # Skeleton loader
       LegalPage.tsx                # Legal/privacy hash route (#/legal)
@@ -405,15 +408,10 @@ automatically.
  
 ## Deferred / out of scope
 
-The bleeding-edge rewrite (commits `832684c` … `5e1e9ec`) intentionally
-left the following undone. Pull any of them into the next session if
-asked, otherwise leave alone:
-
-- **EXTRA-004 wiring (`BilingualView.tsx`)** — the component exists but has
-  no toolbar entry. Wiring it needs a target-language picker and dual-track
-  state in `App.tsx`, plus a new view mode in `TranscriptView.tsx`.
 - **`TranscriptView.tsx` / `AiPanel.tsx` splits** — bloat is real but
   splitting carries regression risk for no immediate user-visible win.
+  `AiPanel.tsx` is now considerably smaller after the feature cut; still
+  not a priority.
 - **Inline-SVG → `components/icons.tsx` consolidation** — four files
   duplicate the close-X glyph; the rest are unique. Low-impact.
 - **YouTube Music app, YouTube Live captions, Prompt-API audio multimodal,
