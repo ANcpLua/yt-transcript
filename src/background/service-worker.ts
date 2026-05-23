@@ -356,6 +356,9 @@ async function handleCheckWhisperStatus(
     };
     const listener = (msg: { type: string; downloaded?: boolean; modelId?: string; model?: "tiny" | "base" }) => {
       if (msg.type !== "whisper-status-response") return;
+      // Strict equality: ignore responses without a model field. The offscreen
+      // producer is contracted to echo the model back; anything else is stale
+      // or malformed and must not resolve this check.
       if (msg.model !== model) return;
       finish(msg.downloaded ?? false, msg.modelId);
     };
