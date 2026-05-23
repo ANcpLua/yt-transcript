@@ -91,12 +91,18 @@ export async function isChromeAiAvailable(): Promise<boolean> {
   }
 }
 
-// Chrome AI's session has a single rolling context shared between input and
-// output. Reserve enough room for the response or the model throws
-// "The response size exceeded the remaining available context" partway
-// through generation. Q&A and long-form summaries can easily produce
-// 1000-2000 tokens; 2048 covers them comfortably.
-const RESPONSE_HEADROOM_TOKENS = 2_048;
+// Chrome AI's session shares a single token budget between input AND output:
+// inputQuota is the TOTAL, and as the model generates a response it consumes
+// the same pool. If we hand the model an input that already uses 80% of quota,
+// any non-trivial response throws "The response size exceeded the remaining
+// available context" partway through generation.
+//
+// Split the budget: reserve half the quota (or at least MIN_RESPONSE_RESERVE
+// tokens) for the response. The transcript trim only competes for the other
+// half. This is conservative on input but eliminates the response-size error
+// at the cost of slightly less context for the model to summarise.
+const MIN_RESPONSE_RESERVE = 1_024;
+const RESPONSE_RESERVE_RATIO = 0.5;
 const DEFAULT_INPUT_QUOTA = 6_000;
 const TRIM_MARKER = "\n\n[... transcript truncated for length ...]\n\n";
 
@@ -109,8 +115,10 @@ async function fitToQuota(
     if (!session.measureInputUsage) return `${fixedPrefix}\n\n${trimmableContent}`;
     const quota = session.inputQuota ?? DEFAULT_INPUT_QUOTA;
     const used = session.inputUsage ?? 0;
+    const reserve = Math.max(Math.floor(quota * RESPONSE_RESERVE_RATIO), MIN_RESPONSE_RESERVE);
     // Floor at 512 tokens so even a tiny quota leaves the model some room to think.
-    const headroom = Math.max(quota - used - RESPONSE_HEADROOM_TOKENS, 512);
+    const headroom = Math.max(quota - used - reserve, 512);
+    console.debug(`[chrome-ai] quota=${quota} used=${used} reserve=${reserve} headroom=${headroom}`);
 
     const full = `${fixedPrefix}\n\n${trimmableContent}`;
     const fullUsage = await session.measureInputUsage(full);
