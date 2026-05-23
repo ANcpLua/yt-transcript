@@ -30,7 +30,7 @@ export function BatchProgress({
                                   onViewResult,
                                   onExport,
                               }: BatchProgressProps): React.JSX.Element {
-    const {items, isProcessing, completedCount, failedCount} = batchState;
+    const {items, isProcessing, completedCount, failedCount, activeCount, concurrency} = batchState;
     const total = items.length;
     const done = completedCount + failedCount;
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -43,6 +43,11 @@ export function BatchProgress({
                     <span>
                         {done} of {total}
                         {failedCount > 0 && <span className="ml-1.5 text-red-500 dark:text-red-400">{failedCount} failed</span>}
+                        {isProcessing && activeCount > 0 && (
+                            <span className="ml-1.5 text-slate-400 dark:text-slate-500">
+                                {activeCount}/{concurrency} running
+                            </span>
+                        )}
                     </span>
                     <span className="tabular-nums">{pct}%</span>
                 </div>

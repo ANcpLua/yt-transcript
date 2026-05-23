@@ -22,6 +22,28 @@ export const INNERTUBE_PLAYER_URL =
 export const INNERTUBE_BROWSE_URL =
   "https://www.youtube.com/youtubei/v1/browse?prettyPrint=false";
 
+// Hard timeouts on every YouTube fetch. Without these a single hanging
+// endpoint blocks the entire client-fallback cascade and the UI spins
+// forever — that was the user-reported "times out / hangs". YouTube's
+// edge typically responds in <2s; 12s covers tail latency without
+// making real failures feel infinite. Watch-page scrape and timedtext
+// get a larger budget because their payloads are bigger.
+//
+// Override via globalThis.__YT_FETCH_TIMEOUT_MS (set from SW devtools)
+// when chasing a slow-server issue.
+export const PLAYER_TIMEOUT_MS = 12_000;
+export const TIMEDTEXT_TIMEOUT_MS = 20_000;
+export const WATCH_PAGE_TIMEOUT_MS = 20_000;
+
+function timeoutSignal(ms: number): AbortSignal {
+  const override = (globalThis as { __YT_FETCH_TIMEOUT_MS?: number }).__YT_FETCH_TIMEOUT_MS;
+  return AbortSignal.timeout(typeof override === "number" && override > 0 ? override : ms);
+}
+
+function isTimeoutError(e: unknown): boolean {
+  return e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError");
+}
+
 const WEB_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
@@ -117,6 +139,7 @@ export function innertubeBrowse(body: Record<string, unknown>): Promise<Response
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ context: CLIENT_CONTEXT, ...body }),
+    signal: timeoutSignal(PLAYER_TIMEOUT_MS),
   });
 }
 
@@ -194,10 +217,14 @@ async function callPlayer(
         contentCheckOk: true,
         racyCheckOk: true,
       }),
+      signal: timeoutSignal(PLAYER_TIMEOUT_MS),
     });
-    if (!res.ok) return { error: "fetch_failed", message: `HTTP ${res.status}` };
+    if (!res.ok) return { error: "fetch_failed", message: `HTTP ${res.status} from ${client.name}` };
     raw = await res.json();
   } catch (e) {
+    if (isTimeoutError(e)) {
+      return { error: "fetch_failed", message: `${client.name} timed out after ${PLAYER_TIMEOUT_MS}ms` };
+    }
     return { error: "fetch_failed", message: e instanceof Error ? e.message : String(e) };
   }
   return extractPlayerResult(raw, client.userAgent);
@@ -208,10 +235,14 @@ async function scrapeWatchPage(videoId: string): Promise<PlayerResult | ApiError
   try {
     const res = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
       headers: { "User-Agent": WEB_UA, "Accept-Language": "en-US,en;q=0.9" },
+      signal: timeoutSignal(WATCH_PAGE_TIMEOUT_MS),
     });
     if (!res.ok) return { error: "fetch_failed", message: `Watch page HTTP ${res.status}` };
     html = await res.text();
   } catch (e) {
+    if (isTimeoutError(e)) {
+      return { error: "fetch_failed", message: `Watch page scrape timed out after ${WATCH_PAGE_TIMEOUT_MS}ms` };
+    }
     return { error: "fetch_failed", message: e instanceof Error ? e.message : String(e) };
   }
 
@@ -317,6 +348,35 @@ function stripPoTokenExp(url: string): string {
   return url.replace(/([?&])exp=xpe(&|$)/g, (_, before, after) => (after ? before : ""));
 }
 
+// Core retry/fallback logic shared by fetchTrackSegments and
+// fetchSegmentsWithPoTokenRetry. Tries the primary baseUrl first, then
+// strips `exp=xpe` and retries if the first attempt returns no segments.
+async function fetchWithPoTokenRetryCore(
+  baseUrl: string,
+  languageCode: string,
+  userAgent: string,
+  translateTo?: string,
+): Promise<Segment[] | ApiError> {
+  const primary = buildTextUrl({ baseUrl, languageCode }, translateTo);
+  let events = await fetchTimedText(primary, userAgent);
+  if (Array.isArray(events)) {
+    const segs = parseSegments(events);
+    if (segs.length > 0) return segs;
+  }
+
+  const cleaned = stripPoTokenExp(baseUrl);
+  if (cleaned !== baseUrl) {
+    const retry = buildTextUrl({ baseUrl: cleaned, languageCode }, translateTo);
+    events = await fetchTimedText(retry, userAgent);
+    if (Array.isArray(events)) {
+      const segs = parseSegments(events);
+      if (segs.length > 0) return segs;
+    }
+  }
+
+  return "error" in events ? events : { error: "fetch_failed", message: "Empty timedtext response" };
+}
+
 // Fetch + parse a captionTrack baseUrl into Segment[]. Used by the
 // intercept correlator when YouTube's own page hasn't fetched
 // /youtubei/v1/get_transcript (i.e. the user hasn't opened the
@@ -326,29 +386,15 @@ export async function fetchTrackSegments(
   languageCode: string,
   translateTo?: string,
 ): Promise<Segment[] | ApiError> {
-  const primary = buildTextUrl({ baseUrl, languageCode }, translateTo);
-  let events = await fetchTimedText(primary, WEB_UA);
-  if (Array.isArray(events)) {
-    const segs = parseSegments(events);
-    if (segs.length > 0) return segs;
-  }
-
-  const cleaned = stripPoTokenExp(baseUrl);
-  if (cleaned !== baseUrl) {
-    const retry = buildTextUrl({ baseUrl: cleaned, languageCode }, translateTo);
-    events = await fetchTimedText(retry, WEB_UA);
-    if (Array.isArray(events)) {
-      const segs = parseSegments(events);
-      if (segs.length > 0) return segs;
-    }
-  }
-
-  return { error: "fetch_failed", message: "Empty timedtext response" };
+  return fetchWithPoTokenRetryCore(baseUrl, languageCode, WEB_UA, translateTo);
 }
 
 async function fetchTimedText(textUrl: string, userAgent: string): Promise<unknown[] | ApiError> {
   try {
-    const res = await fetch(textUrl, { headers: { "User-Agent": userAgent } });
+    const res = await fetch(textUrl, {
+      headers: { "User-Agent": userAgent },
+      signal: timeoutSignal(TIMEDTEXT_TIMEOUT_MS),
+    });
     if (!res.ok) return { error: "fetch_failed", message: `YouTube returned HTTP ${res.status} when fetching the transcript.` };
     const body = await res.text();
     if (!body.trim()) return { error: "fetch_failed", message: "YouTube returned an empty response. Open the video in a tab so we can capture it directly." };
@@ -360,6 +406,9 @@ async function fetchTimedText(textUrl: string, userAgent: string): Promise<unkno
     }
     return digArr(parsed as Record<string, unknown>, "events");
   } catch (e) {
+    if (isTimeoutError(e)) {
+      return { error: "fetch_failed", message: `Transcript fetch timed out after ${TIMEDTEXT_TIMEOUT_MS}ms. YouTube may be throttling — try again.` };
+    }
     return { error: "fetch_failed", message: e instanceof Error ? e.message : String(e) };
   }
 }
@@ -377,10 +426,9 @@ export async function fetchTranscript(
     return { error: "no_captions", message: "This video has no transcript. Captions weren't created for it." };
 
   const track = pickTrack(captionTracks, lang);
-  const events = await fetchTimedText(buildTextUrl(track, translateTo), player.userAgent);
-  if ("error" in events) return events;
+  const segments = await fetchSegmentsWithPoTokenRetry(track, player.userAgent, translateTo);
+  if ("error" in segments) return segments;
 
-  const segments = parseSegments(events);
   if (segments.length === 0)
     return { error: "fetch_failed", message: "YouTube returned a transcript with no readable segments." };
 
@@ -396,6 +444,22 @@ export async function fetchTranscript(
     ...(chapters.length > 0 && { chapters }),
     ...(translateTo && translateTo !== language && { translatedFrom: language, translatedTo: translateTo }),
   };
+}
+
+/**
+ * Try the captionTrack baseUrl as-is, and if YouTube returns the 0-byte
+ * "PO token required" signal, strip `&exp=xpe` from the signed sparams
+ * and retry. Without this, paste-URL requests for the (rare) video where
+ * ANDROID_VR's baseUrl still carries `exp=xpe` would surface as "empty
+ * timedtext response" even though the realtime intercept path could load
+ * them.
+ */
+async function fetchSegmentsWithPoTokenRetry(
+  track: InnertubeTrack,
+  userAgent: string,
+  translateTo?: string,
+): Promise<Segment[] | ApiError> {
+  return fetchWithPoTokenRetryCore(track.baseUrl, track.languageCode, userAgent, translateTo);
 }
 
 export async function fetchTracks(

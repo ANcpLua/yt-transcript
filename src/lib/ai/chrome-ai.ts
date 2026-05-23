@@ -30,8 +30,11 @@ interface AiNamespace {
 }
 
 interface LanguageModelSession {
-  prompt(text: string): Promise<string>;
+  prompt(text: string, options?: { signal?: AbortSignal }): Promise<string>;
   destroy?(): void;
+  readonly inputQuota?: number;
+  readonly inputUsage?: number;
+  measureInputUsage?(text: string): Promise<number>;
 }
 
 interface LanguageModelExpectation {
@@ -88,9 +91,54 @@ export async function isChromeAiAvailable(): Promise<boolean> {
   }
 }
 
+const RESPONSE_HEADROOM_TOKENS = 256;
+const DEFAULT_INPUT_QUOTA = 6_000;
+const TRIM_MARKER = "\n\n[... transcript truncated for length ...]\n\n";
+
+/** Binary head+tail trim of `trimmableContent` until the full assembled message fits within the session's input headroom. */
+async function fitToQuota(
+    session: LanguageModelSession,
+    fixedPrefix: string,
+    trimmableContent: string,
+): Promise<string> {
+    if (!session.measureInputUsage) return `${fixedPrefix}\n\n${trimmableContent}`;
+    const quota = session.inputQuota ?? DEFAULT_INPUT_QUOTA;
+    const used = session.inputUsage ?? 0;
+    const headroom = Math.max(quota - used - RESPONSE_HEADROOM_TOKENS, 256);
+
+    const full = `${fixedPrefix}\n\n${trimmableContent}`;
+    const fullUsage = await session.measureInputUsage(full);
+    if (fullUsage <= headroom) return full;
+
+    // Binary search the longest trim that still fits.
+    let lo = 0;
+    let hi = trimmableContent.length;
+    let best = `${fixedPrefix}${TRIM_MARKER}`;
+    while (hi - lo > 200) {
+        const keep = Math.floor((lo + hi) / 2);
+        const half = Math.floor(keep / 2);
+        const candidate = `${fixedPrefix}\n\n${trimmableContent.slice(0, half)}${TRIM_MARKER}${trimmableContent.slice(-half)}`;
+        const usage = await session.measureInputUsage(candidate);
+        if (usage <= headroom) {
+            best = candidate;
+            lo = keep;
+        } else {
+            hi = keep;
+        }
+    }
+    return best;
+}
+
+export interface ChromeAiPromptOptions {
+    signal?: AbortSignal;
+    /** When set, this content is appended to `userMessage` and is the only part trimmed if the session quota is exceeded. */
+    trimmableContent?: string;
+}
+
 export async function runChromeAiPrompt(
   systemPrompt: string,
   userMessage: string,
+  options: ChromeAiPromptOptions = {},
 ): Promise<string> {
   const lm = getLanguageModel();
   if (!lm) throw new Error("Chrome built-in AI (Prompt API) is not available in this browser. Update to Edge/Chrome 138+ or enable chrome://flags/#prompt-api-for-gemini-nano.");
@@ -103,7 +151,10 @@ export async function runChromeAiPrompt(
     outputLanguage: "en",
   });
   try {
-    return await session.prompt(userMessage);
+    const finalMessage = options.trimmableContent !== undefined
+        ? await fitToQuota(session, userMessage, options.trimmableContent)
+        : userMessage;
+    return await session.prompt(finalMessage, options.signal ? { signal: options.signal } : undefined);
   } finally {
     session.destroy?.();
   }
@@ -114,7 +165,8 @@ export async function chromeAiSummarize(text: string): Promise<string> {
   if (await isChromeAiPromptAvailable()) {
     return runChromeAiPrompt(
       "Summarize the following transcript into key points and a one-paragraph TLDR.",
-      text,
+      "Summarize the transcript below:",
+      { trimmableContent: text },
     );
   }
   const ai = getAi();

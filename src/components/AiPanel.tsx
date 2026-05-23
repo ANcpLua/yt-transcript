@@ -1,6 +1,8 @@
-import {useCallback, useEffect, useRef, useState} from "react";
+import {Children, createElement, type ReactNode, useCallback, useEffect, useRef, useState} from "react";
+import ReactMarkdown, {type Components} from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type {AiFeature, TranscriptResponse} from "../types/transcript";
-import {getChatSystemPrompt, promptTemplates} from "../lib/ai/prompts";
+import {buildUserMessage, CHAT_BASE_SYSTEM, getChatSystemPrompt, promptTemplates, truncateForProvider} from "../lib/ai/prompts";
 import {getApiKey, getPreferences} from "../lib/storage/preferences";
 import {formatTimestamp} from "../lib/formatTime";
 import {chromeAiSummarize, isChromeAiAvailable, isChromeAiPromptAvailable, runChromeAiPrompt} from "../lib/ai/chrome-ai";
@@ -19,28 +21,10 @@ interface ChatMessage {
 // Prompt API supports all features when available.
 const CHROME_AI_LEGACY_FEATURES: ReadonlySet<AiFeature> = new Set<AiFeature>(["summary"]);
 
-const ESSENTIAL_FEATURES: { id: AiFeature; label: string }[] = [
+const FEATURES: { id: AiFeature; label: string }[] = [
     {id: "summary", label: "Summary"},
     {id: "bulletPoints", label: "Key points"},
-    {id: "quotes", label: "Quotes"},
     {id: "qaExtract", label: "Q&A"},
-    {id: "quiz", label: "Quiz"},
-    {id: "flashcards", label: "Flashcards"},
-];
-
-const MORE_FEATURES: { id: AiFeature; label: string }[] = [
-    {id: "chapterSummary", label: "Chapters"},
-    {id: "actionItems", label: "Action items"},
-    {id: "sentiment", label: "Sentiment"},
-    {id: "topics", label: "Topics"},
-    {id: "mindmap", label: "Mindmap"},
-    {id: "studyGuide", label: "Study guide"},
-    {id: "studyNotes", label: "Study notes"},
-    {id: "qaGenerate", label: "Generate Q&A"},
-    {id: "blogOutline", label: "Blog outline"},
-    {id: "socialPosts", label: "Social posts"},
-    {id: "seoKeywords", label: "SEO keywords"},
-    {id: "entities", label: "Entities"},
 ];
 
 const TIMESTAMP_SPLIT_RE = /(\d{1,2}:\d{2})/g;
@@ -66,12 +50,35 @@ interface AiRequestPayload {
     ollamaModel?: string;
 }
 
-/** Route an AI request through the Chrome extension background worker. */
-function sendAiRequest(payload: AiRequestPayload): Promise<string> {
+function isAbortError(err: unknown): boolean {
+    return err instanceof DOMException && err.name === "AbortError";
+}
+
+/**
+ * Route an AI request through the Chrome extension background worker.
+ * If `signal` aborts, the promise rejects with AbortError; the SW request
+ * is allowed to complete in the background (its result is discarded).
+ */
+function sendAiRequest(payload: AiRequestPayload, signal?: AbortSignal): Promise<string> {
     return new Promise<string>((resolve, reject) => {
+        let settled = false;
+        const onAbort = () => {
+            if (settled) return;
+            settled = true;
+            reject(new DOMException("Aborted", "AbortError"));
+        };
+        if (signal?.aborted) {
+            onAbort();
+            return;
+        }
+        signal?.addEventListener("abort", onAbort, {once: true});
+
         chrome.runtime.sendMessage(
             {type: "ai-request", ...payload},
             (response: {type: string; content?: string; error?: string} | undefined) => {
+                if (settled) return;
+                settled = true;
+                signal?.removeEventListener("abort", onAbort);
                 if (chrome.runtime.lastError) {
                     reject(new Error(chrome.runtime.lastError.message ?? "Extension error"));
                     return;
@@ -90,26 +97,67 @@ function sendAiRequest(payload: AiRequestPayload): Promise<string> {
     });
 }
 
-function RenderedContent({text, onSeek}: { text: string; onSeek: (t: number) => void }) {
-    const parts = text.split(TIMESTAMP_SPLIT_RE);
+const TIMESTAMP_BUTTON_CLASS =
+    "mx-0.5 rounded font-mono text-xs text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-slate-900 hover:decoration-slate-500 dark:text-slate-400 dark:decoration-slate-600 dark:hover:text-white";
+
+function TimestampButton({ts, onSeek}: { ts: string; onSeek: (t: number) => void }) {
     return (
-        <div className="prose prose-sm prose-slate max-w-none whitespace-pre-wrap dark:prose-invert">
-            {parts.map((part, i) =>
-                TIMESTAMP_TEST_RE.test(part) ? (
-                    <button
-                        key={i}
-                        onClick={() => onSeek(parseTimestamp(part))}
-                        className="mx-0.5 rounded font-mono text-xs text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-slate-900 hover:decoration-slate-500 dark:text-slate-400 dark:decoration-slate-600 dark:hover:text-white"
-                    >
-                        {part}
-                    </button>
-                ) : (
-                    <span key={i}>{part}</span>
-                ),
-            )}
+        <button onClick={() => onSeek(parseTimestamp(ts))} className={TIMESTAMP_BUTTON_CLASS}>
+            {ts}
+        </button>
+    );
+}
+
+/** Walk children; in plain string nodes, replace MM:SS substrings with clickable buttons. */
+function processTimestampsInChildren(children: ReactNode, onSeek: (t: number) => void): ReactNode {
+    return Children.map(children, (child, i) => {
+        if (typeof child !== "string") return child;
+        if (!TIMESTAMP_SPLIT_RE.test(child)) return child;
+        const parts = child.split(TIMESTAMP_SPLIT_RE);
+        return parts.map((part, j) =>
+            TIMESTAMP_TEST_RE.test(part)
+                ? <TimestampButton key={`${i}-${j}`} ts={part} onSeek={onSeek}/>
+                : part,
+        );
+    });
+}
+
+function makeMdComponents(onSeek: (t: number) => void): Components {
+    const wrap = (tag: "p" | "li" | "td" | "th") =>
+        ({children}: { children?: ReactNode }) =>
+            createElement(tag, null, processTimestampsInChildren(children, onSeek));
+    return {
+        p: wrap("p"),
+        li: wrap("li"),
+        td: wrap("td"),
+        th: wrap("th"),
+        // Backtick-wrapped timestamps like `02:55` become inline buttons; other code stays code.
+        code: ({children, ...rest}) => {
+            if (typeof children === "string" && TIMESTAMP_TEST_RE.test(children.trim())) {
+                return <TimestampButton ts={children.trim()} onSeek={onSeek}/>;
+            }
+            if (Array.isArray(children) && children.length === 1 && typeof children[0] === "string"
+                && TIMESTAMP_TEST_RE.test(children[0].trim())) {
+                return <TimestampButton ts={children[0].trim()} onSeek={onSeek}/>;
+            }
+            return <code {...rest}>{children}</code>;
+        },
+        // Anchors from autolinked URLs — render but never wrap timestamps inside.
+        a: ({children, href}) => <a href={href} target="_blank" rel="noreferrer noopener">{children}</a>,
+    };
+}
+
+function RenderedContent({text, onSeek}: { text: string; onSeek: (t: number) => void }) {
+    const components = makeMdComponents(onSeek);
+    return (
+        <div className="prose prose-sm prose-slate max-w-none dark:prose-invert">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+                {text}
+            </ReactMarkdown>
         </div>
     );
 }
+
 
 export function AiPanel({transcript, onSeek}: AiPanelProps) {
     const [result, setResult] = useState<string | null>(null);
@@ -120,15 +168,26 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
     const [chatInput, setChatInput] = useState("");
     const [chatLoading, setChatLoading] = useState(false);
     const chatEndRef = useRef<HTMLDivElement>(null);
-    const [flippedCards, setFlippedCards] = useState<Set<number>>(new Set());
     const [chromeAiAvailable, setChromeAiAvailable] = useState(false);
     const [chromeAiPromptAvailable, setChromeAiPromptAvailable] = useState(false);
     const [hasApiKey, setHasApiKey] = useState(false);
-    const [showMore, setShowMore] = useState(false);
+
+    // One AbortController per active feature request. Switching features or
+    // navigating to a new transcript aborts whatever was running so the user
+    // is never locked into waiting on Chrome AI / a paid API to finish.
+    const abortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({behavior: "smooth"});
     }, [chatMessages]);
+
+    // Switching videos invalidates whatever AI request was in flight.
+    const transcriptKey = transcript?.videoId ?? null;
+    useEffect(() => {
+        return () => {
+            abortRef.current?.abort();
+        };
+    }, [transcriptKey]);
 
     // Check Chrome AI and BYOK key availability on mount
     useEffect(() => {
@@ -162,20 +221,31 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         if (!transcript) return;
         if (!canRunFeature(feature)) return;
 
+        // Abort whatever's running and stake a new controller for this request.
+        abortRef.current?.abort();
+        const controller = new AbortController();
+        abortRef.current = controller;
+        const {signal} = controller;
+
         setActiveFeature(feature);
         setLoading(true);
         setError(null);
         setResult(null);
-        setFlippedCards(new Set());
+
+        const commitResult = (text: string): void => {
+            if (signal.aborted) return;
+            setResult(text);
+        };
 
         try {
             const text = transcriptToText(transcript);
             const template = promptTemplates[feature];
             const prefs = await getPreferences();
+            if (signal.aborted) return;
 
             // Route 1: User explicitly chose Chrome AI → run in panel via LanguageModel.
             if (prefs.aiProvider === "chrome-ai" && chromeAiPromptAvailable) {
-                setResult(await runChromeAiPrompt(template.system, template.user(text)));
+                commitResult(await runChromeAiPrompt(template.system, template.instructions, {trimmableContent: text, signal}));
                 return;
             }
 
@@ -185,23 +255,23 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                     provider: "ollama",
                     apiKey: "",
                     systemPrompt: template.system,
-                    userMessage: template.user(text),
+                    userMessage: buildUserMessage(template, truncateForProvider(text, "ollama")),
                     ollamaUrl: prefs.ollamaUrl,
                     ollamaModel: prefs.ollamaModel,
-                });
-                setResult(response);
+                }, signal);
+                commitResult(response);
                 return;
             }
 
             // Route 3: No paid provider but legacy Summarizer is available → use it for summary.
             if (!prefs.aiProvider && chromeAiAvailable && CHROME_AI_LEGACY_FEATURES.has(feature)) {
-                setResult(await chromeAiSummarize(text));
+                commitResult(await chromeAiSummarize(text));
                 return;
             }
 
             // Route 4: No provider chosen but Prompt API works → use it as the free default.
             if (!prefs.aiProvider && chromeAiPromptAvailable) {
-                setResult(await runChromeAiPrompt(template.system, template.user(text)));
+                commitResult(await runChromeAiPrompt(template.system, template.instructions, {trimmableContent: text, signal}));
                 return;
             }
 
@@ -214,15 +284,23 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                 provider: prefs.aiProvider,
                 apiKey,
                 systemPrompt: template.system,
-                userMessage: template.user(text),
-            });
-            setResult(response);
+                userMessage: buildUserMessage(template, truncateForProvider(text, "paid")),
+            }, signal);
+            commitResult(response);
         } catch (err) {
+            if (signal.aborted || isAbortError(err)) return;
             setError(err instanceof Error ? err.message : "AI request failed");
         } finally {
-            setLoading(false);
+            // Only the most-recent request flips loading off; older ones may
+            // still be unwinding in the background but they no longer own UI state.
+            if (abortRef.current === controller) setLoading(false);
         }
     };
+
+    const cancelActiveRequest = useCallback(() => {
+        abortRef.current?.abort();
+        setLoading(false);
+    }, []);
 
     const canChat = chromeAiPromptAvailable || hasApiKey;
 
@@ -237,24 +315,26 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
         try {
             const prefs = await getPreferences();
-            const systemPrompt = getChatSystemPrompt(transcriptToText(transcript));
+            const transcriptText = transcriptToText(transcript);
             const history = [...chatMessages, userMsg]
                 .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
                 .join("\n\n");
 
-            // Chrome AI Prompt API
+            // Chrome AI Prompt API — transcript goes into trimmableContent so it can
+            // be measured against the session quota rather than baked into the system prompt.
             if ((prefs.aiProvider === "chrome-ai" || !prefs.aiProvider) && chromeAiPromptAvailable) {
-                const response = await runChromeAiPrompt(systemPrompt, history);
+                const userPrefix = `Conversation so far:\n\n${history}\n\nAnswer the latest question using the transcript below.`;
+                const response = await runChromeAiPrompt(CHAT_BASE_SYSTEM, userPrefix, {trimmableContent: transcriptText});
                 setChatMessages((prev) => [...prev, {role: "assistant", content: response}]);
                 return;
             }
 
-            // Ollama
+            // Ollama — local model, conservative static cap on transcript.
             if (prefs.aiProvider === "ollama") {
                 const response = await sendAiRequest({
                     provider: "ollama",
                     apiKey: "",
-                    systemPrompt,
+                    systemPrompt: getChatSystemPrompt(truncateForProvider(transcriptText, "ollama")),
                     userMessage: history,
                     ollamaUrl: prefs.ollamaUrl,
                     ollamaModel: prefs.ollamaModel,
@@ -263,14 +343,14 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                 return;
             }
 
-            // Paid BYOK provider
+            // Paid BYOK provider — large window, generous cap.
             if (!prefs.aiProvider) throw new Error("No AI provider configured");
             const apiKey = await getApiKey(prefs.aiProvider);
             if (!apiKey) throw new Error("No API key configured");
             const response = await sendAiRequest({
                 provider: prefs.aiProvider,
                 apiKey,
-                systemPrompt,
+                systemPrompt: getChatSystemPrompt(truncateForProvider(transcriptText, "paid")),
                 userMessage: history,
             });
             setChatMessages((prev) => [...prev, {role: "assistant", content: response}]);
@@ -296,7 +376,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
             <button
                 key={f.id}
                 onClick={() => void runFeature(f.id)}
-                disabled={!enabled || loading}
+                disabled={!enabled}
                 className={`rounded-md px-3 py-1.5 text-sm transition disabled:opacity-30 ${
                     activeFeature === f.id
                         ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
@@ -321,21 +401,20 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
             {/* Feature buttons */}
             <div className="-mx-1 flex flex-wrap gap-1">
-                {ESSENTIAL_FEATURES.map(renderFeatureButton)}
-                {showMore && MORE_FEATURES.map(renderFeatureButton)}
-                <button
-                    onClick={() => setShowMore((v) => !v)}
-                    className="rounded-md px-3 py-1.5 text-sm text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-                >
-                    {showMore ? "Less" : "More"}
-                </button>
+                {FEATURES.map(renderFeatureButton)}
             </div>
 
             {/* Results */}
             {loading && (
                 <div className="flex items-center gap-2 py-2 text-sm text-slate-500 dark:text-slate-400">
                     <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600 dark:border-slate-700 dark:border-t-slate-300"/>
-                    Analyzing…
+                    <span>Analyzing…</span>
+                    <button
+                        onClick={cancelActiveRequest}
+                        className="ml-1 rounded px-1.5 text-xs text-slate-500 underline-offset-2 hover:underline dark:text-slate-400"
+                    >
+                        Stop
+                    </button>
                 </div>
             )}
 
@@ -345,11 +424,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
             {result && !loading && (
                 <div>
-                    {activeFeature === "flashcards" ? (
-                        <FlashcardView result={result} flippedCards={flippedCards} setFlippedCards={setFlippedCards}/>
-                    ) : (
-                        <RenderedContent text={result} onSeek={onSeek}/>
-                    )}
+                    <RenderedContent text={result} onSeek={onSeek}/>
                     <div className="mt-3 flex gap-3 text-xs text-slate-500 dark:text-slate-400">
                         <button onClick={copyResult} className="hover:text-slate-800 dark:hover:text-slate-200">
                             Copy
@@ -414,50 +489,3 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
     );
 }
 
-function FlashcardView({
-                           result,
-                           flippedCards,
-                           setFlippedCards,
-                       }: {
-    result: string;
-    flippedCards: Set<number>;
-    setFlippedCards: React.Dispatch<React.SetStateAction<Set<number>>>;
-}) {
-    const cards = result
-        .split(/\n(?=Q:)/g)
-        .map((block) => {
-            const qMatch = block.match(/Q:\s*(.+)/);
-            const aMatch = block.match(/A:\s*([\s\S]+)/);
-            const q = qMatch?.[1];
-            const a = aMatch?.[1];
-            return q && a ? {q: q.trim(), a: a.trim()} : null;
-        })
-        .filter((c): c is { q: string; a: string } => c !== null);
-
-    const toggle = (i: number) =>
-        setFlippedCards((prev) => {
-            const next = new Set(prev);
-            if (next.has(i)) next.delete(i);
-            else next.add(i);
-            return next;
-        });
-
-    return (
-        <div className="grid gap-2 sm:grid-cols-2">
-            {cards.map((card, i) => (
-                <button
-                    key={i}
-                    onClick={() => toggle(i)}
-                    className="rounded-lg border border-slate-200 p-3 text-left transition hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600"
-                >
-                    <p className="text-sm text-slate-900 dark:text-white">{card.q}</p>
-                    {flippedCards.has(i) && (
-                        <p className="mt-2 border-t border-slate-200 pt-2 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-400">
-                            {card.a}
-                        </p>
-                    )}
-                </button>
-            ))}
-        </div>
-    );
-}

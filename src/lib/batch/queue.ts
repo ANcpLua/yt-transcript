@@ -1,7 +1,9 @@
-// NOTE: fflate must be added to package.json — `npm install fflate`
 import {strToU8, zipSync} from "fflate";
 import type {TranscriptResponse} from "../../types/transcript";
 import {sanitizeFilename} from "../sanitizeFilename";
+
+const DEFAULT_CONCURRENCY = 4;
+const DEFAULT_DELAY_MS = 0;
 
 export interface BatchItem {
     videoId: string;
@@ -17,28 +19,47 @@ export interface BatchState {
     currentIndex: number;
     completedCount: number;
     failedCount: number;
+    activeCount: number;
+    concurrency: number;
 }
 
 export type BatchProgressCallback = (state: BatchState) => void;
+
+export interface BatchProcessorOptions {
+    concurrency?: number;
+    delayMs?: number;
+}
 
 function delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function buildState(items: BatchItem[], isProcessing: boolean, currentIndex: number): BatchState {
+function clampConcurrency(value: number | undefined): number {
+    if (!Number.isFinite(value)) return DEFAULT_CONCURRENCY;
+    return Math.max(1, Math.min(8, Math.floor(value ?? DEFAULT_CONCURRENCY)));
+}
+
+function buildState(
+    items: BatchItem[],
+    isProcessing: boolean,
+    currentIndex: number,
+    concurrency: number,
+): BatchState {
     return {
         items: [...items],
         isProcessing,
         currentIndex,
         completedCount: items.filter((i) => i.status === "success").length,
         failedCount: items.filter((i) => i.status === "failed").length,
+        activeCount: items.filter((i) => i.status === "processing").length,
+        concurrency,
     };
 }
 
 async function fetchTranscript(videoId: string): Promise<TranscriptResponse> {
     return new Promise<TranscriptResponse>((resolve, reject) => {
         chrome.runtime.sendMessage(
-            {type: "fetch-transcript", videoId},
+            {type: "fetch-transcript", videoId, platform: "youtube"},
             (response: { type: string; data?: TranscriptResponse; error?: { message: string } } | undefined) => {
                 if (chrome.runtime.lastError) {
                     reject(new Error(chrome.runtime.lastError.message ?? "Extension error"));
@@ -61,27 +82,37 @@ async function fetchTranscript(videoId: string): Promise<TranscriptResponse> {
 export class BatchProcessor {
     private items: BatchItem[] = [];
     private cancelled = false;
+    private runId = 0;
     private delayMs: number;
+    private concurrency: number;
 
-    constructor(delayMs: number = 1500) {
-        this.delayMs = delayMs;
+    constructor(options: BatchProcessorOptions | number = {}) {
+        const opts = typeof options === "number" ? {delayMs: options} : options;
+        this.delayMs = opts.delayMs ?? DEFAULT_DELAY_MS;
+        this.concurrency = clampConcurrency(opts.concurrency);
     }
 
     onProgress: BatchProgressCallback = () => {
     };
 
     start(videoIds: string[]): void {
+        this.runId += 1;
         this.cancelled = false;
         this.items = videoIds.map((videoId) => ({
             videoId,
             status: "pending" as const,
         }));
         this.notify(-1, true);
-        void this.process();
+        void this.process(this.runId);
     }
 
     cancel(): void {
         this.cancelled = true;
+        this.runId += 1;
+        for (const item of this.items) {
+            if (item.status === "processing") item.status = "pending";
+        }
+        this.notify(-1, false);
     }
 
     retryFailed(): void {
@@ -91,9 +122,10 @@ export class BatchProcessor {
                 item.error = undefined;
             }
         }
+        this.runId += 1;
         this.cancelled = false;
         this.notify(-1, true);
-        void this.process();
+        void this.process(this.runId);
     }
 
     /** Download successful transcripts as individual files in a ZIP. */
@@ -138,41 +170,68 @@ export class BatchProcessor {
     }
 
     private notify(index: number, processing: boolean): void {
-        this.onProgress(buildState(this.items, processing, index));
+        this.onProgress(buildState(this.items, processing, index, this.concurrency));
     }
 
-    private async process(): Promise<void> {
-        for (let i = 0; i < this.items.length; i++) {
-            if (this.cancelled) {
-                this.notify(i, false);
-                return;
-            }
+    private async process(runId: number): Promise<void> {
+        const workerCount = Math.min(
+            this.concurrency,
+            this.items.filter((item) => item.status === "pending").length,
+        );
+        if (workerCount === 0) {
+            this.notify(-1, false);
+            return;
+        }
 
-            const item = this.items[i];
-            if (!item || item.status !== "pending") continue;
+        await Promise.all(Array.from(
+            {length: workerCount},
+            () => this.processWorker(runId),
+        ));
 
-            item.status = "processing";
-            this.notify(i, true);
+        if (runId === this.runId && !this.cancelled) {
+            this.notify(this.items.length - 1, false);
+        }
+    }
+
+    private takeNextPending(): { item: BatchItem; index: number } | null {
+        const index = this.items.findIndex((item) => item.status === "pending");
+        if (index < 0) return null;
+        const item = this.items[index];
+        if (!item) return null;
+        item.status = "processing";
+        return {item, index};
+    }
+
+    private hasPending(): boolean {
+        return this.items.some((item) => item.status === "pending");
+    }
+
+    private async processWorker(runId: number): Promise<void> {
+        while (runId === this.runId && !this.cancelled) {
+            const next = this.takeNextPending();
+            if (!next) return;
+
+            const {item, index} = next;
+            this.notify(index, true);
 
             try {
                 const result = await fetchTranscript(item.videoId);
+                if (runId !== this.runId || this.cancelled) return;
                 item.status = "success";
                 item.result = result;
                 item.title = result.title;
             } catch (err: unknown) {
+                if (runId !== this.runId || this.cancelled) return;
                 item.status = "failed";
                 item.error = err instanceof Error ? err.message : "Unknown error";
             }
 
-            this.notify(i, true);
+            this.notify(index, true);
 
-            // Rate-limit delay between requests (skip after last item)
-            if (i < this.items.length - 1 && !this.cancelled) {
+            if (this.delayMs > 0 && this.hasPending() && runId === this.runId && !this.cancelled) {
                 await delay(this.delayMs);
             }
         }
-
-        this.notify(this.items.length - 1, false);
     }
 }
 
