@@ -160,3 +160,16 @@ Notes
 - Design doc lives at
   `docs/superpowers/specs/2026-05-23-cut-features-and-fix-bugs-design.md`
   with the rationale for each cut and each fix.
+- Post-review pass: CodeRabbit autofix extracted a shared
+  `fetchWithPoTokenRetryCore` helper in `innertube.ts` (both
+  `fetchTrackSegments` and `fetchSegmentsWithPoTokenRetry` reduce to
+  one-line delegations; `fetchTrackSegments` gains the original
+  `ApiError` preservation it previously lacked). The Whisper status
+  listener tightened to strict model-equality (`msg.model !== model`)
+  so undefined `msg.model` no longer slips through.
+- Seven other reviewer findings (six speculative unit tests, plus
+  README dev-workflow expansion, zip preflight, version-consistency
+  check, numeric-constructor backwards compat for `BatchProcessor`,
+  and a request-id cancel protocol for batches) were verified against
+  current code and skipped as out of scope for this stabilization
+  pass.
