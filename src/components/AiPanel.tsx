@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from "react";
 import type {AiFeature, TranscriptResponse} from "../types/transcript";
-import {getChatSystemPrompt, promptTemplates} from "../lib/ai/prompts";
+import {buildUserMessage, CHAT_BASE_SYSTEM, getChatSystemPrompt, promptTemplates, truncateForProvider} from "../lib/ai/prompts";
 import {getApiKey, getPreferences} from "../lib/storage/preferences";
 import {formatTimestamp} from "../lib/formatTime";
 import {chromeAiSummarize, isChromeAiAvailable, isChromeAiPromptAvailable, runChromeAiPrompt} from "../lib/ai/chrome-ai";
@@ -19,28 +19,10 @@ interface ChatMessage {
 // Prompt API supports all features when available.
 const CHROME_AI_LEGACY_FEATURES: ReadonlySet<AiFeature> = new Set<AiFeature>(["summary"]);
 
-const ESSENTIAL_FEATURES: { id: AiFeature; label: string }[] = [
+const FEATURES: { id: AiFeature; label: string }[] = [
     {id: "summary", label: "Summary"},
     {id: "bulletPoints", label: "Key points"},
-    {id: "quotes", label: "Quotes"},
     {id: "qaExtract", label: "Q&A"},
-    {id: "quiz", label: "Quiz"},
-    {id: "flashcards", label: "Flashcards"},
-];
-
-const MORE_FEATURES: { id: AiFeature; label: string }[] = [
-    {id: "chapterSummary", label: "Chapters"},
-    {id: "actionItems", label: "Action items"},
-    {id: "sentiment", label: "Sentiment"},
-    {id: "topics", label: "Topics"},
-    {id: "mindmap", label: "Mindmap"},
-    {id: "studyGuide", label: "Study guide"},
-    {id: "studyNotes", label: "Study notes"},
-    {id: "qaGenerate", label: "Generate Q&A"},
-    {id: "blogOutline", label: "Blog outline"},
-    {id: "socialPosts", label: "Social posts"},
-    {id: "seoKeywords", label: "SEO keywords"},
-    {id: "entities", label: "Entities"},
 ];
 
 const TIMESTAMP_SPLIT_RE = /(\d{1,2}:\d{2})/g;
@@ -120,11 +102,9 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
     const [chatInput, setChatInput] = useState("");
     const [chatLoading, setChatLoading] = useState(false);
     const chatEndRef = useRef<HTMLDivElement>(null);
-    const [flippedCards, setFlippedCards] = useState<Set<number>>(new Set());
     const [chromeAiAvailable, setChromeAiAvailable] = useState(false);
     const [chromeAiPromptAvailable, setChromeAiPromptAvailable] = useState(false);
     const [hasApiKey, setHasApiKey] = useState(false);
-    const [showMore, setShowMore] = useState(false);
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({behavior: "smooth"});
@@ -166,7 +146,6 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         setLoading(true);
         setError(null);
         setResult(null);
-        setFlippedCards(new Set());
 
         try {
             const text = transcriptToText(transcript);
@@ -175,7 +154,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
             // Route 1: User explicitly chose Chrome AI → run in panel via LanguageModel.
             if (prefs.aiProvider === "chrome-ai" && chromeAiPromptAvailable) {
-                setResult(await runChromeAiPrompt(template.system, template.user(text)));
+                setResult(await runChromeAiPrompt(template.system, template.instructions, {trimmableContent: text}));
                 return;
             }
 
@@ -185,7 +164,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                     provider: "ollama",
                     apiKey: "",
                     systemPrompt: template.system,
-                    userMessage: template.user(text),
+                    userMessage: buildUserMessage(template, truncateForProvider(text, "ollama")),
                     ollamaUrl: prefs.ollamaUrl,
                     ollamaModel: prefs.ollamaModel,
                 });
@@ -201,7 +180,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
             // Route 4: No provider chosen but Prompt API works → use it as the free default.
             if (!prefs.aiProvider && chromeAiPromptAvailable) {
-                setResult(await runChromeAiPrompt(template.system, template.user(text)));
+                setResult(await runChromeAiPrompt(template.system, template.instructions, {trimmableContent: text}));
                 return;
             }
 
@@ -214,7 +193,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                 provider: prefs.aiProvider,
                 apiKey,
                 systemPrompt: template.system,
-                userMessage: template.user(text),
+                userMessage: buildUserMessage(template, truncateForProvider(text, "paid")),
             });
             setResult(response);
         } catch (err) {
@@ -237,24 +216,26 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
         try {
             const prefs = await getPreferences();
-            const systemPrompt = getChatSystemPrompt(transcriptToText(transcript));
+            const transcriptText = transcriptToText(transcript);
             const history = [...chatMessages, userMsg]
                 .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
                 .join("\n\n");
 
-            // Chrome AI Prompt API
+            // Chrome AI Prompt API — transcript goes into trimmableContent so it can
+            // be measured against the session quota rather than baked into the system prompt.
             if ((prefs.aiProvider === "chrome-ai" || !prefs.aiProvider) && chromeAiPromptAvailable) {
-                const response = await runChromeAiPrompt(systemPrompt, history);
+                const userPrefix = `Conversation so far:\n\n${history}\n\nAnswer the latest question using the transcript below.`;
+                const response = await runChromeAiPrompt(CHAT_BASE_SYSTEM, userPrefix, {trimmableContent: transcriptText});
                 setChatMessages((prev) => [...prev, {role: "assistant", content: response}]);
                 return;
             }
 
-            // Ollama
+            // Ollama — local model, conservative static cap on transcript.
             if (prefs.aiProvider === "ollama") {
                 const response = await sendAiRequest({
                     provider: "ollama",
                     apiKey: "",
-                    systemPrompt,
+                    systemPrompt: getChatSystemPrompt(truncateForProvider(transcriptText, "ollama")),
                     userMessage: history,
                     ollamaUrl: prefs.ollamaUrl,
                     ollamaModel: prefs.ollamaModel,
@@ -263,14 +244,14 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                 return;
             }
 
-            // Paid BYOK provider
+            // Paid BYOK provider — large window, generous cap.
             if (!prefs.aiProvider) throw new Error("No AI provider configured");
             const apiKey = await getApiKey(prefs.aiProvider);
             if (!apiKey) throw new Error("No API key configured");
             const response = await sendAiRequest({
                 provider: prefs.aiProvider,
                 apiKey,
-                systemPrompt,
+                systemPrompt: getChatSystemPrompt(truncateForProvider(transcriptText, "paid")),
                 userMessage: history,
             });
             setChatMessages((prev) => [...prev, {role: "assistant", content: response}]);
@@ -321,14 +302,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
             {/* Feature buttons */}
             <div className="-mx-1 flex flex-wrap gap-1">
-                {ESSENTIAL_FEATURES.map(renderFeatureButton)}
-                {showMore && MORE_FEATURES.map(renderFeatureButton)}
-                <button
-                    onClick={() => setShowMore((v) => !v)}
-                    className="rounded-md px-3 py-1.5 text-sm text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-                >
-                    {showMore ? "Less" : "More"}
-                </button>
+                {FEATURES.map(renderFeatureButton)}
             </div>
 
             {/* Results */}
@@ -345,11 +319,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
 
             {result && !loading && (
                 <div>
-                    {activeFeature === "flashcards" ? (
-                        <FlashcardView result={result} flippedCards={flippedCards} setFlippedCards={setFlippedCards}/>
-                    ) : (
-                        <RenderedContent text={result} onSeek={onSeek}/>
-                    )}
+                    <RenderedContent text={result} onSeek={onSeek}/>
                     <div className="mt-3 flex gap-3 text-xs text-slate-500 dark:text-slate-400">
                         <button onClick={copyResult} className="hover:text-slate-800 dark:hover:text-slate-200">
                             Copy
@@ -414,50 +384,3 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
     );
 }
 
-function FlashcardView({
-                           result,
-                           flippedCards,
-                           setFlippedCards,
-                       }: {
-    result: string;
-    flippedCards: Set<number>;
-    setFlippedCards: React.Dispatch<React.SetStateAction<Set<number>>>;
-}) {
-    const cards = result
-        .split(/\n(?=Q:)/g)
-        .map((block) => {
-            const qMatch = block.match(/Q:\s*(.+)/);
-            const aMatch = block.match(/A:\s*([\s\S]+)/);
-            const q = qMatch?.[1];
-            const a = aMatch?.[1];
-            return q && a ? {q: q.trim(), a: a.trim()} : null;
-        })
-        .filter((c): c is { q: string; a: string } => c !== null);
-
-    const toggle = (i: number) =>
-        setFlippedCards((prev) => {
-            const next = new Set(prev);
-            if (next.has(i)) next.delete(i);
-            else next.add(i);
-            return next;
-        });
-
-    return (
-        <div className="grid gap-2 sm:grid-cols-2">
-            {cards.map((card, i) => (
-                <button
-                    key={i}
-                    onClick={() => toggle(i)}
-                    className="rounded-lg border border-slate-200 p-3 text-left transition hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600"
-                >
-                    <p className="text-sm text-slate-900 dark:text-white">{card.q}</p>
-                    {flippedCards.has(i) && (
-                        <p className="mt-2 border-t border-slate-200 pt-2 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-400">
-                            {card.a}
-                        </p>
-                    )}
-                </button>
-            ))}
-        </div>
-    );
-}
