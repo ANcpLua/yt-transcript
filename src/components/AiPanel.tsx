@@ -50,12 +50,35 @@ interface AiRequestPayload {
     ollamaModel?: string;
 }
 
-/** Route an AI request through the Chrome extension background worker. */
-function sendAiRequest(payload: AiRequestPayload): Promise<string> {
+function isAbortError(err: unknown): boolean {
+    return err instanceof DOMException && err.name === "AbortError";
+}
+
+/**
+ * Route an AI request through the Chrome extension background worker.
+ * If `signal` aborts, the promise rejects with AbortError; the SW request
+ * is allowed to complete in the background (its result is discarded).
+ */
+function sendAiRequest(payload: AiRequestPayload, signal?: AbortSignal): Promise<string> {
     return new Promise<string>((resolve, reject) => {
+        let settled = false;
+        const onAbort = () => {
+            if (settled) return;
+            settled = true;
+            reject(new DOMException("Aborted", "AbortError"));
+        };
+        if (signal?.aborted) {
+            onAbort();
+            return;
+        }
+        signal?.addEventListener("abort", onAbort, {once: true});
+
         chrome.runtime.sendMessage(
             {type: "ai-request", ...payload},
             (response: {type: string; content?: string; error?: string} | undefined) => {
+                if (settled) return;
+                settled = true;
+                signal?.removeEventListener("abort", onAbort);
                 if (chrome.runtime.lastError) {
                     reject(new Error(chrome.runtime.lastError.message ?? "Extension error"));
                     return;
@@ -149,9 +172,22 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
     const [chromeAiPromptAvailable, setChromeAiPromptAvailable] = useState(false);
     const [hasApiKey, setHasApiKey] = useState(false);
 
+    // One AbortController per active feature request. Switching features or
+    // navigating to a new transcript aborts whatever was running so the user
+    // is never locked into waiting on Chrome AI / a paid API to finish.
+    const abortRef = useRef<AbortController | null>(null);
+
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({behavior: "smooth"});
     }, [chatMessages]);
+
+    // Switching videos invalidates whatever AI request was in flight.
+    const transcriptKey = transcript?.videoId ?? null;
+    useEffect(() => {
+        return () => {
+            abortRef.current?.abort();
+        };
+    }, [transcriptKey]);
 
     // Check Chrome AI and BYOK key availability on mount
     useEffect(() => {
@@ -185,19 +221,31 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         if (!transcript) return;
         if (!canRunFeature(feature)) return;
 
+        // Abort whatever's running and stake a new controller for this request.
+        abortRef.current?.abort();
+        const controller = new AbortController();
+        abortRef.current = controller;
+        const {signal} = controller;
+
         setActiveFeature(feature);
         setLoading(true);
         setError(null);
         setResult(null);
 
+        const commitResult = (text: string): void => {
+            if (signal.aborted) return;
+            setResult(text);
+        };
+
         try {
             const text = transcriptToText(transcript);
             const template = promptTemplates[feature];
             const prefs = await getPreferences();
+            if (signal.aborted) return;
 
             // Route 1: User explicitly chose Chrome AI → run in panel via LanguageModel.
             if (prefs.aiProvider === "chrome-ai" && chromeAiPromptAvailable) {
-                setResult(await runChromeAiPrompt(template.system, template.instructions, {trimmableContent: text}));
+                commitResult(await runChromeAiPrompt(template.system, template.instructions, {trimmableContent: text, signal}));
                 return;
             }
 
@@ -210,20 +258,20 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                     userMessage: buildUserMessage(template, truncateForProvider(text, "ollama")),
                     ollamaUrl: prefs.ollamaUrl,
                     ollamaModel: prefs.ollamaModel,
-                });
-                setResult(response);
+                }, signal);
+                commitResult(response);
                 return;
             }
 
             // Route 3: No paid provider but legacy Summarizer is available → use it for summary.
             if (!prefs.aiProvider && chromeAiAvailable && CHROME_AI_LEGACY_FEATURES.has(feature)) {
-                setResult(await chromeAiSummarize(text));
+                commitResult(await chromeAiSummarize(text));
                 return;
             }
 
             // Route 4: No provider chosen but Prompt API works → use it as the free default.
             if (!prefs.aiProvider && chromeAiPromptAvailable) {
-                setResult(await runChromeAiPrompt(template.system, template.instructions, {trimmableContent: text}));
+                commitResult(await runChromeAiPrompt(template.system, template.instructions, {trimmableContent: text, signal}));
                 return;
             }
 
@@ -237,14 +285,22 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                 apiKey,
                 systemPrompt: template.system,
                 userMessage: buildUserMessage(template, truncateForProvider(text, "paid")),
-            });
-            setResult(response);
+            }, signal);
+            commitResult(response);
         } catch (err) {
+            if (signal.aborted || isAbortError(err)) return;
             setError(err instanceof Error ? err.message : "AI request failed");
         } finally {
-            setLoading(false);
+            // Only the most-recent request flips loading off; older ones may
+            // still be unwinding in the background but they no longer own UI state.
+            if (abortRef.current === controller) setLoading(false);
         }
     };
+
+    const cancelActiveRequest = useCallback(() => {
+        abortRef.current?.abort();
+        setLoading(false);
+    }, []);
 
     const canChat = chromeAiPromptAvailable || hasApiKey;
 
@@ -320,7 +376,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
             <button
                 key={f.id}
                 onClick={() => void runFeature(f.id)}
-                disabled={!enabled || loading}
+                disabled={!enabled}
                 className={`rounded-md px-3 py-1.5 text-sm transition disabled:opacity-30 ${
                     activeFeature === f.id
                         ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
@@ -352,7 +408,13 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
             {loading && (
                 <div className="flex items-center gap-2 py-2 text-sm text-slate-500 dark:text-slate-400">
                     <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600 dark:border-slate-700 dark:border-t-slate-300"/>
-                    Analyzing…
+                    <span>Analyzing…</span>
+                    <button
+                        onClick={cancelActiveRequest}
+                        className="ml-1 rounded px-1.5 text-xs text-slate-500 underline-offset-2 hover:underline dark:text-slate-400"
+                    >
+                        Stop
+                    </button>
                 </div>
             )}
 
