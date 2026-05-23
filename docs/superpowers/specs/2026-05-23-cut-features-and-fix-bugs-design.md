@@ -93,28 +93,47 @@ A single 400 000-character cap is applied to **every** provider. Chrome built-in
 
 ### Fix
 
-Replace `truncateTranscript(text)` with `truncateForProvider(text, kind)`:
+Two paths, depending on whether the runtime supports input measurement.
+
+**Chrome AI (measure-and-trim, no fixed cap):**
+
+Chrome's `LanguageModelSession` exposes `inputQuota`, `inputUsage`, and `measureInputUsage(text)`. Use them in `chrome-ai.ts`:
 
 ```ts
-type ProviderKind = "chrome-ai" | "ollama" | "paid";
+async function fitToQuota(session, systemPrompt, userMessage): Promise<string> {
+  const headroom = (session.inputQuota ?? 6000) - (session.inputUsage ?? 0) - 64;
+  const usage = await session.measureInputUsage(userMessage);
+  if (usage <= headroom) return userMessage;
+  // Binary head+tail trim until usage fits
+  let lo = 0, hi = userMessage.length;
+  while (hi - lo > 200) {
+    const mid = Math.floor((lo + hi) / 2);
+    const candidate = head(userMessage, mid / 2) + "\n\n[... truncated ...]\n\n" + tail(userMessage, mid / 2);
+    if (await session.measureInputUsage(candidate) <= headroom) lo = mid; else hi = mid;
+  }
+  return head(userMessage, lo / 2) + "\n\n[... truncated ...]\n\n" + tail(userMessage, lo / 2);
+}
+```
+
+`runChromeAiPrompt` calls `fitToQuota` after `session.create` and before `session.prompt`. The user gets the maximum the device can handle, not a hand-tuned guess. Typical Gemini Nano builds yield ~6144 input tokens (~24K chars), but Chrome 142+ and stronger GPUs go higher — we adapt.
+
+**Ollama and paid (static cap, generous):**
+
+Ollama and paid providers don't expose `measureInputUsage`, so we use static caps that are **generous, not conservative**:
+
+```ts
+type ProviderKind = "ollama" | "paid";
 const LIMITS: Record<ProviderKind, number> = {
-  "chrome-ai": 6000,    // ~1.5K tokens, safely under Chrome AI's window
-  ollama: 16000,        // local models vary; keep tight
-  paid: 400000,         // current behavior
+  ollama: 32000,   // ~8K tokens — modern local models (Llama 3.2, Qwen 2.5) handle 32K-128K
+  paid: 400000,    // ~100K tokens — fits Claude, GPT-4o, Gemini comfortably
 };
 ```
 
-Plumb the resolved provider kind into each call site:
-
-- `AiPanel.runFeature`: pass the kind down once `prefs.aiProvider` is resolved.
-- `AiPanel.sendChat`: same.
-- `getChatSystemPrompt`: takes a `kind` arg.
-
-Each prompt template's `user(t)` signature becomes `user(t: string, kind: ProviderKind) => string`. Call site picks the kind, the template applies the cap.
+Each prompt template's `user(t)` signature becomes `user(t: string, kind: ProviderKind) => string`. Call site picks the kind, the template applies the cap. Chrome AI path bypasses this — `truncateForProvider` is only called for ollama/paid.
 
 ### Side benefit
 
-Once truncation is provider-correct, we can keep Chrome AI as the free-tier default without `Input is too large` surfacing to users at all — they just get a summary of the start+end of long transcripts with a `[... transcript truncated ...]` marker. That's already what `truncateTranscript` does for paid; we're just applying it at a sane cap for Chrome AI.
+`Input is too large` should never surface to a user again. Chrome AI users get the full transcript when it fits and a measured-trim when it doesn't. Ollama/paid users get the full transcript on anything reasonable; only multi-hour transcripts get trimmed, with the head+tail visible.
 
 ---
 
@@ -300,7 +319,8 @@ The branch `fix/innertube-timeouts-po-token-retry` is `+237 / -1806` vs main (ne
 | Risk | Mitigation |
 |---|---|
 | `react-markdown` interaction with timestamp post-processing breaks on edge text (e.g. timestamp inside `<code>`). | The `code` component renderer should NOT call `withTimestamps` — leave code blocks raw. Unit-test the helper against a sample with code blocks. |
-| Provider-aware truncate breaks for users on Ollama with a large model (32k window). | The 16k cap is conservative. If users complain, add a `localModelContextWindow` preference to Settings. Mark with `[Δ: conservative path]` in the commit. |
+| Ollama cap (32K chars) is too low for users running 128K-context local models. | Acceptable for v1 — bump in Settings later if anyone asks. Most local models in real use are 7B-13B with 32K windows. |
+| Chrome AI `measureInputUsage` is async and called in a binary-search loop, adds ~50-200ms latency before each prompt. | Trade-off accepted — user sees an extra spinner tick on long transcripts but never sees `Input is too large`. Can short-circuit when `userMessage.length * 0.3 < headroom` (very rough char→token estimate) to skip the loop on small inputs. |
 | Service-worker forwarding of `seek-to` fails when the user paused the broadcasting tab. | Acceptable — clicking a timestamp on a saved transcript with no live tab is meaningfully a no-op. |
 | Aborting Chrome AI mid-prompt may still consume the quota for that turn. | Documented as a "best-effort cancel" in code comment; user-facing behavior is identical (no UI lock). |
 
