@@ -32,15 +32,11 @@ npm install
 npm run build
 ```
 
-Load `dist/` as an unpacked extension in Chrome or Edge.
+Load `dist/` as an unpacked extension in Chrome. (The same build also loads on
+Edge — both are Chromium with the MV3 surface we use — but we test and ship
+only against Chrome.)
 
-Firefox packaging:
-
-```bash
-npm run build:firefox
-```
-
-Release zips:
+Release zip for the Chrome Web Store:
 
 ```bash
 npm run zip
@@ -51,5 +47,4 @@ npm run zip
 ```bash
 npm run lint
 npm run build
-npm run build:firefox
 ```
