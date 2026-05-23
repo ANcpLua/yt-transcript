@@ -11,7 +11,7 @@
     "zip:chrome": "node scripts/build.mjs && cd dist && zip -r ../yt-transcript-chrome.zip .",
     "zip:firefox": "node scripts/build.mjs && node scripts/build-firefox.mjs && cd dist-firefox && zip -r ../yt-transcript-firefox.zip .",
     "test:browser": "node scripts/test-extension.mjs",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.4.0",

@@ -47,10 +47,6 @@ const HF_ORIGINS = [
 ];
 
 const DEFAULT_PREFS: Preferences = {
-    viewMode: "raw",
-    showTimestamps: true,
-    compactMode: false,
-    autoScroll: true,
     aiProvider: null,
     whisperModel: "tiny",
 };
@@ -816,40 +812,6 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
 
                     {tab === "data" && (
                         <section className="space-y-5">
-                            <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800/40">
-                                <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Preferences</h3>
-                                <div className="space-y-2.5">
-                                    <label className="flex items-center justify-between">
-                                        <span className="text-sm text-slate-700 dark:text-slate-300">View</span>
-                                        <select
-                                            value={prefs.viewMode}
-                                            onChange={(e) => updatePref("viewMode", e.target.value as Preferences["viewMode"])}
-                                            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                                        >
-                                            <option value="raw">Raw</option>
-                                            <option value="sentences">Sentences</option>
-                                            <option value="paragraphs">Paragraphs</option>
-                                            <option value="tabular">Tabular</option>
-                                        </select>
-                                    </label>
-                                    {([
-                                        {key: "showTimestamps" as const, label: "Show timestamps"},
-                                        {key: "compactMode" as const, label: "Compact mode"},
-                                        {key: "autoScroll" as const, label: "Auto-scroll"},
-                                    ]).map(({key, label}) => (
-                                        <label key={key} className="flex items-center justify-between">
-                                            <span className="text-sm text-slate-700 dark:text-slate-300">{label}</span>
-                                            <input
-                                                type="checkbox"
-                                                checked={prefs[key]}
-                                                onChange={(e) => updatePref(key, e.target.checked)}
-                                                className="h-4 w-4 rounded-sm accent-slate-900 dark:accent-white"
-                                            />
-                                        </label>
-                                    ))}
-                                </div>
-                            </div>
-
                             <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800/40">
                                 <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Storage</h3>
                                 {storageEstimate && storageEstimate.quota > 0 && (() => {
