@@ -99,22 +99,4 @@ export interface ChannelResponse {
   videos: { videoId: string; title: string; duration: string }[];
 }
 
-export type AiFeature =
-  | "summary"
-  | "bulletPoints"
-  | "chapterSummary"
-  | "actionItems"
-  | "quotes"
-  | "blogOutline"
-  | "socialPosts"
-  | "studyNotes"
-  | "flashcards"
-  | "seoKeywords"
-  | "entities"
-  | "sentiment"
-  | "topics"
-  | "qaExtract"
-  | "mindmap"
-  | "studyGuide"
-  | "qaGenerate"
-  | "quiz";
+export type AiFeature = "summary" | "bulletPoints" | "qaExtract";

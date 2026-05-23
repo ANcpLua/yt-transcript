@@ -7,13 +7,15 @@
  *   yt-transcript-firefox.zip — Firefox Add-ons (sidebar_action, gecko settings)
  */
 import {execSync} from "child_process";
-import {cpSync, existsSync, readFileSync, writeFileSync, mkdirSync, rmSync} from "fs";
+import {cpSync, existsSync, readFileSync, writeFileSync, rmSync} from "fs";
 import {resolve, dirname} from "path";
 import {fileURLToPath} from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 const dist = resolve(root, "dist");
+const chromeZip = resolve(root, "yt-transcript-chrome.zip");
+const firefoxZip = resolve(root, "yt-transcript-firefox.zip");
 
 if (!existsSync(resolve(dist, "manifest.json"))) {
     console.error("dist/manifest.json not found. Run `npm run build` first.");
@@ -21,6 +23,7 @@ if (!existsSync(resolve(dist, "manifest.json"))) {
 }
 
 // ── Chrome + Edge (identical, both accept MV3) ─────────────
+if (existsSync(chromeZip)) rmSync(chromeZip);
 execSync("zip -r ../yt-transcript-chrome.zip .", {cwd: dist, stdio: "inherit"});
 console.log("✅ yt-transcript-chrome.zip (Chrome + Edge)");
 
@@ -48,6 +51,7 @@ if (existsSync(swPath)) {
     console.log("  → stripped sidePanel.setPanelBehavior from Firefox build");
 }
 
+if (existsSync(firefoxZip)) rmSync(firefoxZip);
 execSync("zip -r ../yt-transcript-firefox.zip .", {cwd: firefoxDist, stdio: "inherit"});
 rmSync(firefoxDist, {recursive: true});
 console.log("✅ yt-transcript-firefox.zip (Firefox)");
