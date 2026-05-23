@@ -99,3 +99,64 @@ Notes
   refactor — once 1.3.0 is uploaded, the upgrade will demote the HF /
   AI provider origins to optional automatically. No re-prompt for
   users who already granted them.
+
+## 2026-05-23 — Cut to 3 AI buttons + Chat; fix the four reported bugs
+
+Changed
+
+- Cut 15 AI prompts (sentiment, topics, mindmap, quotes, quiz,
+  flashcards, studyGuide, studyNotes, qaGenerate, blogOutline,
+  socialPosts, seoKeywords, entities, chapterSummary, actionItems)
+  and the "More" disclosure. Final surface: Summary / Key points /
+  Q&A buttons plus the bottom Ask box. AiPanel.tsx lost 437 lines net.
+- Delete `src/components/BilingualView.tsx` (227 lines, never wired).
+- Shrink `AiFeature` union 18 → 3 in `src/types/transcript.ts`.
+- Bug fix — "Input is too large" on long transcripts: Chrome AI now
+  uses `session.measureInputUsage` + a binary head+tail trim in
+  `chrome-ai.ts:fitToQuota` so the actual quota of the user's Gemini
+  Nano build drives sizing. Ollama static cap bumped 16K → 32K chars,
+  paid unchanged at 400K. PromptTemplate signature reshaped from
+  `user(t)` to `instructions` so the trimmable transcript lives
+  separately from the fixed instructions.
+- Bug fix — Q&A markdown literal `**Q:**`: AiPanel.tsx now renders
+  results through `react-markdown` + `remark-gfm`. Custom component
+  renderers post-process plain text and inline-code timestamps into
+  clickable `<TimestampButton/>` instances.
+- Bug fix — timestamp click did nothing: `service-worker.ts` adds a
+  `seek-to` case that forwards via `chrome.tabs.sendMessage` to the
+  broadcasting tab. `correlator.ts` tracks `lastBroadcastTabId` so
+  the SW knows which tab to forward to.
+- Bug fix — feature lockdown / no cancel: AbortController wired into
+  `runFeature`. Switching feature aborts the prior request, a Stop
+  link sits next to the spinner, and a transcript-change cleanup
+  effect aborts on video navigation. AbortError is swallowed so it
+  doesn't show as a red error.
+- Add `react-markdown@^9` and `remark-gfm@^4` to deps. Pure-JS, no
+  network calls. ~40 KB gzipped; only loads when AiPanel mounts
+  (already lazy-loaded from App.tsx).
+- AGENTS.md / CLAUDE.md: parity table marks removed features as
+  REMOVED 2026-05-23, new EXTRA-007 (cancel) and EXTRA-008 (timestamp
+  click) rows. AI prompt inventory replaced by the 4-row truth + a
+  "Provider sizing rules" section.
+
+Verified
+
+- `npm run lint` passes (zero TS errors).
+- `npm run build` succeeds; all eight bundles emit. AiPanel chunk
+  grew to 162 KB raw (~40 KB gzipped) from the markdown deps; lazy-
+  loaded so it only hits the wire on first AI-button click.
+- Real-Chrome content verification (transcript fetch + 4 AI features +
+  timestamp click + cancel mid-request, on the Yu-Gi-Oh "Top 25 Rares"
+  case that originally triggered "Input is too large") must be done
+  by the user per the procedure in AGENTS.md "How to verify the
+  extension actually works".
+
+Notes
+
+- The branch `fix/innertube-timeouts-po-token-retry` is net -1806/+237
+  vs main before this pass, and the cut adds ~450 more lines deleted.
+  The plan is to merge this branch to main and delete it, ending the
+  floating-branch state.
+- Design doc lives at
+  `docs/superpowers/specs/2026-05-23-cut-features-and-fix-bugs-design.md`
+  with the rationale for each cut and each fix.
