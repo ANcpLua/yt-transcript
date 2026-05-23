@@ -91,7 +91,12 @@ export async function isChromeAiAvailable(): Promise<boolean> {
   }
 }
 
-const RESPONSE_HEADROOM_TOKENS = 256;
+// Chrome AI's session has a single rolling context shared between input and
+// output. Reserve enough room for the response or the model throws
+// "The response size exceeded the remaining available context" partway
+// through generation. Q&A and long-form summaries can easily produce
+// 1000-2000 tokens; 2048 covers them comfortably.
+const RESPONSE_HEADROOM_TOKENS = 2_048;
 const DEFAULT_INPUT_QUOTA = 6_000;
 const TRIM_MARKER = "\n\n[... transcript truncated for length ...]\n\n";
 
@@ -104,7 +109,8 @@ async function fitToQuota(
     if (!session.measureInputUsage) return `${fixedPrefix}\n\n${trimmableContent}`;
     const quota = session.inputQuota ?? DEFAULT_INPUT_QUOTA;
     const used = session.inputUsage ?? 0;
-    const headroom = Math.max(quota - used - RESPONSE_HEADROOM_TOKENS, 256);
+    // Floor at 512 tokens so even a tiny quota leaves the model some room to think.
+    const headroom = Math.max(quota - used - RESPONSE_HEADROOM_TOKENS, 512);
 
     const full = `${fixedPrefix}\n\n${trimmableContent}`;
     const fullUsage = await session.measureInputUsage(full);
