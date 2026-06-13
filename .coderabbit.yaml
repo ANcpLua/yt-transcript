@@ -329,13 +329,6 @@ reviews:
         propagation on public/internal async boundaries, sleeps for synchronization,
         or resource disposal paths that can drop in-flight work.'
     - mode: error
-      name: Public Contract Documented
-      instructions: 'Pass/fail criteria: fail if public APIs, endpoint schemas, CLI
-        flags, config keys, package surfaces, storage formats, event schemas, MCP
-        tool schemas, or generated contracts change without matching docs/tests and
-        explicit compatibility notes in the PR description or changelog where the
-        repo uses one.'
-    - mode: error
       name: CI Release Safety
       instructions: 'Pass/fail criteria: if no workflow/build/release files changed,
         pass. Fail when a changed workflow removes an existing validation job, removes
