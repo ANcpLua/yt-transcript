@@ -30,7 +30,7 @@
     "react-markdown": "9.1.0",
     "remark-gfm": "4.0.1",
     "tailwindcss": "4.3.1",
-    "typescript": "5.9.3",
+    "typescript": "6.0.3",
     "vite": "6.4.3",
     "web-ext": "10.4.0"
   }
