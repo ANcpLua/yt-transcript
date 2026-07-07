@@ -2,8 +2,7 @@ import {Children, createElement, type ReactNode, useCallback, useEffect, useRef,
 import ReactMarkdown, {type Components} from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {AiFeature, TranscriptResponse} from "../types/transcript";
-import {buildUserMessage, CHAT_BASE_SYSTEM, getChatSystemPrompt, promptTemplates, truncateForProvider} from "../lib/ai/prompts";
-import {getApiKey, getPreferences} from "../lib/storage/preferences";
+import {CHAT_BASE_SYSTEM, promptTemplates} from "../lib/ai/prompts";
 import {formatTimestamp} from "../lib/formatTime";
 import {chromeAiSummarize, isChromeAiAvailable, isChromeAiPromptAvailable, runChromeAiPrompt} from "../lib/ai/chrome-ai";
 
@@ -41,60 +40,8 @@ function parseTimestamp(ts: string): number {
     return parts.length === 2 ? (parts[0] ?? 0) * 60 + (parts[1] ?? 0) : 0;
 }
 
-interface AiRequestPayload {
-    provider: string;
-    apiKey: string;
-    systemPrompt: string;
-    userMessage: string;
-    ollamaUrl?: string;
-    ollamaModel?: string;
-}
-
 function isAbortError(err: unknown): boolean {
     return err instanceof DOMException && err.name === "AbortError";
-}
-
-/**
- * Route an AI request through the Chrome extension background worker.
- * If `signal` aborts, the promise rejects with AbortError; the SW request
- * is allowed to complete in the background (its result is discarded).
- */
-function sendAiRequest(payload: AiRequestPayload, signal?: AbortSignal): Promise<string> {
-    return new Promise<string>((resolve, reject) => {
-        let settled = false;
-        const onAbort = () => {
-            if (settled) return;
-            settled = true;
-            reject(new DOMException("Aborted", "AbortError"));
-        };
-        if (signal?.aborted) {
-            onAbort();
-            return;
-        }
-        signal?.addEventListener("abort", onAbort, {once: true});
-
-        chrome.runtime.sendMessage(
-            {type: "ai-request", ...payload},
-            (response: {type: string; content?: string; error?: string} | undefined) => {
-                if (settled) return;
-                settled = true;
-                signal?.removeEventListener("abort", onAbort);
-                if (chrome.runtime.lastError) {
-                    reject(new Error(chrome.runtime.lastError.message ?? "Extension error"));
-                    return;
-                }
-                if (!response) {
-                    reject(new Error("No response from background worker"));
-                    return;
-                }
-                if (response.type === "ai-result" && response.content) {
-                    resolve(response.content);
-                } else {
-                    reject(new Error(response.error ?? "AI request failed"));
-                }
-            },
-        );
-    });
 }
 
 const TIMESTAMP_BUTTON_CLASS =
@@ -170,11 +117,10 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
     const chatEndRef = useRef<HTMLDivElement>(null);
     const [chromeAiAvailable, setChromeAiAvailable] = useState(false);
     const [chromeAiPromptAvailable, setChromeAiPromptAvailable] = useState(false);
-    const [hasApiKey, setHasApiKey] = useState(false);
 
     // One AbortController per active feature request. Switching features or
     // navigating to a new transcript aborts whatever was running so the user
-    // is never locked into waiting on Chrome AI / a paid API to finish.
+    // is never locked into waiting on Chrome AI to finish.
     const abortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
@@ -189,33 +135,23 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         };
     }, [transcriptKey]);
 
-    // Check Chrome AI and BYOK key availability on mount
+    // Check Chrome AI availability on mount.
     useEffect(() => {
         void isChromeAiAvailable().then(setChromeAiAvailable);
         void isChromeAiPromptAvailable().then(setChromeAiPromptAvailable);
-        void (async () => {
-            const prefs = await getPreferences();
-            if (!prefs.aiProvider) return;
-            if (prefs.aiProvider === "chrome-ai" || prefs.aiProvider === "ollama") {
-                setHasApiKey(true);
-                return;
-            }
-            const key = await getApiKey(prefs.aiProvider);
-            setHasApiKey(key !== null);
-        })();
     }, []);
 
-    /** True if this feature can run (Chrome AI Prompt API supports all; legacy summarizer only summary; otherwise needs configured provider). */
+    /** True if this feature can run (Chrome AI Prompt API supports all; legacy summarizer only summary). */
     const canRunFeature = useCallback(
         (feature: AiFeature): boolean => {
             if (chromeAiPromptAvailable) return true;
             if (chromeAiAvailable && CHROME_AI_LEGACY_FEATURES.has(feature)) return true;
-            return hasApiKey;
+            return false;
         },
-        [chromeAiAvailable, chromeAiPromptAvailable, hasApiKey],
+        [chromeAiAvailable, chromeAiPromptAvailable],
     );
 
-    const hasAnyProvider = chromeAiAvailable || chromeAiPromptAvailable || hasApiKey;
+    const hasAnyProvider = chromeAiAvailable || chromeAiPromptAvailable;
 
     const runFeature = async (feature: AiFeature) => {
         if (!transcript) return;
@@ -240,53 +176,18 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         try {
             const text = transcriptToText(transcript);
             const template = promptTemplates[feature];
-            const prefs = await getPreferences();
-            if (signal.aborted) return;
 
-            // Route 1: User explicitly chose Chrome AI → run in panel via LanguageModel.
-            if (prefs.aiProvider === "chrome-ai" && chromeAiPromptAvailable) {
+            if (chromeAiPromptAvailable) {
                 commitResult(await runChromeAiPrompt(template.system, template.instructions, {trimmableContent: text, signal}));
                 return;
             }
 
-            // Route 2: User chose Ollama → service worker proxies the localhost call.
-            if (prefs.aiProvider === "ollama") {
-                const response = await sendAiRequest({
-                    provider: "ollama",
-                    apiKey: "",
-                    systemPrompt: template.system,
-                    userMessage: buildUserMessage(template, truncateForProvider(text, "ollama")),
-                    ollamaUrl: prefs.ollamaUrl,
-                    ollamaModel: prefs.ollamaModel,
-                }, signal);
-                commitResult(response);
-                return;
-            }
-
-            // Route 3: No paid provider but legacy Summarizer is available → use it for summary.
-            if (!prefs.aiProvider && chromeAiAvailable && CHROME_AI_LEGACY_FEATURES.has(feature)) {
+            if (chromeAiAvailable && CHROME_AI_LEGACY_FEATURES.has(feature)) {
                 commitResult(await chromeAiSummarize(text));
                 return;
             }
 
-            // Route 4: No provider chosen but Prompt API works → use it as the free default.
-            if (!prefs.aiProvider && chromeAiPromptAvailable) {
-                commitResult(await runChromeAiPrompt(template.system, template.instructions, {trimmableContent: text, signal}));
-                return;
-            }
-
-            // Route 5: Paid BYOK provider via service worker.
-            if (!prefs.aiProvider) throw new Error("No AI provider configured. Open Settings to choose one.");
-            const apiKey = await getApiKey(prefs.aiProvider);
-            if (!apiKey) throw new Error(`No API key configured for ${prefs.aiProvider}.`);
-
-            const response = await sendAiRequest({
-                provider: prefs.aiProvider,
-                apiKey,
-                systemPrompt: template.system,
-                userMessage: buildUserMessage(template, truncateForProvider(text, "paid")),
-            }, signal);
-            commitResult(response);
+            throw new Error("Chrome AI is not available in this Chrome profile.");
         } catch (err) {
             if (signal.aborted || isAbortError(err)) return;
             setError(err instanceof Error ? err.message : "AI request failed");
@@ -302,7 +203,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         setLoading(false);
     }, []);
 
-    const canChat = chromeAiPromptAvailable || hasApiKey;
+    const canChat = chromeAiPromptAvailable;
 
     const sendChat = async () => {
         if (!chatInput.trim() || !transcript) return;
@@ -314,45 +215,13 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         setChatLoading(true);
 
         try {
-            const prefs = await getPreferences();
             const transcriptText = transcriptToText(transcript);
             const history = [...chatMessages, userMsg]
                 .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
                 .join("\n\n");
 
-            // Chrome AI Prompt API — transcript goes into trimmableContent so it can
-            // be measured against the session quota rather than baked into the system prompt.
-            if ((prefs.aiProvider === "chrome-ai" || !prefs.aiProvider) && chromeAiPromptAvailable) {
-                const userPrefix = `Conversation so far:\n\n${history}\n\nAnswer the latest question using the transcript below.`;
-                const response = await runChromeAiPrompt(CHAT_BASE_SYSTEM, userPrefix, {trimmableContent: transcriptText});
-                setChatMessages((prev) => [...prev, {role: "assistant", content: response}]);
-                return;
-            }
-
-            // Ollama — local model, conservative static cap on transcript.
-            if (prefs.aiProvider === "ollama") {
-                const response = await sendAiRequest({
-                    provider: "ollama",
-                    apiKey: "",
-                    systemPrompt: getChatSystemPrompt(truncateForProvider(transcriptText, "ollama")),
-                    userMessage: history,
-                    ollamaUrl: prefs.ollamaUrl,
-                    ollamaModel: prefs.ollamaModel,
-                });
-                setChatMessages((prev) => [...prev, {role: "assistant", content: response}]);
-                return;
-            }
-
-            // Paid BYOK provider — large window, generous cap.
-            if (!prefs.aiProvider) throw new Error("No AI provider configured");
-            const apiKey = await getApiKey(prefs.aiProvider);
-            if (!apiKey) throw new Error("No API key configured");
-            const response = await sendAiRequest({
-                provider: prefs.aiProvider,
-                apiKey,
-                systemPrompt: getChatSystemPrompt(truncateForProvider(transcriptText, "paid")),
-                userMessage: history,
-            });
+            const userPrefix = `Conversation so far:\n\n${history}\n\nAnswer the latest question using the transcript below.`;
+            const response = await runChromeAiPrompt(CHAT_BASE_SYSTEM, userPrefix, {trimmableContent: transcriptText});
             setChatMessages((prev) => [...prev, {role: "assistant", content: response}]);
         } catch (err) {
             setChatMessages((prev) => [
@@ -395,7 +264,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                 <h3 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700 dark:text-amber-300">Analyze</h3>
                 {!hasAnyProvider && (
                     <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-amber-600 dark:text-amber-400">
-                        Pick a provider →
+                        Chrome AI unavailable
                     </span>
                 )}
             </div>
@@ -473,7 +342,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && void sendChat()}
-                        placeholder={canChat ? "Ask about this video" : "Pick an AI provider in Settings"}
+                        placeholder={canChat ? "Ask about this video" : "Chrome AI unavailable"}
                         disabled={!canChat || chatLoading}
                         className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-[14px] placeholder:text-slate-400 focus:border-amber-400 focus:outline-hidden focus:ring-1 focus:ring-amber-300 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:border-amber-300 dark:focus:ring-amber-300/40"
                     />
@@ -489,4 +358,3 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
         </div>
     );
 }
-

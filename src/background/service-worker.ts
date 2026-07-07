@@ -4,7 +4,7 @@ import { YouTubeProvider } from "./providers/youtube";
 import { VimeoProvider } from "./providers/vimeo";
 import { isApiError } from "./providers/types";
 import type { TranscriptProvider } from "./providers/types";
-import type { AiRequestMessage, ExtensionMessage } from "../types/messages";
+import type { ExtensionMessage } from "../types/messages";
 import type { Platform } from "../types/transcript";
 import {
   claimAutoFetchTrack,
@@ -121,12 +121,6 @@ chrome.runtime.onMessage.addListener(
 
       case "fetch-channel":
         fetchChannel(message.identifier).then((result) => sendResponse(result));
-        return true;
-
-      case "ai-request":
-        handleAiRequest(message)
-          .then((content) => sendResponse({ type: "ai-result", content }))
-          .catch((err: unknown) => sendResponse({ type: "ai-error", error: String(err) }));
         return true;
 
       case "start-transcription":
@@ -266,26 +260,6 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(
   },
   { url: [{ hostSuffix: "vimeo.com" }] },
 );
-
-async function handleAiRequest(message: AiRequestMessage): Promise<string> {
-  const { getProvider, DEFAULT_OLLAMA_URL, DEFAULT_OLLAMA_MODEL } = await import("../lib/ai/providers");
-
-  let provider;
-  if (message.provider === "ollama") {
-    provider = getProvider("ollama", {
-      url: message.ollamaUrl || DEFAULT_OLLAMA_URL,
-      model: message.ollamaModel || DEFAULT_OLLAMA_MODEL,
-    });
-  } else {
-    if (!message.apiKey) throw new Error("No API key configured");
-    provider = getProvider(message.provider, message.apiKey);
-  }
-
-  return provider.sendMessage({
-    systemPrompt: message.systemPrompt,
-    userMessage: message.userMessage,
-  });
-}
 
 // ---------- Whisper transcription ----------
 

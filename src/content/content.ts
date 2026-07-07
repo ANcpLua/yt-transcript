@@ -177,7 +177,7 @@ function pickCaptionTrack(playerJson: string): CaptionTrack | null {
     ?.["captionTracks"];
   if (!Array.isArray(tracks) || tracks.length === 0) return null;
   // Prefer the original audio track. YouTube orders captionTracks by the
-  // user's UI locale, so tracks[0] is whatever Firefox/Chrome's locale
+  // user's UI locale, so tracks[0] is whatever the browser locale
   // requested (a translation, in most cases). The original is whichever
   // matches videoDetails.defaultAudioLanguage; fall back to any track
   // with kind === "asr" (the source ASR), then to the first track.

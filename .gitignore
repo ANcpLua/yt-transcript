@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-firefox/
+packages/extension/dist-chrome/
 .wrangler/
 .superpowers/
 .playwright-mcp/
@@ -22,3 +23,7 @@ e2e/.tmp-profile*/
 !public/**/*.png
 !e2e/screenshots/**/*.png
 !store/**/*.png
+
+# local env files (keep secrets out of git)
+.env.local
+.env*.local

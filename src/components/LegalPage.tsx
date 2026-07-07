@@ -12,11 +12,11 @@ const sections: LegalSection[] = [
     },
     {
         title: "No Server-Side Storage",
-        body: "We do not store any data on our servers. Your transcripts, API keys, and preferences are stored locally in your browser using chrome.storage and IndexedDB.",
+        body: "We do not store any data on our servers. Your transcripts and preferences are stored locally in your browser using chrome.storage and IndexedDB.",
     },
     {
         title: "Third-Party Services",
-        body: "When you use AI features, your transcript data is sent directly from your browser to the AI provider (OpenAI, Anthropic, or Google) using your own API key. We never see or proxy your API key or AI requests.",
+        body: "AI features use Chrome built-in AI in the browser. We never see or proxy AI requests.",
     },
     {
         title: "YouTube Disclaimer",

@@ -64,9 +64,8 @@ Changed
   "Downloading…" state without listening for a separate failure type.
 - `manifest.json`: move `huggingface.co` / `*.huggingface.co` /
   `cdn-lfs.huggingface.co` / `cdn-lfs.hf.co` from `host_permissions`
-  to `optional_host_permissions`. Also moved the BYOK AI hosts and
-  Ollama localhost to optional. CSP `connect-src` keeps every host
-  listed so the extension can use them once the user opts in.
+  to `optional_host_permissions`. CSP `connect-src` keeps model-download
+  hosts listed so the extension can use them once the user opts in.
 - `src/components/Settings.tsx`: full rewrite around three tabs (AI /
   Audio / Data). Provider cards replace the 2-column button grid;
   each card collapses its own config block. New Whisper section has
@@ -96,9 +95,8 @@ Notes
   to optional. New installs see the permission prompt the first time
   they click Settings → Download.
 - The store-published v1.2.0 ships without the optional_host_permissions
-  refactor — once 1.3.0 is uploaded, the upgrade will demote the HF /
-  AI provider origins to optional automatically. No re-prompt for
-  users who already granted them.
+  refactor — once 1.3.0 is uploaded, the upgrade will demote the model-download
+  origins to optional automatically. No re-prompt for users who already granted them.
 
 ## 2026-05-23 — Cut to 3 AI buttons + Chat; fix the four reported bugs
 
@@ -114,8 +112,7 @@ Changed
 - Bug fix — "Input is too large" on long transcripts: Chrome AI now
   uses `session.measureInputUsage` + a binary head+tail trim in
   `chrome-ai.ts:fitToQuota` so the actual quota of the user's Gemini
-  Nano build drives sizing. Ollama static cap bumped 16K → 32K chars,
-  paid unchanged at 400K. PromptTemplate signature reshaped from
+  Nano build drives sizing. PromptTemplate signature reshaped from
   `user(t)` to `instructions` so the trimmable transcript lives
   separately from the fixed instructions.
 - Bug fix — Q&A markdown literal `**Q:**`: AiPanel.tsx now renders
@@ -157,9 +154,6 @@ Notes
   vs main before this pass, and the cut adds ~450 more lines deleted.
   The plan is to merge this branch to main and delete it, ending the
   floating-branch state.
-- Design doc lives at
-  `docs/superpowers/specs/2026-05-23-cut-features-and-fix-bugs-design.md`
-  with the rationale for each cut and each fix.
 - Post-review pass: CodeRabbit autofix extracted a shared
   `fetchWithPoTokenRetryCore` helper in `innertube.ts` (both
   `fetchTrackSegments` and `fetchSegmentsWithPoTokenRetry` reduce to

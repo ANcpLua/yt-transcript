@@ -50,7 +50,7 @@ interface LanguageModelStatic {
     topK?: number;
     expectedInputs?: LanguageModelExpectation[];
     expectedOutputs?: LanguageModelExpectation[];
-    // Newer field — Chrome 142+/Edge 142+. Single ISO code; takes
+    // Newer Chrome field. Single ISO code; takes
     // precedence over expectedOutputs when supported.
     outputLanguage?: string;
   }): Promise<LanguageModelSession>;
@@ -118,7 +118,6 @@ async function fitToQuota(
     const reserve = Math.max(Math.floor(quota * RESPONSE_RESERVE_RATIO), MIN_RESPONSE_RESERVE);
     // Floor at 512 tokens so even a tiny quota leaves the model some room to think.
     const headroom = Math.max(quota - used - reserve, 512);
-    console.debug(`[chrome-ai] quota=${quota} used=${used} reserve=${reserve} headroom=${headroom}`);
 
     const full = `${fixedPrefix}\n\n${trimmableContent}`;
     const fullUsage = await session.measureInputUsage(full);
@@ -155,7 +154,7 @@ export async function runChromeAiPrompt(
   options: ChromeAiPromptOptions = {},
 ): Promise<string> {
   const lm = getLanguageModel();
-  if (!lm) throw new Error("Chrome built-in AI (Prompt API) is not available in this browser. Update to Edge/Chrome 138+ or enable chrome://flags/#prompt-api-for-gemini-nano.");
+  if (!lm) throw new Error("Chrome built-in AI (Prompt API) is not available in this Chrome profile.");
   const status = await lm.availability();
   if (status === "unavailable") throw new Error("Chrome built-in AI is unavailable on this device.");
   const session = await lm.create({

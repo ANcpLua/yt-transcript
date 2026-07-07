@@ -58,16 +58,6 @@ export interface FetchChannelMessage {
   identifier: string;
 }
 
-export interface AiRequestMessage {
-  type: "ai-request";
-  provider: string;
-  apiKey: string;
-  systemPrompt: string;
-  userMessage: string;
-  ollamaUrl?: string;
-  ollamaModel?: string;
-}
-
 export interface SeekToMessage {
   type: "seek-to";
   time: number;
@@ -188,16 +178,6 @@ export interface ChannelErrorMessage {
   error: string;
 }
 
-export interface AiResultMessage {
-  type: "ai-result";
-  content: string;
-}
-
-export interface AiErrorMessage {
-  type: "ai-error";
-  error: string;
-}
-
 // -- Union types --
 
 export type ContentToBackgroundMessage =
@@ -211,7 +191,6 @@ export type PanelToBackgroundMessage =
   | FetchTracksMessage
   | FetchPlaylistMessage
   | FetchChannelMessage
-  | AiRequestMessage
   | StartTranscriptionMessage
   | StopTranscriptionMessage
   | CheckWhisperStatusMessage
@@ -229,8 +208,6 @@ export type BackgroundToPanelMessage =
   | PlaylistErrorMessage
   | ChannelResultMessage
   | ChannelErrorMessage
-  | AiResultMessage
-  | AiErrorMessage
   | TranscriptionProgressMessage
   | TranscriptionCompleteMessage
   | TranscriptionErrorMessage

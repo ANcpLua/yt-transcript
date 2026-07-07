@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 import { existsSync, mkdirSync } from "fs";
 
 const EXTENSION_PATH = "/Users/ancplua/yt-transcript/dist";
-const BROWSER = process.env.BROWSER || "chromium"; // chromium | msedge | chrome
+const BROWSER = process.env.BROWSER || "chromium"; // chromium | chrome
 const PROFILE_DIR = `/tmp/yt-test-profile-${BROWSER}`;
 const OUT_DIR = "/tmp/yt-screenshots";
 mkdirSync(OUT_DIR, { recursive: true });
@@ -35,9 +35,7 @@ const launchOpts = {
   viewport: { width: 1280, height: 800 },
   locale: "en-US",
 };
-if (BROWSER === "msedge") {
-  launchOpts.channel = "msedge";
-} else if (BROWSER === "chrome") {
+if (BROWSER === "chrome") {
   launchOpts.channel = "chrome";
 } else {
   launchOpts.channel = "chromium";

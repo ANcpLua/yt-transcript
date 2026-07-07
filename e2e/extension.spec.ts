@@ -1,82 +1,50 @@
-/**
- * E2E smoke tests for the yt-transcript Chrome extension.
- *
- * These tests are intentionally narrow: they load the unpacked extension
- * from dist/ into a persistent Chromium context and confirm the side
- * panel HTML loads without crashing. They do NOT prove that transcript
- * extraction works — that proof lives in transcript-extraction.spec.ts.
- *
- * Run: npx playwright test e2e/extension.spec.ts
- */
-import {test, expect, type BrowserContext, chromium} from "@playwright/test";
+import {test, expect, EXTENSION_DIST} from "./fixtures/chrome-extension";
 import path from "node:path";
-import fs from "node:fs";
-import {fileURLToPath} from "node:url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.resolve(__dirname, "../dist");
-const SIDE_PANEL = "sidepanel/index.html";
+test("built extension registers the declared MV3 service worker", async ({
+    extensionContext,
+    extensionId,
+    extensionManifest,
+}) => {
+    expect(path.basename(EXTENSION_DIST)).toBe("dist-chrome");
+    expect(extensionManifest.manifest_version).toBe(3);
+    expect(extensionManifest.background?.type).toBe("module");
+    expect(extensionManifest.background?.service_worker).toBe("background/service-worker.js");
 
-let context: BrowserContext;
-let extensionId: string;
-
-test.beforeAll(async () => {
-    if (!fs.existsSync(path.join(DIST, "manifest.json"))) {
-        throw new Error("dist/manifest.json not found. Run `npm run build` first.");
-    }
-
-    const userDataDir = path.join(__dirname, ".tmp-profile");
-    context = await chromium.launchPersistentContext(userDataDir, {
-        headless: false,
-        args: [
-            `--disable-extensions-except=${DIST}`,
-            `--load-extension=${DIST}`,
-            "--no-first-run",
-            "--disable-default-apps",
-        ],
+    const worker = extensionContext.serviceWorkers().find((candidate) => {
+        return new URL(candidate.url()).host === extensionId;
     });
-
-    let sw = context.serviceWorkers()[0];
-    if (!sw) {
-        sw = await context.waitForEvent("serviceworker", {timeout: 10_000});
-    }
-    extensionId = sw.url().split("/")[2]!;
+    expect(worker?.url()).toBe(`chrome-extension://${extensionId}/background/service-worker.js`);
 });
 
-test.afterAll(async () => {
-    await context?.close();
-    const tmpDir = path.join(__dirname, ".tmp-profile");
-    if (fs.existsSync(tmpDir)) {
-        fs.rmSync(tmpDir, {recursive: true, force: true});
-    }
+test("declared action popup loads from manifest.action.default_popup", async ({
+    extensionId,
+    extensionManifest,
+    openExtensionPage,
+}) => {
+    const popupPath = extensionManifest.action?.default_popup;
+    expect(popupPath).toBeTruthy();
+
+    const page = await openExtensionPage(popupPath ?? "");
+    await expect(page.locator("#root")).toBeAttached();
+    await expect(page).toHaveURL(`chrome-extension://${extensionId}/${popupPath}`);
 });
 
-test("extension service worker registers", async () => {
-    expect(extensionId).toBeTruthy();
-    expect(extensionId.length).toBe(32);
-});
-
-test("side panel HTML loads without crash", async () => {
-    const page = await context.newPage();
-    await page.goto(`chrome-extension://${extensionId}/${SIDE_PANEL}`);
-    await page.waitForLoadState("domcontentloaded");
-
-    const root = page.locator("#root");
-    await expect(root).toBeAttached();
-
-    await page.close();
-});
-
-test("content script is registered for YouTube watch URLs", async () => {
-    const manifest = JSON.parse(
-        fs.readFileSync(path.join(DIST, "manifest.json"), "utf-8")
-    );
-
-    const contentScripts = manifest.content_scripts;
-    expect(Array.isArray(contentScripts)).toBe(true);
+test("content scripts stay scoped to Chrome MV3 YouTube watch interception", async ({extensionManifest}) => {
+    const scripts = extensionManifest.content_scripts;
+    expect(Array.isArray(scripts)).toBe(true);
     expect(
-        contentScripts.some((cs: {matches: string[]}) =>
-            cs.matches.some((m) => m.includes("youtube.com/watch"))
-        )
+        scripts?.some((script) =>
+            script.world === "MAIN" &&
+            script.run_at === "document_start" &&
+            script.js?.includes("content/yt-interceptor.js") &&
+            script.matches?.some((match) => match.includes("youtube.com")),
+        ),
+    ).toBe(true);
+    expect(
+        scripts?.some((script) =>
+            script.js?.includes("content/content.js") &&
+            script.matches?.some((match) => match.includes("youtube.com/watch")),
+        ),
     ).toBe(true);
 });
