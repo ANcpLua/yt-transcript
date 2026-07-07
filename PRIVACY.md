@@ -19,10 +19,8 @@ All data stays in your browser:
 - **Transcripts**: Fetched from YouTube or Vimeo, kept in memory while the
   side panel is open. Optionally saved to your browser's IndexedDB if you
   click "Save".
-- **API keys**: If you use AI features with your own key, the key is
-  stored in `chrome.storage.local` on your device only. It is never sent
-  anywhere except directly to the AI provider you configured (OpenAI,
-  Anthropic, Google, or your local Ollama server).
+- **AI features**: Chrome built-in AI runs in the browser. The extension
+  does not ask for, store, or transmit AI service keys.
 - **History and saved transcripts**: Stored in IndexedDB. Never uploaded.
 - **Preferences**: Stored in `chrome.storage.local`.
 
@@ -52,11 +50,7 @@ The extension's outgoing network footprint:
 2. `huggingface.co` — only if you choose local Whisper transcription
    (the model weights stream from the Hugging Face CDN on first use and
    then cache locally; opt-in, never automatic).
-3. Your configured AI provider, only if you set up an API key:
-   - `api.openai.com`
-   - `api.anthropic.com`
-   - `generativelanguage.googleapis.com`
-   - `localhost:11434` for Ollama (your machine, not ours)
+3. Chrome built-in AI runs in the browser and does not add provider API hosts.
 
 No other network requests are made. You can verify this in your browser's
 Developer Tools (Network tab).

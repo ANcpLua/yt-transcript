@@ -1,9 +1,8 @@
 import {useCallback, useEffect, useRef, useState} from "react";
-import type {AiProviderId, Preferences} from "../types/transcript";
-import {getApiKey, getPreferences, removeApiKey, saveApiKey, savePreferences} from "../lib/storage/preferences";
+import type {Preferences} from "../types/transcript";
+import {getPreferences, savePreferences} from "../lib/storage/preferences";
 import {clearAllData, exportAllData} from "../lib/storage/saved";
 import {clearHistory} from "../lib/storage/history";
-import {DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_URL, getProvider} from "../lib/ai/providers";
 import {isChromeAiAvailable, isChromeAiPromptAvailable} from "../lib/ai/chrome-ai";
 
 // ---------- types & constants ----------
@@ -17,23 +16,7 @@ type WhisperState =
     | "error";
 
 type ProviderStatus = "ready" | "saved" | "unreachable" | "needs-config" | "checking";
-type KeyStatus = "idle" | "validating" | "valid" | "invalid";
 type TabId = "ai" | "audio" | "data";
-
-interface ProviderInfo {
-    id: AiProviderId;
-    label: string;
-    needsKey: boolean;
-    blurb: string;
-}
-
-const PROVIDERS: ProviderInfo[] = [
-    {id: "chrome-ai", label: "Chrome AI", needsKey: false, blurb: "Gemini Nano, on-device. No key, no network."},
-    {id: "ollama", label: "Ollama", needsKey: false, blurb: "Local LLM via Ollama. Runs on your machine."},
-    {id: "openai", label: "OpenAI", needsKey: true, blurb: "GPT-4 / GPT-4o. BYOK."},
-    {id: "anthropic", label: "Anthropic", needsKey: true, blurb: "Claude. BYOK."},
-    {id: "google", label: "Gemini", needsKey: true, blurb: "Gemini 1.5/2.0 via Google AI Studio. BYOK."},
-];
 
 // Match the patterns in manifest.json's optional_host_permissions verbatim
 // so chrome.permissions.contains / .request resolve against the same key.
@@ -47,16 +30,8 @@ const HF_ORIGINS = [
 ];
 
 const DEFAULT_PREFS: Preferences = {
-    aiProvider: null,
+    aiProvider: "chrome-ai",
     whisperModel: "tiny",
-};
-
-const INITIAL_PROVIDER_STATUS: Record<AiProviderId, ProviderStatus> = {
-    "chrome-ai": "checking",
-    ollama: "checking",
-    openai: "checking",
-    anthropic: "checking",
-    google: "checking",
 };
 
 interface SettingsProps {
@@ -91,23 +66,11 @@ function CloseIcon() {
     );
 }
 
-function ChevronIcon({open}: {open: boolean}) {
-    return (
-        <svg aria-hidden="true" className={`h-4 w-4 transition-transform ${open ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/>
-        </svg>
-    );
-}
-
 // ---------- main component ----------
 
 export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) {
     const [tab, setTab] = useState<TabId>("ai");
     const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
-    const [expandedProvider, setExpandedProvider] = useState<AiProviderId | null>(null);
-    const [keyInput, setKeyInput] = useState("");
-    const [showKey, setShowKey] = useState(false);
-    const [keyStatus, setKeyStatus] = useState<KeyStatus>("idle");
     const [storageEstimate, setStorageEstimate] = useState<{usage: number; quota: number} | null>(null);
 
     // Whisper state
@@ -116,12 +79,9 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
     const [whisperError, setWhisperError] = useState<string | null>(null);
     const [hfPermissionGranted, setHfPermissionGranted] = useState<boolean | null>(null);
 
-    // AI provider details
+    // Chrome AI details
     const [chromeAiStatus, setChromeAiStatus] = useState<"checking" | "available" | "summarizer-only" | "unavailable">("checking");
-    const [ollamaUrl, setOllamaUrl] = useState(DEFAULT_OLLAMA_URL);
-    const [ollamaModel, setOllamaModel] = useState(DEFAULT_OLLAMA_MODEL);
-    const [ollamaStatus, setOllamaStatus] = useState<"idle" | "checking" | "ok" | "fail">("idle");
-    const [providerStatus, setProviderStatus] = useState<Record<AiProviderId, ProviderStatus>>(INITIAL_PROVIDER_STATUS);
+    const [chromeAiProviderStatus, setChromeAiProviderStatus] = useState<ProviderStatus>("checking");
 
     const hasWebGpu = typeof (navigator as Navigator & { gpu?: unknown }).gpu !== "undefined";
 
@@ -139,9 +99,6 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
             const p = await getPreferences();
             if (cancelled) return;
             setPrefs(p);
-            setExpandedProvider(p.aiProvider);
-            setOllamaUrl(p.ollamaUrl ?? DEFAULT_OLLAMA_URL);
-            setOllamaModel(p.ollamaModel ?? DEFAULT_OLLAMA_MODEL);
         })();
         return () => { cancelled = true; };
     }, [isOpen]);
@@ -150,78 +107,22 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
     useEffect(() => {
         if (!isOpen) return;
         let cancelled = false;
-        setProviderStatus((s) => ({...s, "chrome-ai": "checking"}));
+        setChromeAiProviderStatus("checking");
         void (async () => {
             const promptOk = await isChromeAiPromptAvailable();
             if (cancelled) return;
             if (promptOk) {
                 setChromeAiStatus("available");
-                setProviderStatus((s) => ({...s, "chrome-ai": "ready"}));
+                setChromeAiProviderStatus("ready");
                 return;
             }
             const summarizerOk = await isChromeAiAvailable();
             if (cancelled) return;
             setChromeAiStatus(summarizerOk ? "summarizer-only" : "unavailable");
-            setProviderStatus((s) => ({...s, "chrome-ai": summarizerOk ? "saved" : "unreachable"}));
+            setChromeAiProviderStatus(summarizerOk ? "saved" : "unreachable");
         })();
         return () => { cancelled = true; };
     }, [isOpen]);
-
-    // ----- BYOK key presence -----
-    useEffect(() => {
-        if (!isOpen) return;
-        let cancelled = false;
-        void (async () => {
-            const checks = await Promise.all([
-                getApiKey("openai"),
-                getApiKey("anthropic"),
-                getApiKey("google"),
-            ]);
-            if (cancelled) return;
-            setProviderStatus((s) => ({
-                ...s,
-                openai: checks[0] ? "saved" : "needs-config",
-                anthropic: checks[1] ? "saved" : "needs-config",
-                google: checks[2] ? "saved" : "needs-config",
-            }));
-        })();
-        return () => { cancelled = true; };
-    }, [isOpen]);
-
-    // ----- Ollama probe -----
-    useEffect(() => {
-        if (!isOpen) return;
-        let cancelled = false;
-        setProviderStatus((s) => ({...s, ollama: "checking"}));
-        void (async () => {
-            const provider = getProvider("ollama", {
-                url: (ollamaUrl || DEFAULT_OLLAMA_URL).trim(),
-                model: (ollamaModel || DEFAULT_OLLAMA_MODEL).trim(),
-            });
-            let ok = false;
-            try {
-                ok = await provider.validateKey();
-            } catch {
-                ok = false;
-            }
-            if (cancelled) return;
-            setProviderStatus((s) => ({...s, ollama: ok ? "ready" : "unreachable"}));
-        })();
-        return () => { cancelled = true; };
-    }, [isOpen, ollamaUrl, ollamaModel]);
-
-    // ----- selected provider key reload -----
-    useEffect(() => {
-        if (!isOpen || !expandedProvider) return;
-        let cancelled = false;
-        void (async () => {
-            const existing = await getApiKey(expandedProvider);
-            if (cancelled) return;
-            setKeyInput(existing ?? "");
-            setKeyStatus("idle");
-        })();
-        return () => { cancelled = true; };
-    }, [isOpen, expandedProvider]);
 
     // ----- Whisper status + HF permission -----
     useEffect(() => {
@@ -303,88 +204,7 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
         [prefs, onPreferencesChange],
     );
 
-    // Auto-pick first ready provider when none is configured yet.
-    useEffect(() => {
-        if (!isOpen) return;
-        if (prefs.aiProvider) return;
-        for (const p of PROVIDERS) {
-            if (providerStatus[p.id] === "ready") {
-                updatePref("aiProvider", p.id);
-                setExpandedProvider(p.id);
-                return;
-            }
-        }
-    }, [isOpen, prefs.aiProvider, providerStatus, updatePref]);
-
     // ----- handlers -----
-
-    const handleSaveKey = async () => {
-        if (!expandedProvider || !keyInput.trim()) return;
-        setKeyStatus("validating");
-        const provider = getProvider(expandedProvider, keyInput.trim());
-        let valid = false;
-        try {
-            valid = await provider.validateKey();
-        } catch {
-            // Network / CORS / runtime errors land the user in the same
-            // "invalid" UI state as an explicit false from the provider —
-            // the key isn't usable right now, that's all the user needs.
-            valid = false;
-        }
-        if (valid) {
-            await saveApiKey(expandedProvider, keyInput.trim());
-            updatePref("aiProvider", expandedProvider);
-            setKeyStatus("valid");
-            setProviderStatus((s) => ({...s, [expandedProvider]: "ready"}));
-        } else {
-            setKeyStatus("invalid");
-            setProviderStatus((s) => ({...s, [expandedProvider]: "unreachable"}));
-        }
-    };
-
-    const handleClearKey = async () => {
-        if (!expandedProvider) return;
-        await removeApiKey(expandedProvider);
-        setKeyInput("");
-        setKeyStatus("idle");
-        setProviderStatus((s) => ({...s, [expandedProvider]: "needs-config"}));
-        if (prefs.aiProvider === expandedProvider) {
-            updatePref("aiProvider", null);
-        }
-    };
-
-    const handleSelectChromeAi = () => {
-        if (chromeAiStatus === "unavailable") return;
-        updatePref("aiProvider", "chrome-ai");
-    };
-
-    const handleTestOllama = async () => {
-        setOllamaStatus("checking");
-        setProviderStatus((s) => ({...s, ollama: "checking"}));
-        const provider = getProvider("ollama", {
-            url: ollamaUrl.trim() || DEFAULT_OLLAMA_URL,
-            model: ollamaModel.trim() || DEFAULT_OLLAMA_MODEL,
-        });
-        let ok = false;
-        try {
-            ok = await provider.validateKey();
-        } catch {
-            ok = false;
-        }
-        setOllamaStatus(ok ? "ok" : "fail");
-        setProviderStatus((s) => ({...s, ollama: ok ? "ready" : "unreachable"}));
-        if (ok) {
-            const next = {
-                ...prefs,
-                aiProvider: "ollama" as const,
-                ollamaUrl: ollamaUrl.trim() || DEFAULT_OLLAMA_URL,
-                ollamaModel: ollamaModel.trim() || DEFAULT_OLLAMA_MODEL,
-            };
-            setPrefs(next);
-            void savePreferences(next);
-            onPreferencesChange(next);
-        }
-    };
 
     const handleExport = async () => {
         const data = await exportAllData();
@@ -448,10 +268,6 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
 
     if (!isOpen) return null;
 
-    const activeProvider = prefs.aiProvider;
-    const activeProviderInfo = PROVIDERS.find((p) => p.id === activeProvider);
-    const activeProviderStatus = activeProvider ? providerStatus[activeProvider] : null;
-
     return (
         <div
             className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 backdrop-blur-sm py-8"
@@ -507,180 +323,28 @@ export function Settings({isOpen, onClose, onPreferencesChange}: SettingsProps) 
                 <div className="max-h-[68vh] overflow-y-auto px-5 py-4">
                     {tab === "ai" && (
                         <section className="space-y-4">
-                            {/* Active provider summary */}
                             <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40">
-                                <span className="text-xs text-slate-500 dark:text-slate-400">Active provider</span>
-                                {activeProvider && activeProviderInfo && activeProviderStatus ? (
-                                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-200">
-                                        <StatusDot status={activeProviderStatus}/>
-                                        {activeProviderInfo.label}
-                                        {activeProviderStatus === "ready" && " — ready"}
-                                        {activeProviderStatus === "saved" && " — saved"}
-                                        {activeProviderStatus === "unreachable" && " — failing"}
-                                    </span>
-                                ) : (
-                                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-                                        <StatusDot status="needs-config"/>
-                                        Pick one below
-                                    </span>
-                                )}
+                                <span className="text-xs text-slate-500 dark:text-slate-400">AI engine</span>
+                                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-200">
+                                    <StatusDot status={chromeAiProviderStatus}/>
+                                    Chrome AI
+                                    {chromeAiProviderStatus === "ready" && " — ready"}
+                                    {chromeAiProviderStatus === "saved" && " — summary only"}
+                                    {chromeAiProviderStatus === "unreachable" && " — unavailable"}
+                                    {chromeAiProviderStatus === "checking" && " — checking"}
+                                </span>
                             </div>
 
-                            {/* Provider cards */}
-                            <div className="space-y-2">
-                                {PROVIDERS.map((p) => {
-                                    const status = providerStatus[p.id];
-                                    const isExpanded = expandedProvider === p.id;
-                                    const isActive = prefs.aiProvider === p.id;
-                                    return (
-                                        <div
-                                            key={p.id}
-                                            className={`rounded-lg border transition-colors ${
-                                                isActive
-                                                    ? "border-slate-900 dark:border-white"
-                                                    : "border-slate-200 dark:border-slate-700"
-                                            }`}
-                                        >
-                                            <button
-                                                onClick={() => setExpandedProvider(isExpanded ? null : p.id)}
-                                                className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
-                                            >
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-sm font-medium text-slate-900 dark:text-white">
-                                                            {p.label}
-                                                        </span>
-                                                        {isActive && (
-                                                            <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-                                                                Active
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{p.blurb}</p>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <StatusDot status={status}/>
-                                                    <ChevronIcon open={isExpanded}/>
-                                                </div>
-                                            </button>
-                                            {isExpanded && (
-                                                <div className="border-t border-slate-100 px-3 py-3 dark:border-slate-800">
-                                                    {p.id === "chrome-ai" && (
-                                                        <div className="space-y-2">
-                                                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                                                                {chromeAiStatus === "checking" && "Checking…"}
-                                                                {chromeAiStatus === "available" && "Ready — supports every feature."}
-                                                                {chromeAiStatus === "summarizer-only" && "Summary only. Enable the Prompt API flag for the rest."}
-                                                                {chromeAiStatus === "unavailable" && (
-                                                                    <>
-                                                                        Not detected. In Edge or Chrome 138+, enable the Prompt API flag at{" "}
-                                                                        <code className="rounded bg-slate-100 px-1 font-mono text-[11px] dark:bg-slate-800">chrome://flags</code>
-                                                                        {" "}then restart.
-                                                                    </>
-                                                                )}
-                                                            </p>
-                                                            {isActive ? (
-                                                                <span className="text-xs text-slate-500 dark:text-slate-400">Selected as your AI provider.</span>
-                                                            ) : (
-                                                                <button
-                                                                    onClick={handleSelectChromeAi}
-                                                                    disabled={chromeAiStatus === "unavailable"}
-                                                                    className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-40 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-                                                                >
-                                                                    Use Chrome AI
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    )}
-
-                                                    {p.id === "ollama" && (
-                                                        <div className="space-y-3">
-                                                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                                                                Local LLM via{" "}
-                                                                <a href="https://ollama.com/download" target="_blank" rel="noreferrer" className="underline decoration-slate-300 underline-offset-2 hover:decoration-slate-500 dark:decoration-slate-600">Ollama</a>.
-                                                                Run <code className="rounded bg-slate-100 px-1 font-mono text-[11px] dark:bg-slate-800">ollama pull llama3.2</code> first.
-                                                            </p>
-                                                            <div className="grid gap-2">
-                                                                <label className="text-xs text-slate-500 dark:text-slate-400">
-                                                                    Server
-                                                                    <input
-                                                                        type="text"
-                                                                        value={ollamaUrl}
-                                                                        onChange={(e) => { setOllamaUrl(e.target.value); setOllamaStatus("idle"); }}
-                                                                        placeholder={DEFAULT_OLLAMA_URL}
-                                                                        className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                                                                    />
-                                                                </label>
-                                                                <label className="text-xs text-slate-500 dark:text-slate-400">
-                                                                    Model
-                                                                    <input
-                                                                        type="text"
-                                                                        value={ollamaModel}
-                                                                        onChange={(e) => { setOllamaModel(e.target.value); setOllamaStatus("idle"); }}
-                                                                        placeholder={DEFAULT_OLLAMA_MODEL}
-                                                                        className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                                                                    />
-                                                                </label>
-                                                            </div>
-                                                            <div className="flex items-center gap-2">
-                                                                <button
-                                                                    onClick={() => void handleTestOllama()}
-                                                                    disabled={ollamaStatus === "checking"}
-                                                                    className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-40 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-                                                                >
-                                                                    {ollamaStatus === "checking" ? "Testing…" : isActive ? "Update" : "Test connection"}
-                                                                </button>
-                                                                {ollamaStatus === "ok" && <span className="text-xs text-emerald-600 dark:text-emerald-400">Connected</span>}
-                                                                {ollamaStatus === "fail" && <span className="text-xs text-red-600 dark:text-red-400">Could not reach Ollama</span>}
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    {p.needsKey && (
-                                                        <div className="space-y-2">
-                                                            <div className="flex gap-2">
-                                                                <input
-                                                                    type={showKey ? "text" : "password"}
-                                                                    value={keyInput}
-                                                                    onChange={(e) => { setKeyInput(e.target.value); setKeyStatus("idle"); }}
-                                                                    onFocus={() => setShowKey(true)}
-                                                                    onBlur={() => setShowKey(false)}
-                                                                    placeholder="API key"
-                                                                    spellCheck={false}
-                                                                    className="flex-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 font-mono text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                                                                />
-                                                                <button
-                                                                    onClick={() => void handleSaveKey()}
-                                                                    disabled={keyStatus === "validating" || !keyInput.trim()}
-                                                                    className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-40 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-                                                                >
-                                                                    {keyStatus === "validating" ? "Testing…" : keyStatus === "valid" ? "Re-test" : "Save & test"}
-                                                                </button>
-                                                            </div>
-                                                            <div className="flex items-center justify-between">
-                                                                <p className="text-[11px] text-slate-500 dark:text-slate-400">Stored locally. Save & test pings the provider once.</p>
-                                                                {keyInput && (
-                                                                    <button
-                                                                        onClick={() => void handleClearKey()}
-                                                                        className="text-[11px] text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-                                                                    >
-                                                                        Clear
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                            {keyStatus === "valid" && (
-                                                                <p className="text-[11px] text-emerald-600 dark:text-emerald-400">Verified.</p>
-                                                            )}
-                                                            {keyStatus === "invalid" && (
-                                                                <p className="text-[11px] text-red-600 dark:text-red-400">Rejected by the provider.</p>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
+                            <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800/40">
+                                <p className="text-sm text-slate-700 dark:text-slate-200">
+                                    Chrome built-in AI is the only AI engine for this extension.
+                                </p>
+                                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                    {chromeAiStatus === "checking" && "Checking this Chrome profile…"}
+                                    {chromeAiStatus === "available" && "Ready for Summary, Key points, Q&A, and Chat."}
+                                    {chromeAiStatus === "summarizer-only" && "Ready for Summary. Chat and Q&A need Chrome's Prompt API."}
+                                    {chromeAiStatus === "unavailable" && "Unavailable in this Chrome profile."}
+                                </p>
                             </div>
                         </section>
                     )}

@@ -2,7 +2,7 @@
 
 ## Scope
 
-Free MV3 browser extension (Chrome/Edge side panel) that replaces youtube-transcript.io with zero cost.
+Free MV3 Chrome side-panel extension that replaces youtube-transcript.io with zero cost.
 Everything they gate behind credits, logins, or paid tiers — we do free, locally, no backend.
 
 When you are asked to work on this project, you must read this entire file first. Do not skip sections.
@@ -12,7 +12,7 @@ is in this file.
 ## Hard Constraints
 
 - **ZERO COST.** No backend. No paid APIs. No accounts. No credits. No server. Extension only.
-- **AI = BYOK or Chrome built-in AI only.** User provides their own API key. Key stored in chrome.storage only. Never sent to our server (we have no server). AI calls go browser → provider API directly. Chrome built-in AI (window.ai) is the free-tier default.
+- **AI = Chrome built-in AI only.** No API keys, accounts, provider setup, backend proxy, or paid AI service path. Chrome built-in AI is the managed default.
 - **No tracking.** No analytics, no cookies, no telemetry. Network tab must show zero requests to tracking domains.
 - **No npm packages that phone home.** Audit every dependency.
 - **Stack: React 19, Vite, Tailwind CSS 4, TypeScript strict.** No exceptions.
@@ -93,8 +93,7 @@ stabilization pass cut 15 AI prompts (Sentiment, Topics, Mindmap, Quotes, Quiz,
 Flashcards, Study guide, Study notes, Generate Q&A, Blog outline, Social posts, SEO
 keywords, Entities, Chapter summary, Action items) and the BilingualView component.
 The 4 surviving AI surfaces are Summary, Key points, Q&A, and Chat. See `feature_parity`
-above for status, and `docs/superpowers/specs/2026-05-23-cut-features-and-fix-bugs-design.md`
-for the rationale.
+above for status.
 
 Lower-tier items (`TranscriptView.tsx` / `AiPanel.tsx` splits, icon-set
 consolidation) remain out of scope unless a regression surfaces.
@@ -141,7 +140,7 @@ skip steps or do them in wrong order):
    - [ ] No `any` types introduced
    - [ ] No new npm dependencies added without justification
    - [ ] No network requests to tracking/analytics domains
-   - [ ] AI features use BYOK routing only (never hardcoded API keys)
+   - [ ] AI features use Chrome built-in AI only (no API keys or provider setup)
    - [ ] chrome.storage used for persistence (not localStorage — this is an extension)
    - [ ] Existing tests still pass (if any)
    - [ ] No `console.log` left in production code (use `console.debug` behind a flag if needed)
@@ -235,7 +234,7 @@ weights stream from the Hugging Face CDN on first use and cache in
 
 ## AI Prompt Templates
 
-All AI features route through the same BYOK pipeline in `lib/ai/providers.ts`. Adding a new AI feature
+All AI features route through Chrome built-in AI in `lib/ai/chrome-ai.ts`. Adding a new AI feature
 means adding a prompt template to `lib/ai/prompts.ts` and a button/section in `AiPanel.tsx`.
 
 <ai_prompt_inventory>
@@ -261,16 +260,11 @@ To add a new prompt:
    the caller appends the transcript; Chrome AI measures it via `fitToQuota`)
 3. Add a button entry to `FEATURES` in `AiPanel.tsx`
 
-**Provider sizing rules** (`lib/ai/prompts.ts:STATIC_LIMITS`, `chrome-ai.ts:fitToQuota`):
+**Chrome AI sizing rule** (`chrome-ai.ts:fitToQuota`):
 
 - **Chrome AI** — adaptive. `session.measureInputUsage` drives a binary head+tail trim
   to fit the actual quota of the user's Gemini Nano build. Never throws "Input is too
   large" again.
-- **Ollama** — 32 000 char cap on transcript (~8K tokens), fits modern 7B-13B local
-  models. Bump the cap if anyone needs more.
-- **Paid (OpenAI / Anthropic / Google)** — 400 000 char cap on transcript (~100K
-  tokens), fits Claude / GPT-4o / Gemini context windows comfortably.
-
 </ai_prompt_inventory>
 
 ## Project Structure
@@ -311,7 +305,7 @@ yt-transcript/
       TranscriptView.tsx           # Transcript display, view modes, search (~26 KB)
       ExportBar.tsx                # Copy + download buttons (all 6 formats)
       AiPanel.tsx                  # AI features panel (~16 KB) with Essentials + More
-      Settings.tsx                 # BYOK API keys, Chrome AI, Ollama, Whisper, prefs
+      Settings.tsx                 # Chrome AI status, Whisper, prefs
       History.tsx                  # Recent history modal
       SavedList.tsx                # Saved transcripts modal
       BatchProgress.tsx            # Batch processing progress + per-item exports
@@ -336,7 +330,6 @@ yt-transcript/
       exportCsv.ts                 # CSV export
       exportMarkdown.ts            # Markdown / Notion / Obsidian
       ai/
-        providers.ts               # OpenAI, Anthropic, Google, Ollama, Chrome AI
         prompts.ts                 # Prompt templates (all DONE — see ai_prompt_inventory)
         chrome-ai.ts               # Chrome built-in Prompt API + Summarizer wrappers
       intercept/
@@ -428,7 +421,7 @@ After completing any work session, verify:
 2. **Build**: `npm run build` — produces working `dist/` directory
 3. **No regressions**: Features marked "DONE" in the parity table still work
 4. **Side panel fit**: All UI renders correctly at 400px width
-5. **No paid services**: No API keys hardcoded, no backend calls, no tracking
+5. **No paid services**: No API keys, no backend calls, no tracking
 6. **Extension APIs**: Uses `chrome.storage` not `localStorage`, `chrome.runtime.sendMessage` not `window.postMessage`
 7. **Type safety**: No `any` types, no `@ts-ignore`, no `as unknown as X` hacks
 
@@ -528,17 +521,10 @@ manual verification above and confirm:
 
 1. `npm run zip` produces `yt-transcript-chrome.zip` (≈ 5.7 MB).
 2. Chrome Web Store: upload to
-   <https://chrome.google.com/webstore/devconsole>. The 1.3.0 upgrade
-   demotes HF + BYOK AI hosts to `optional_host_permissions` — the
-   review flow lists this as a permissions diff but it is a *reduction*
-   in surface area, not an expansion, so it should pass.
-3. Edge and Firefox are not supported targets. Edge happens to load the
-   Chrome zip because both are Chromium with the MV3 surface we use,
-   but we don't test or ship there. Firefox was dropped on 2026-05-23
-   along with `manifest.firefox.json` and the build-firefox script —
-   `chrome.tabCapture` / `chrome.offscreen` / `chrome.sidePanel` aren't
-   available there and Chrome built-in AI (`window.ai`) is Chromium-only,
-   so the free-tier UX collapsed.
+   <https://chrome.google.com/webstore/devconsole>. The current build keeps
+   Hugging Face model-download hosts optional and has no AI provider host
+   permissions.
+3. No other browser store targets are supported.
 4. Screenshots in `store/images/` predate the Settings redesign. Refresh
    `settings-chrome.png` (Settings → Audio tab) before submitting if
    the store listing displays it.

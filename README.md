@@ -13,7 +13,7 @@ and Vimeo transcripts from a side panel.
   are fetched at once.
 - Export to TXT, SRT, VTT, JSON, CSV, and Markdown.
 - Local history, saved transcripts, tags, highlights, and notes.
-- Optional BYOK AI providers and Chrome built-in AI where available.
+- Chrome built-in AI for summaries, key points, Q&A, and chat where available.
 - Optional local Whisper transcription for videos without captions.
 
 ## Limits
@@ -32,9 +32,7 @@ npm install
 npm run build
 ```
 
-Load `dist/` as an unpacked extension in Chrome. (The same build also loads on
-Edge — both are Chromium with the MV3 surface we use — but we test and ship
-only against Chrome.)
+Load `dist/` as an unpacked extension in Chrome.
 
 Release zip for the Chrome Web Store:
 

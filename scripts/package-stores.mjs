@@ -3,10 +3,7 @@
  * Run after `npm run build` — expects dist/ to exist.
  *
  * Outputs:
- *   yt-transcript-chrome.zip  — Chrome Web Store. The same zip also loads
- *                                cleanly on Edge (both are Chromium with the
- *                                MV3 API surface we use), so we don't ship a
- *                                separate Edge bundle.
+ *   yt-transcript-chrome.zip  — Chrome Web Store.
  */
 import {execSync} from "child_process";
 import {existsSync, rmSync} from "fs";
