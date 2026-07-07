@@ -100,11 +100,17 @@ cpSync(
 // and the WASM fallback.
 const ortVendor = resolve(dist, "vendor/transformers");
 mkdirSync(ortVendor, { recursive: true });
+// transformers v4 externalized the ORT .wasm to onnxruntime-web (the .jsep.mjs
+// glue still ships from transformers). Resolve each asset from whichever package
+// currently provides it so the vendored pair stays colocated by name.
+const ortSrcDirs = [
+  "node_modules/@huggingface/transformers/dist",
+  "node_modules/onnxruntime-web/dist",
+];
 for (const f of ["ort-wasm-simd-threaded.jsep.mjs", "ort-wasm-simd-threaded.jsep.wasm"]) {
-  cpSync(
-    resolve(root, "node_modules/@huggingface/transformers/dist", f),
-    resolve(ortVendor, f),
-  );
+  const src = ortSrcDirs.map((d) => resolve(root, d, f)).find(existsSync);
+  if (!src) throw new Error(`vendored ORT asset not found: ${f}`);
+  cpSync(src, resolve(ortVendor, f));
 }
 
 // 6. Copy static assets
