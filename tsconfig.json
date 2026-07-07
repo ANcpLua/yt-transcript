@@ -23,8 +23,7 @@
       "@/*": [
         "./src/*"
       ]
-    },
-    "baseUrl": "."
+    }
   },
   "files": [],
   "references": [
