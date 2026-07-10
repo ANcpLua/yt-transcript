@@ -7,12 +7,11 @@ Rolling log of completed task sessions (max 20). Oldest first.
 Changed
 
 - Removed unearned working-state claims (README, AGENTS.md, store/, docs/,
-  e2e/screenshots/, e2e/extension.spec.ts) so the docs reflect the actual
+  e2e/extension.spec.ts) so the docs reflect the actual
   broken state instead of victory-lapping it.
 - Added `e2e/transcript-extraction.spec.ts` — failing reproducer that
   drives an unpacked extension via Playwright and asserts ≥10
-  `[role="listitem"]` caption rows for a real watch URL. Failure artifact
-  preserved under `e2e/screenshots/20260514T211816Z/`.
+  `[role="listitem"]` caption rows for a real watch URL.
 - Fix: `manifest.json` CSP allows `*.youtube.com`/`*.googlevideo.com`/
   Vimeo hosts in `connect-src`; `innertube.ts` reorders clients to
   ANDROID_VR-first (non-`exp=xpe` URLs); `content.ts` issues a

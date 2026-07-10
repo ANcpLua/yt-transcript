@@ -506,12 +506,6 @@ npm run build && \
   npx playwright test e2e/transcript-extraction.spec.ts
 ```
 
-A previous run's failure artifacts live in
-`e2e/screenshots/20260514T211816Z/` — the side panel surfacing
-"Couldn't fetch transcript" with the three recovery buttons, taken
-from the broken `main` state before any of the commits on this
-branch.
-
 ## Store Publishing
 
 The published v1.2.0 .crx is the broken pre-intercept-first build.
