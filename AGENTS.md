@@ -509,10 +509,13 @@ npm run build && \
 
 ## Store Publishing
 
-The published v1.2.0 .crx is the broken pre-intercept-first build.
-v1.3.0 includes the F-001 fix, the Whisper download progress fix, and
-the HF host-permission opt-in. Before uploading a new build, run the
-manual verification above and confirm:
+Store listing: [YouTube & Vimeo Transcript Extractor](https://chromewebstore.google.com/detail/youtube-vimeo-transcript/ahddbfbjafmbceehebpeanpnlbaimepk).
+The published store build is 1.3.1 (uploaded 2026-06-03) and predates the
+AI-panel simplification, the provider-layer removal, and the TypeScript 6 /
+dependency-major updates that landed on `main` afterwards without a version
+bump. Bump `version` in `manifest.json` + `package.json` before the next
+upload. Before uploading a new build, run the manual verification above and
+confirm:
 
 1. `npm run zip` produces `yt-transcript-chrome.zip` (≈ 5.7 MB).
 2. Chrome Web Store: upload to

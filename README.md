@@ -66,7 +66,10 @@ no accounts, no telemetry.
 
 ## Install
 
-The extension is not on the Chrome Web Store yet — install from source.
+**Chrome Web Store**: [YouTube & Vimeo Transcript Extractor](https://chromewebstore.google.com/detail/youtube-vimeo-transcript/ahddbfbjafmbceehebpeanpnlbaimepk).
+The store build lags this repository — install from source below for the
+current code.
+
 Building requires Node 22+; running it requires a Chrome version with
 side-panel support (114+). AI features additionally require a Chrome build
 with built-in AI available.
