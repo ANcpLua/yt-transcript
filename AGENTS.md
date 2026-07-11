@@ -510,14 +510,14 @@ npm run build && \
 ## Store Publishing
 
 Store listing: [YouTube & Vimeo Transcript Extractor](https://chromewebstore.google.com/detail/youtube-vimeo-transcript/ahddbfbjafmbceehebpeanpnlbaimepk).
-The published store build is 1.3.1 (uploaded 2026-06-03) and predates the
-AI-panel simplification, the provider-layer removal, and the TypeScript 6 /
-dependency-major updates that landed on `main` afterwards without a version
-bump. Bump `version` in `manifest.json` + `package.json` before the next
-upload. Before uploading a new build, run the manual verification above and
-confirm:
+Store state: 1.4.0 (git tag `v1.4.0`) was submitted for review on
+2026-07-11 and is pending; the published build stays 1.3.1 (uploaded
+2026-06-03, predates the AI-panel simplification / provider-layer removal /
+TS6 + dep-major updates) until review passes. Keep `manifest.json` +
+`package.json` versions bumped in lockstep for every upload. Before
+uploading a new build, run the manual verification above and confirm:
 
-1. `npm run zip` produces `yt-transcript-chrome.zip` (≈ 5.7 MB).
+1. `npm run zip` produces `yt-transcript-chrome.zip` (≈ 6.7 MB as of 1.4.0).
 2. Chrome Web Store: upload to
    <https://chrome.google.com/webstore/devconsole>. The current build keeps
    Hugging Face model-download hosts optional and has no AI provider host
