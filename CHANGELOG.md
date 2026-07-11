@@ -166,3 +166,22 @@ Notes
   and a request-id cancel protocol for batches) were verified against
   current code and skipped as out of scope for this stabilization
   pass.
+
+## 2026-07-11 — v1.4.0: version bump for Chrome Web Store update
+
+Changed
+
+- Bumped `manifest.json` + `package.json` version 1.3.1 → 1.4.0. The
+  store build uploaded 2026-06-03 was also labeled 1.3.1 but predates
+  the AI-panel simplification, provider-layer removal, TypeScript 6,
+  and dependency-major updates (incl. @huggingface/transformers v4)
+  that landed on main afterwards — this bump disambiguates the two.
+
+Verified
+
+- `npm run lint` zero errors; manifest unit tests 3/3 pass;
+  `npm run zip` produced `yt-transcript-chrome.zip` (6.7 MB, up from
+  ~5.7 MB at 1.3.1 — transformers v4).
+- Real-Chrome content verification per AGENTS.md "How to verify the
+  extension actually works" is required before submitting this build
+  for store review.
