@@ -342,7 +342,8 @@ yt-transcript/
         saved.ts                   # IndexedDB saved transcripts + highlights + notes
         preferences.ts             # chrome.storage user preferences
       batch/
-        queue.ts                   # Sequential batch processing with progress
+        queue.ts                   # Concurrent batch processing (default 4
+                                   # workers, clamped 1-8) with progress
     types/
       transcript.ts                # Shared types
       messages.ts                  # Extension message protocol types
