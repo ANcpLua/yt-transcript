@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Transcript Extractor** does not collect, store, or transmit any
+**Video Transcript** does not collect, store, or transmit any
 personal data.
 
 ## What this extension does NOT do

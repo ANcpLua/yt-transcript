@@ -1,6 +1,6 @@
 # yt-transcript
 
-**Transcript Extractor** — a Chrome side-panel extension (Manifest V3) that
+**Video Transcript** — a Chrome side-panel extension (Manifest V3) that
 turns any video into text. It extracts transcripts from the video pages you
 browse, transcribes **any dropped video or audio file** locally with Whisper,
 and analyzes results with Chrome built-in AI. No backend, no accounts, no
@@ -71,7 +71,7 @@ telemetry.
 
 ## Install
 
-**Chrome Web Store**: [Transcript Extractor](https://chromewebstore.google.com/detail/ahddbfbjafmbceehebpeanpnlbaimepk)
+**Chrome Web Store**: [Video Transcript](https://chromewebstore.google.com/detail/ahddbfbjafmbceehebpeanpnlbaimepk)
 (listing rename to the generic name is rolling out with 1.5.0).
 The store build lags this repository — install from source below for the
 current code.

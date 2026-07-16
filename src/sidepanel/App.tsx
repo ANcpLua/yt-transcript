@@ -735,7 +735,7 @@ export function App() {
             <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/85 backdrop-blur-md dark:border-slate-800/60 dark:bg-[#0b0d10]/85">
                 <div className="mx-auto flex max-w-5xl items-center gap-2 px-3 py-1.5">
                     {/* Word-mark — the wordmark IS the only branding here */}
-                    <span className="font-serif text-[15px] italic leading-none tracking-tight text-slate-900 dark:text-slate-100">t·x</span>
+                    <span className="font-serif text-[15px] italic leading-none tracking-tight text-slate-900 dark:text-slate-100">v·t</span>
                     {liveCaptureVideoId && transcript?.videoId === liveCaptureVideoId && state === "loaded" && (
                         <span
                             title="Captured live from the video tab — no API call made"

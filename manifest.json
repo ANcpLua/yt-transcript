@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Transcript Extractor",
+  "name": "Video Transcript",
   "description": "Turn any video into text — capture transcripts as you browse, or drop a video/audio file for local AI transcription. Free.",
   "version": "1.5.0",
   "permissions": [
@@ -26,7 +26,7 @@
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://*.youtube.com https://*.googlevideo.com https://*.vimeo.com https://player.vimeo.com https://huggingface.co https://*.huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs.hf.co"
   },
   "action": {
-    "default_title": "Transcript Extractor",
+    "default_title": "Video Transcript",
     "default_popup": "sidepanel/index.html",
     "default_icon": {
       "16": "icons/icon-16.png",
