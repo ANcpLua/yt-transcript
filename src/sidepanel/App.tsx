@@ -115,6 +115,19 @@ async function captureViaYouTubeTab(videoId: string): Promise<boolean> {
     });
 }
 
+// Files a drop/pick can transcribe. MIME type is authoritative when the OS
+// provides one; the extension fallback covers containers that commonly
+// arrive with an empty type (e.g. .mkv on macOS).
+const MEDIA_EXT_RE = /\.(mp4|m4v|m4a|webm|mkv|mov|avi|mp3|wav|ogg|oga|opus|flac|aac|3gp|wma)$/i;
+
+function isMediaFile(file: File): boolean {
+    return (
+        file.type.startsWith("video/") ||
+        file.type.startsWith("audio/") ||
+        MEDIA_EXT_RE.test(file.name)
+    );
+}
+
 // ---------- header icons ----------
 
 function GearIcon() {
@@ -209,6 +222,11 @@ export function App() {
     const [pendingVideoId, setPendingVideoId] = useState<string | null>(null);
     const [pendingTitle, setPendingTitle] = useState("");
     const [liveCaptureVideoId, setLiveCaptureVideoId] = useState<string | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const dragDepthRef = useRef(0);
+    // blob: URL for the currently transcribing dropped file — revoked when
+    // transcription completes, errors, or is replaced by a new drop.
+    const fileBlobUrlRef = useRef<string | null>(null);
     const lastFetchRef = useRef(0);
     const batchRef = useRef<BatchProcessor | null>(null);
     const lastPlayerTimeRef = useRef(0);
@@ -289,6 +307,13 @@ export function App() {
         return () => chrome.runtime.onMessage.removeListener(listener);
     }, [transcript?.videoId, state]);
 
+    const releaseFileBlob = useCallback(() => {
+        if (fileBlobUrlRef.current) {
+            URL.revokeObjectURL(fileBlobUrlRef.current);
+            fileBlobUrlRef.current = null;
+        }
+    }, []);
+
     // Listen for player-time and transcription messages
     useEffect(() => {
         const listener = (message: { type: string; currentTime?: number; progress?: number; segments?: Segment[]; videoId?: string; title?: string; error?: string }) => {
@@ -314,6 +339,7 @@ export function App() {
                     break;
                 case "transcription-complete":
                     if (message.segments) {
+                        releaseFileBlob();
                         setTranscript({
                             videoId: message.videoId ?? pendingVideoId ?? "",
                             title: message.title ?? pendingTitle,
@@ -327,6 +353,7 @@ export function App() {
                     }
                     break;
                 case "transcription-error":
+                    releaseFileBlob();
                     setError({error: "fetch_failed", message: message.error ?? "Transcription failed"});
                     setState("error");
                     setTranscriptionProgress(0);
@@ -335,7 +362,7 @@ export function App() {
         };
         chrome.runtime.onMessage.addListener(listener);
         return () => chrome.runtime.onMessage.removeListener(listener);
-    }, [pendingVideoId, pendingTitle]);
+    }, [pendingVideoId, pendingTitle, releaseFileBlob]);
 
     // Hash-based routing
     useEffect(() => {
@@ -518,6 +545,27 @@ export function App() {
         setError(null);
     }, []);
 
+    const handleFileTranscribe = useCallback((file: File) => {
+        releaseFileBlob();
+        const blobUrl = URL.createObjectURL(file);
+        fileBlobUrlRef.current = blobUrl;
+        const title = file.name.replace(/\.[^.]+$/, "");
+        const videoId = `file-${Date.now()}`;
+        setPendingVideoId(videoId);
+        setPendingTitle(title);
+        setTranscript(null);
+        setError(null);
+        setState("transcribing");
+        setTranscriptionProgress(0);
+        chrome.runtime
+            .sendMessage({type: "transcribe-file", blobUrl, videoId, title})
+            .catch(() => {
+                releaseFileBlob();
+                setError({error: "fetch_failed", message: "Could not start file transcription."});
+                setState("error");
+            });
+    }, [releaseFileBlob]);
+
     const handleStartTranscription = useCallback(() => {
         if (!pendingVideoId) return;
         setState("transcribing");
@@ -532,9 +580,10 @@ export function App() {
 
     const handleStopTranscription = useCallback(() => {
         chrome.runtime.sendMessage({type: "stop-transcription"});
+        releaseFileBlob();
         setState("idle");
         setTranscriptionProgress(0);
-    }, []);
+    }, [releaseFileBlob]);
 
     const handleLanguageChange = useCallback((langCode: string) => {
         if (!transcript) return;
@@ -648,15 +697,48 @@ export function App() {
 
     // ---------- main app route ----------
     return (
-        <div className="min-h-screen bg-white text-slate-900 dark:bg-[#0b0d10] dark:text-slate-100">
+        <div
+            className="min-h-screen bg-white text-slate-900 dark:bg-[#0b0d10] dark:text-slate-100"
+            onDragEnter={(e) => {
+                if (!e.dataTransfer.types.includes("Files")) return;
+                e.preventDefault();
+                dragDepthRef.current += 1;
+                setIsDragging(true);
+            }}
+            onDragOver={(e) => {
+                if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+            }}
+            onDragLeave={() => {
+                dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+                if (dragDepthRef.current === 0) setIsDragging(false);
+            }}
+            onDrop={(e) => {
+                e.preventDefault();
+                dragDepthRef.current = 0;
+                setIsDragging(false);
+                const file = e.dataTransfer.files[0];
+                if (file && isMediaFile(file)) handleFileTranscribe(file);
+            }}
+        >
+            {/* Drop-anywhere overlay */}
+            {isDragging && (
+                <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center rounded-lg border-2 border-dashed border-blue-500 bg-blue-500/10">
+                    <div className="rounded-xl bg-white px-5 py-4 text-center shadow-lg dark:bg-slate-800">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">Drop to transcribe</p>
+                        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                            Any video or audio file — transcribed on this device, never uploaded
+                        </p>
+                    </div>
+                </div>
+            )}
             {/* Header — single row, mostly negative space */}
             <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/85 backdrop-blur-md dark:border-slate-800/60 dark:bg-[#0b0d10]/85">
                 <div className="mx-auto flex max-w-5xl items-center gap-2 px-3 py-1.5">
                     {/* Word-mark — the wordmark IS the only branding here */}
-                    <span className="font-serif text-[15px] italic leading-none tracking-tight text-slate-900 dark:text-slate-100">yt·tx</span>
+                    <span className="font-serif text-[15px] italic leading-none tracking-tight text-slate-900 dark:text-slate-100">t·x</span>
                     {liveCaptureVideoId && transcript?.videoId === liveCaptureVideoId && state === "loaded" && (
                         <span
-                            title="Captured live from the YouTube tab — no API call made"
+                            title="Captured live from the video tab — no API call made"
                             className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-amber-700 dark:border-amber-300/20 dark:text-amber-300"
                         >
                             <span className="h-1 w-1 rounded-full bg-amber-500 dark:bg-amber-400" />
@@ -692,6 +774,7 @@ export function App() {
                 <UrlInput
                     onSubmit={(id, platform) => void fetchTranscript(id, platform)}
                     onSubmitBatch={handleSubmitBatch}
+                    onSubmitFile={handleFileTranscribe}
                     isLoading={state === "loading"}
                     compact={state !== "idle"}
                 />
@@ -771,7 +854,10 @@ export function App() {
 
                 {state === "error" && error && (() => {
                     const failedVideoId = transcript?.videoId ?? pendingVideoId;
-                    const canRecover = error.error === "fetch_failed" && !!failedVideoId;
+                    // Synthetic `file-*` ids come from dropped files — there is no
+                    // original watch page to open or tab audio to capture.
+                    const canRecover = error.error === "fetch_failed" && !!failedVideoId &&
+                        !failedVideoId.startsWith("file-");
                     const watchUrl = canRecover
                         ? activePlatform === "vimeo"
                             ? `https://vimeo.com/${failedVideoId}`

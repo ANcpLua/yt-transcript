@@ -13,7 +13,7 @@ const HEADINGS: Record<string, { heading: string; description: string }> = {
     },
     fetch_failed: {
         heading: "Couldn't fetch transcript",
-        description: "Some videos (Premium-gated, age-restricted, region-locked, VEVO) need an authenticated session we can't replicate from a paste-URL flow. Open the video on YouTube and we'll capture the transcript automatically the moment the page loads. Or transcribe the audio locally.",
+        description: "Some videos (premium-gated, age-restricted, region-locked) need an authenticated session we can't replicate from a paste-URL flow. Open the video in its own tab and we'll capture the transcript automatically the moment the page loads. Or transcribe the audio locally.",
     },
     unavailable: {
         heading: "Video unavailable",
@@ -21,11 +21,11 @@ const HEADINGS: Record<string, { heading: string; description: string }> = {
     },
     rate_limited: {
         heading: "Rate limited",
-        description: "YouTube is rate-limiting requests. Wait a moment.",
+        description: "The video platform is rate-limiting requests. Wait a moment.",
     },
     invalid_id: {
         heading: "Invalid URL",
-        description: "Paste the full YouTube or Vimeo link.",
+        description: "Paste a full video link.",
     },
 };
 
@@ -49,7 +49,7 @@ export function ErrorMessage({error, message, onRetry, onOpenOriginal, onTranscr
                         onClick={onOpenOriginal}
                         className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
                     >
-                        Open on YouTube
+                        Open original video
                     </button>
                 )}
                 <button

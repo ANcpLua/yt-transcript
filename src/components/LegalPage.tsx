@@ -8,7 +8,7 @@ interface LegalSection {
 const sections: LegalSection[] = [
     {
         title: "How It Works",
-        body: "This tool extracts publicly available transcript data from YouTube videos. All processing happens in your browser.",
+        body: "This tool extracts publicly available transcript data from video pages you visit, and can transcribe local video/audio files with on-device AI. All processing happens in your browser.",
     },
     {
         title: "No Server-Side Storage",
@@ -19,8 +19,8 @@ const sections: LegalSection[] = [
         body: "AI features use Chrome built-in AI in the browser. We never see or proxy AI requests.",
     },
     {
-        title: "YouTube Disclaimer",
-        body: "This tool is not affiliated with, endorsed by, or sponsored by YouTube or Google. Transcripts are extracted from YouTube\u2019s publicly accessible data. Use this tool in accordance with YouTube\u2019s Terms of Service.",
+        title: "Trademarks & Affiliation",
+        body: "This is an independent tool. It is not affiliated with, endorsed by, or sponsored by any video platform. All product names and trademarks are the property of their respective owners. Use this tool in accordance with each platform\u2019s Terms of Service.",
     },
     {
         title: "Data You Control",

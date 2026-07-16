@@ -5,12 +5,14 @@ import type {Platform} from "../types/transcript";
 interface UrlInputProps {
     onSubmit: (videoId: string, platform: Platform) => void;
     onSubmitBatch: (videoIds: string[]) => void;
+    /** Transcribe a local video/audio file with on-device Whisper. */
+    onSubmitFile: (file: File) => void;
     isLoading: boolean;
     /** When true, render the slim top-anchored form (transcript loaded, loading, or error). */
     compact: boolean;
 }
 
-export function UrlInput({onSubmit, onSubmitBatch, isLoading, compact}: UrlInputProps) {
+export function UrlInput({onSubmit, onSubmitBatch, onSubmitFile, isLoading, compact}: UrlInputProps) {
     const [url, setUrl] = useState("");
     const [validationError, setValidationError] = useState("");
     const [videoList, setVideoList] = useState<{videoId: string; title: string; selected: boolean}[]>([]);
@@ -18,6 +20,13 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, compact}: UrlInput
     const [loadingList, setLoadingList] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const mediaInputRef = useRef<HTMLInputElement>(null);
+
+    const handleMediaUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) onSubmitFile(file);
+        e.target.value = "";
+    }, [onSubmitFile]);
 
     const handleCsvUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -49,7 +58,7 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, compact}: UrlInput
         const parsed = parseUrl(url);
 
         if (!parsed) {
-            setValidationError("Enter a valid YouTube or Vimeo URL");
+            setValidationError("Enter a valid video URL");
             return;
         }
 
@@ -154,7 +163,7 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, compact}: UrlInput
                         type="text"
                         value={url}
                         onChange={(e) => handleChange(e.target.value)}
-                        placeholder="Paste a YouTube or Vimeo URL"
+                        placeholder="Paste a video URL"
                         disabled={isLoading || loadingList}
                         aria-label="Video URL"
                         aria-invalid={validationError.length > 0}
@@ -170,13 +179,24 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, compact}: UrlInput
                     >
                         {loadingList ? "Loading…" : "Get transcript"}
                     </button>
-                    <div className="mt-3 flex items-center justify-center">
+                    <div className="mt-3 flex items-center justify-center gap-3">
                         <input ref={fileInputRef} type="file" accept=".csv,.txt" onChange={handleCsvUpload} className="hidden" />
+                        <input ref={mediaInputRef} type="file"
+                            accept="video/*,audio/*,.mkv,.mov,.avi,.m4a,.opus,.flac"
+                            onChange={handleMediaUpload} className="hidden" />
+                        <button type="button" onClick={() => mediaInputRef.current?.click()}
+                            className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300">
+                            Transcribe a video/audio file
+                        </button>
+                        <span className="text-slate-300 dark:text-slate-700">·</span>
                         <button type="button" onClick={() => fileInputRef.current?.click()}
                             className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300">
-                            Or upload a CSV
+                            Upload a CSV
                         </button>
                     </div>
+                    <p className="mt-2 text-center text-[11px] text-slate-400 dark:text-slate-600">
+                        You can also drop any video or audio file anywhere in this panel — transcription runs on this device.
+                    </p>
                     {validationError && (
                         <p className="mt-2 text-sm text-red-500 dark:text-red-400" role="alert">
                             {validationError}
@@ -199,9 +219,9 @@ export function UrlInput({onSubmit, onSubmitBatch, isLoading, compact}: UrlInput
                         type="text"
                         value={url}
                         onChange={(e) => handleChange(e.target.value)}
-                        placeholder="Paste a YouTube or Vimeo URL..."
+                        placeholder="Paste a video URL..."
                         disabled={isLoading || loadingList}
-                        aria-label="YouTube URL"
+                        aria-label="Video URL"
                         aria-invalid={validationError.length > 0}
                         className={`min-h-[44px] flex-1 rounded-lg border-2 bg-white px-4 py-2 text-sm shadow-xs transition-colors placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 ${
                             validationError ? "border-red-400 dark:border-red-500" : "border-slate-200 dark:border-slate-600"

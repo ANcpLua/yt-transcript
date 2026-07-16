@@ -137,6 +137,17 @@ chrome.runtime.onMessage.addListener(
         handleStopTranscription();
         return false;
 
+      case "transcribe-file":
+        void ensureOffscreen().then(() => {
+          chrome.runtime.sendMessage({
+            type: "offscreen-transcribe-file",
+            blobUrl: message.blobUrl,
+            videoId: message.videoId,
+            title: message.title,
+          }).catch(() => {});
+        });
+        return false;
+
       case "check-whisper-status":
         handleCheckWhisperStatus(message.model).then((status) => sendResponse(status));
         return true;

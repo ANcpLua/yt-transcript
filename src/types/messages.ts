@@ -113,6 +113,17 @@ export interface StopTranscriptionMessage {
   type: "stop-transcription";
 }
 
+// Drag-and-drop / file-picker transcription. The side panel owns the File,
+// mints a blob: URL for it (same chrome-extension:// origin as the offscreen
+// document), and passes only the URL — File objects don't survive
+// chrome.runtime message serialization.
+export interface TranscribeFileMessage {
+  type: "transcribe-file";
+  blobUrl: string;
+  videoId: string;
+  title: string;
+}
+
 export interface TranscriptionProgressMessage {
   type: "transcription-progress";
   videoId: string;
@@ -193,6 +204,7 @@ export type PanelToBackgroundMessage =
   | FetchChannelMessage
   | StartTranscriptionMessage
   | StopTranscriptionMessage
+  | TranscribeFileMessage
   | CheckWhisperStatusMessage
   | DownloadWhisperMessage
   | DeleteWhisperMessage;

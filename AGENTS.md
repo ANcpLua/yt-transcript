@@ -1,4 +1,11 @@
-# YouTube Transcript Extractor — Browser Extension
+# Transcript Extractor — Browser Extension (repo: yt-transcript)
+
+> **Naming rule (2026-07-16, trademark complaint):** every user-facing
+> surface — manifest name/description, UI strings, store listings, legal
+> page — must stay platform-generic. No video-platform names in anything
+> the user or a store reviewer sees. Internal identifiers, host
+> permissions, and technical docs like this file may reference platform
+> domains where technically necessary.
 
 ## Scope
 
@@ -77,6 +84,7 @@ We replace youtube-transcript.io feature-for-feature. This is the parity table:
 | EXTRA-006 | Offline | They don't have this | **DONE** | Works without internet once fetched |
 | EXTRA-007 | Cancel mid-AI-request | They don't have this | **DONE** | AbortController in `AiPanel.tsx`: switching feature aborts the prior request, "Stop" link next to the spinner, new transcript navigation aborts via cleanup effect. |
 | EXTRA-008 | Click-timestamp scrubs player | They have this | **DONE** | `AiPanel.tsx` post-processes `MM:SS` in markdown text + inline code into clickable buttons; SW forwards `seek-to` to the broadcasting tab via `chrome.tabs.sendMessage`. |
+| EXTRA-009 | Drag-and-drop any-file transcription | They don't have this | **DONE (1.5.0) — NEEDS REAL-CHROME VERIFICATION** | Drop any video/audio file anywhere in the panel (`App.tsx` drop overlay) or use the landing-screen picker (`UrlInput.tsx`). Panel mints a `blob:` URL → SW `transcribe-file` → offscreen `offscreen-transcribe-file` → `decodeToMono16k` (OfflineAudioContext demux/resample to 16 kHz mono) → chunked Whisper with the existing `transcription-progress`/`-complete` message contract. Model download surfaces as the first 20% of the progress bar. |
 
 </feature_parity>
 
@@ -214,6 +222,21 @@ case. For watch-page traffic L0 always wins.
 `navigator.gpu` is present, WASM + `q8` fallback otherwise. Model
 weights stream from the Hugging Face CDN on first use and cache in
 `caches` storage.
+
+### Local Whisper — dropped-file path (1.5.0)
+
+Same offscreen document, second entry point (`transcribeFile`): the side
+panel creates `URL.createObjectURL(file)` (blob URLs are same-origin
+between the panel and the offscreen document), the SW forwards it as
+`offscreen-transcribe-file`, and `decodeToMono16k` runs
+`OfflineAudioContext(1, 1, 16000).decodeAudioData` — which both demuxes
+the audio track out of video containers and resamples to the context
+rate — then averages channels to mono. Inference reuses the same 30 s
+chunk loop and `transcription-progress` / `transcription-complete` /
+`transcription-error` messages as the capture path; `offscreen-stop-capture`
+cancels both paths. The panel revokes the blob URL on complete/error/stop.
+Memory note: 16 kHz mono f32 is ~230 MB/hour of media — fine for typical
+clips, unbounded decode is the known ceiling for multi-hour files.
 
 </extraction_layers>
 
@@ -509,13 +532,18 @@ npm run build && \
 
 ## Store Publishing
 
-Store listing: [YouTube & Vimeo Transcript Extractor](https://chromewebstore.google.com/detail/youtube-vimeo-transcript/ahddbfbjafmbceehebpeanpnlbaimepk).
+Chrome Web Store listing id: `ahddbfbjafmbceehebpeanpnlbaimepk` — being
+renamed to the generic **Transcript Extractor** (old branded name drew a
+trademark complaint; see the naming rule at the top of this file).
 Store state: 1.4.0 (git tag `v1.4.0`) was submitted for review on
-2026-07-11 and is pending; the published build stays 1.3.1 (uploaded
-2026-06-03, predates the AI-panel simplification / provider-layer removal /
-TS6 + dep-major updates) until review passes. Keep `manifest.json` +
-`package.json` versions bumped in lockstep for every upload. Before
-uploading a new build, run the manual verification above and confirm:
+2026-07-11 and is pending; 1.5.0 (generic rename + EXTRA-009) supersedes
+it — upload 1.5.0 with the new listing name/description once verified.
+The Edge listing (Product ID `069ca91d-a7cd-4bac-8224-1ee38a2d2a06`) is
+unpublished pending the trademark-modification process; resubmit only
+with the generic branding and the completed modification form. Keep
+`manifest.json` + `package.json` versions bumped in lockstep for every
+upload. Before uploading a new build, run the manual verification above
+and confirm:
 
 1. `npm run zip` produces `yt-transcript-chrome.zip` (≈ 6.7 MB as of 1.4.0).
 2. Chrome Web Store: upload to

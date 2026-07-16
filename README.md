@@ -1,9 +1,10 @@
 # yt-transcript
 
-Chrome side-panel extension (Manifest V3) for extracting, viewing, and
-exporting YouTube and Vimeo transcripts. Optional local Whisper transcription
-for videos without captions, and Chrome built-in AI for summaries. No backend,
-no accounts, no telemetry.
+**Transcript Extractor** — a Chrome side-panel extension (Manifest V3) that
+turns any video into text. It extracts transcripts from the video pages you
+browse, transcribes **any dropped video or audio file** locally with Whisper,
+and analyzes results with Chrome built-in AI. No backend, no accounts, no
+telemetry.
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)
@@ -29,6 +30,10 @@ no accounts, no telemetry.
   transformers.js, using WebGPU when available and WASM otherwise. Model
   weights download from Hugging Face only after an explicit opt-in
   permission prompt.
+- **Drag-and-drop file transcription**: drop any video or audio file
+  (MP4, WebM, MOV, MKV, MP3, WAV, OGG, FLAC, …) anywhere in the side panel —
+  or use the file picker — and the audio track is decoded and transcribed
+  entirely on-device through the same Whisper pipeline. Nothing is uploaded.
 
 **Viewing**
 
@@ -66,7 +71,8 @@ no accounts, no telemetry.
 
 ## Install
 
-**Chrome Web Store**: [YouTube & Vimeo Transcript Extractor](https://chromewebstore.google.com/detail/youtube-vimeo-transcript/ahddbfbjafmbceehebpeanpnlbaimepk).
+**Chrome Web Store**: [Transcript Extractor](https://chromewebstore.google.com/detail/ahddbfbjafmbceehebpeanpnlbaimepk)
+(listing rename to the generic name is rolling out with 1.5.0).
 The store build lags this repository — install from source below for the
 current code.
 
@@ -97,10 +103,13 @@ that were already open so they pick up the content scripts.
    the transcript, and closes the tab.
 3. Paste a playlist or channel URL (or upload a CSV) to batch-fetch multiple
    transcripts; export them as a ZIP or one merged file.
-4. Use **Copy** or the **Export** menu for the format you need.
-5. If Chrome built-in AI is available, the Summary / Key points / Q&A
+4. Drop any video or audio file anywhere in the panel (or click
+   **Transcribe a video/audio file**) to transcribe it locally — the audio
+   never leaves your machine.
+5. Use **Copy** or the **Export** menu for the format you need.
+6. If Chrome built-in AI is available, the Summary / Key points / Q&A
    buttons and the Ask box work on the loaded transcript.
-6. For videos with no captions, the panel offers **Transcribe locally**.
+7. For videos with no captions, the panel offers **Transcribe locally**.
    The first use asks for Hugging Face host permission and downloads the
    Whisper model, which is then cached.
 

@@ -185,3 +185,38 @@ Verified
 - Real-Chrome content verification per AGENTS.md "How to verify the
   extension actually works" is required before submitting this build
   for store review.
+
+## 2026-07-16 — v1.5.0: go generic + drag-and-drop file transcription
+
+Context
+
+- A trademark Content Infringement Complaint (2026-07-16) against the
+  Edge listing forced removal of platform names from the extension's
+  branding. The Chrome listing shares the exposure. Response: every
+  user-facing surface is now platform-generic, and the product widens
+  from "extract transcripts of site X" to "turn any video into text."
+
+Changed
+
+- Renamed extension to **Transcript Extractor** (`manifest.json` name,
+  description, action title; side-panel `<title>`; wordmark `yt·tx` →
+  `t·x`). UI strings, error copy, and the legal page are now
+  platform-neutral; the legal disclaimer became a generic
+  "Trademarks & Affiliation" section. PRIVACY.md renamed + covers
+  dropped files. Version 1.4.0 → 1.5.0 in lockstep.
+- NEW (EXTRA-009): drag-and-drop / file-picker transcription. Drop any
+  video or audio file anywhere in the panel; `App.tsx` mints a `blob:`
+  URL, SW forwards `transcribe-file` → offscreen
+  `offscreen-transcribe-file`, `decodeToMono16k` (OfflineAudioContext)
+  demuxes/resamples to 16 kHz mono, and the existing chunked Whisper
+  loop streams segments via the unchanged `transcription-*` message
+  contract. Model download shows as the first 20% of the progress bar;
+  blob URL revoked on complete/error/stop; `file-*` synthetic ids are
+  excluded from watch-page error recovery.
+
+Verified
+
+- `npm run lint` zero errors; `npm run build` green (8 bundles);
+  manifest unit tests 3/3 pass.
+- Real-Chrome verification of the drop flow (and the standing F-001
+  sign-off) still required before store submission, per AGENTS.md.

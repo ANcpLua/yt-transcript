@@ -64,6 +64,7 @@ let pipelinePromiseModel: "tiny" | "base" | null = null;
 let mediaStream: MediaStream | null = null;
 let audioContext: AudioContext | null = null;
 let isCapturing = false;
+let isFileTranscribing = false;
 
 function hasWebGpu(): boolean {
   return typeof (navigator as Navigator & { gpu?: unknown }).gpu !== "undefined";
@@ -413,6 +414,125 @@ function stopCapture(): void {
   audioContext = null;
 }
 
+// ---------- file transcription (drag-and-drop / picker) ----------
+
+// decodeAudioData resamples to the context's sample rate and demuxes the
+// audio track out of video containers (MP4, WebM, MOV, …) — Chrome routes
+// it through the same media stack as <video>. One decode call gives us
+// 16 kHz PCM regardless of what the user dropped.
+async function decodeToMono16k(blobUrl: string): Promise<Float32Array> {
+  const response = await fetch(blobUrl);
+  const encoded = await response.arrayBuffer();
+  let decoded: AudioBuffer;
+  try {
+    const ctx = new OfflineAudioContext(1, 1, SAMPLE_RATE);
+    decoded = await ctx.decodeAudioData(encoded);
+  } catch {
+    throw new Error(
+      "Could not decode audio from this file. Most video/audio formats work (MP4, WebM, MOV, MP3, WAV, OGG, FLAC); DRM-protected media does not.",
+    );
+  }
+  if (decoded.numberOfChannels === 1) return decoded.getChannelData(0);
+  // Mix down to mono — average all channels.
+  const channels: Float32Array[] = [];
+  for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+    channels.push(decoded.getChannelData(ch));
+  }
+  const out = new Float32Array(decoded.length);
+  for (let i = 0; i < out.length; i++) {
+    let sum = 0;
+    for (const channel of channels) sum += channel[i] ?? 0;
+    out[i] = sum / channels.length;
+  }
+  return out;
+}
+
+async function transcribeFile(
+  blobUrl: string,
+  videoId: string,
+  title: string,
+): Promise<void> {
+  isFileTranscribing = true;
+  const sendProgress = (progress: number, segments: Segment[]): void => {
+    chrome.runtime
+      .sendMessage({ type: "transcription-progress", videoId, progress, segments })
+      .catch(() => {});
+  };
+  try {
+    const { getPreferences } = await import("@/lib/storage/preferences");
+    const prefs = await getPreferences();
+    // A dropped file may be the user's very first transcription — the model
+    // might not be cached yet. Surface the weight download as the first 20%
+    // of the bar instead of sitting silently at 0%.
+    const whisperPipeline = await loadPipeline(prefs.whisperModel, (percent) => {
+      sendProgress(Math.max(1, Math.round(percent * 0.2)), []);
+    });
+    if (!isFileTranscribing) return;
+
+    const pcm = await decodeToMono16k(blobUrl);
+    const totalSamples = pcm.length;
+    const allSegments: Segment[] = [];
+    let offset = 0;
+
+    while (isFileTranscribing && offset < totalSamples) {
+      const end = Math.min(offset + CHUNK_SAMPLES, totalSamples);
+      const chunk = pcm.subarray(offset, end);
+      // A sub-second tail after real content is decoder noise, not speech.
+      if (chunk.length < SAMPLE_RATE && allSegments.length > 0) break;
+      const timeOffset = offset / SAMPLE_RATE;
+      const result = await whisperPipeline(new Float32Array(chunk), {
+        return_timestamps: true,
+        chunk_length_s: CHUNK_DURATION_S,
+        stride_length_s: STRIDE_S,
+      });
+      if (result.chunks && result.chunks.length > 0) {
+        for (const c of result.chunks) {
+          // transformers.js can emit a null end timestamp on the final cue.
+          const cueStart = c.timestamp[0] ?? 0;
+          const cueEnd = c.timestamp[1] ?? cueStart;
+          allSegments.push({
+            start: cueStart + timeOffset,
+            duration: Math.max(0, cueEnd - cueStart),
+            text: c.text.trim(),
+          });
+        }
+      } else if (result.text.trim()) {
+        allSegments.push({
+          start: timeOffset,
+          duration: chunk.length / SAMPLE_RATE,
+          text: result.text.trim(),
+        });
+      }
+      offset = end;
+      sendProgress(
+        Math.min(99, 20 + Math.floor((offset / totalSamples) * 79)),
+        [...allSegments],
+      );
+    }
+
+    // User hit Stop — the panel already reset itself; stay quiet.
+    if (!isFileTranscribing) return;
+
+    chrome.runtime
+      .sendMessage({
+        type: "transcription-complete",
+        videoId,
+        title,
+        segments: allSegments,
+      })
+      .catch(() => {});
+  } catch (err) {
+    chrome.runtime
+      .sendMessage({
+        type: "transcription-error",
+        error: err instanceof Error ? err.message : String(err),
+      })
+      .catch(() => {});
+  } finally {
+    isFileTranscribing = false;
+  }
+}
+
 // ---------- service worker bridge ----------
 
 chrome.runtime.onMessage.addListener(
@@ -428,6 +548,15 @@ chrome.runtime.onMessage.addListener(
 
       case "offscreen-stop-capture":
         stopCapture();
+        isFileTranscribing = false;
+        break;
+
+      case "offscreen-transcribe-file":
+        void transcribeFile(
+          message["blobUrl"] as string,
+          message["videoId"] as string,
+          message["title"] as string,
+        );
         break;
 
       case "offscreen-check-whisper": {

@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**YouTube Transcript Extractor** does not collect, store, or transmit any
+**Transcript Extractor** does not collect, store, or transmit any
 personal data.
 
 ## What this extension does NOT do
@@ -16,9 +16,13 @@ personal data.
 
 All data stays in your browser:
 
-- **Transcripts**: Fetched from YouTube or Vimeo, kept in memory while the
+- **Transcripts**: Fetched from the video page, kept in memory while the
   side panel is open. Optionally saved to your browser's IndexedDB if you
   click "Save".
+- **Dropped files**: A video/audio file you drop or pick is read and
+  transcribed entirely inside your browser (Whisper via WebGPU/WASM). The
+  file's content is never uploaded anywhere and is released from memory
+  when transcription finishes.
 - **AI features**: Chrome built-in AI runs in the browser. The extension
   does not ask for, store, or transmit AI service keys.
 - **History and saved transcripts**: Stored in IndexedDB. Never uploaded.

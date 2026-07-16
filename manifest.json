@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "YouTube & Vimeo Transcript Extractor",
-  "description": "Extract, search, and export video transcripts. Free. No signup.",
-  "version": "1.4.0",
+  "name": "Transcript Extractor",
+  "description": "Turn any video into text — capture transcripts as you browse, or drop a video/audio file for local AI transcription. Free.",
+  "version": "1.5.0",
   "permissions": [
     "sidePanel",
     "activeTab",
@@ -26,7 +26,7 @@
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://*.youtube.com https://*.googlevideo.com https://*.vimeo.com https://player.vimeo.com https://huggingface.co https://*.huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs.hf.co"
   },
   "action": {
-    "default_title": "YouTube & Vimeo Transcript Extractor",
+    "default_title": "Transcript Extractor",
     "default_popup": "sidepanel/index.html",
     "default_icon": {
       "16": "icons/icon-16.png",
