@@ -70,7 +70,7 @@
       "matches": [
         "*://*.vimeo.com/*"
       ],
-      "js": ["content/vimeo-content.js"],
+      "js": ["content/player-content.js"],
       "run_at": "document_idle"
     }
   ],

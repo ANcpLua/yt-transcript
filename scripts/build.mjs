@@ -45,13 +45,13 @@ runBin("esbuild", [
   "--outfile=dist/content/content.js",
 ]);
 
-// 4. Content script — Vimeo (esbuild, IIFE)
+// 4. Content script — page-config platform (esbuild, IIFE)
 runBin("esbuild", [
-  "src/content/vimeo-content.ts",
+  "src/content/player-content.ts",
   "--bundle",
   "--format=iife",
   "--target=es2022",
-  "--outfile=dist/content/vimeo-content.js",
+  "--outfile=dist/content/player-content.js",
 ]);
 
 // 4a. YouTube MAIN-world fetch interceptor (esbuild, IIFE)

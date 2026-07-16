@@ -316,7 +316,7 @@ yt-transcript/
       yt-bridge.ts                 # ISOLATED, document_start. Forwards captures to SW
       content.ts                   # ISOLATED, document_idle. Video-detect + seek-to
                                    # + 1 Hz player-time relay (no DOM extraction)
-      vimeo-content.ts             # Vimeo equivalent of content.ts (still does
+      player-content.ts            # Vimeo equivalent of content.ts (still does
                                    # page-config DOM extraction; Vimeo's auth is simpler)
     sidepanel/                     # Vite entry point for side panel UI
       index.html
