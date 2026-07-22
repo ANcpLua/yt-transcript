@@ -194,6 +194,12 @@ async function setupAudioCapture(streamId: string): Promise<{
   });
 
   const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+  // Offscreen documents carry no user gesture, so Chrome's autoplay policy can
+  // leave a real-time AudioContext "suspended" — which would stop the worklet
+  // from ever running and silently kill tab-audio capture. The active
+  // tab-capture stream usually lets it start, but resume() makes it explicit
+  // (and clears the "AudioContext was not allowed to start" warning).
+  if (ctx.state === "suspended") await ctx.resume().catch(() => {});
   await ctx.audioWorklet.addModule(
     chrome.runtime.getURL("offscreen/worklet-processor.js"),
   );
