@@ -77,7 +77,7 @@ We replace youtube-transcript.io feature-for-feature. This is the parity table:
 | F-017 | Flash Cards | Credits | **REMOVED 2026-05-23** | Cut, same rationale as F-016. |
 | F-018 | Highlights | Credits | **DONE** | Per-segment highlight/note icons in `TranscriptView.tsx`, IndexedDB persistence via `App.tsx`, "Highlights" copy button in `ExportBar.tsx` |
 | EXTRA-001 | Filler word removal | They don't have this | **DONE** | Toggle in `TranscriptView.tsx`, applies `removeFillersFromSegments` in `displaySegments` memo, exports respect toggle via `ExportBar.tsx` |
-| EXTRA-002 | Speaker labels | They don't have this | **DONE** | `detectSpeakers()` in `TranscriptView.tsx`, colored tags, filter dropdown |
+| EXTRA-002 | Speaker labels | They don't have this | **REMOVED 2026-07-22** | `detectSpeakers.ts` existed but was never imported by any component — dead code; helper and this claim removed in the cleanup pass. |
 | EXTRA-003 | Chapter extraction | They don't have this | **DONE** | `parseChapters.ts` parses description timestamps, collapsible dividers in `TranscriptView.tsx`, chapter headings in Markdown export |
 | EXTRA-004 | Bilingual side-by-side | They don't have this | **REMOVED 2026-05-23** | `BilingualView.tsx` deleted; never wired to UI. |
 | EXTRA-005 | 6 export formats | They only have copy | **DONE** | TXT, SRT, VTT, JSON, CSV, Markdown + Notion + Obsidian variants |
@@ -327,7 +327,7 @@ yt-transcript/
       UrlInput.tsx                 # URL input + validation; landing screen + compact mode
       TranscriptView.tsx           # Transcript display, view modes, search (~26 KB)
       ExportBar.tsx                # Copy + download buttons (all 6 formats)
-      AiPanel.tsx                  # AI features panel (~16 KB) with Essentials + More
+      AiPanel.tsx                  # AI features panel: Summary / Key points / Q&A buttons + Ask (chat) box
       Settings.tsx                 # Chrome AI status, Whisper, prefs
       History.tsx                  # Recent history modal
       SavedList.tsx                # Saved transcripts modal
@@ -341,8 +341,7 @@ yt-transcript/
       parseUrl.ts                  # YouTube/Vimeo URL → video ID + URL kind
       formatTime.ts                # Seconds → timestamp strings
       mergeSegments.ts             # Raw → sentence → paragraph merging
-      cleanText.ts                 # Filler-word + profanity filter (wired)
-      detectSpeakers.ts            # Speaker label heuristics (wired)
+      cleanText.ts                 # Filler-word removal (wired; dead profanity filter removed 2026-07-22)
       parseChapters.ts             # Chapter timestamp parsing
       parseVtt.ts                  # WebVTT parser used by Vimeo provider
       sanitizeFilename.ts          # Title → safe filename
@@ -535,9 +534,12 @@ npm run build && \
 Chrome Web Store listing id: `ahddbfbjafmbceehebpeanpnlbaimepk` — being
 renamed to the generic **Video Transcript** (old branded name drew a
 trademark complaint; see the naming rule at the top of this file).
-Store state: 1.4.0 (git tag `v1.4.0`) was submitted for review on
-2026-07-11 and is pending; 1.5.0 (generic rename + EXTRA-009) supersedes
-it — upload 1.5.0 with the new listing name/description once verified.
+Store state: 1.4.0 (git tag `v1.4.0`) is the published version; 1.5.1
+(git tag `v1.5.1`) supersedes it — generic rename to "Video Transcript",
+EXTRA-009 drop-file transcription, and removal of every residual platform
+name from user-visible runtime strings (trademark remediation). Upload
+`yt-transcript-chrome.zip` (v1.5.1) with the generic listing name/description
+once verified.
 The Edge listing (Product ID `069ca91d-a7cd-4bac-8224-1ee38a2d2a06`) is
 unpublished pending the trademark-modification process; resubmit only
 with the generic branding and the completed modification form. Keep
