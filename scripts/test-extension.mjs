@@ -212,34 +212,5 @@ await panelPage.evaluate(() => {
 });
 await panelPage.waitForTimeout(500);
 
-// Bonus: click "Transcribe locally" to prove Whisper boots without the
-// CSP / "Unsupported model type: whisper" error that used to happen
-// when transformers.js tried to load ORT from jsdelivr.
-console.log("\n=== Transcribe locally ===");
-const tryClick = await panelPage.evaluate(() => {
-  for (const b of document.querySelectorAll("button")) {
-    if ((b.textContent || "").trim() === "Transcribe locally") {
-      b.click();
-      return true;
-    }
-  }
-  return false;
-});
-console.log("  [whisper] clicked:", tryClick);
-// Listen for whisper download / model load progress messages.
-const whisperLogs = [];
-serviceWorker.on("console", (msg) => {
-  const t = msg.text();
-  if (/whisper|transformers|onnx/i.test(t)) whisperLogs.push(t);
-});
-await panelPage.waitForTimeout(20000);
-await panelPage.screenshot({ path: `${OUT_DIR}/whisper.png`, fullPage: false });
-const whisperText = await panelPage.evaluate(() => {
-  const r = document.querySelector("#root");
-  return r ? (r.textContent || "").replace(/\s+/g, " ").slice(0, 600) : "";
-});
-console.log("  [whisper/text]", whisperText);
-console.log("  [whisper/logs]", whisperLogs.slice(0, 10));
-
 await context.close();
 console.log("\ndone. screenshots:", OUT_DIR);

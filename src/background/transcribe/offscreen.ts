@@ -1,230 +1,179 @@
-// Offscreen document — captures tab audio, runs Whisper locally.
+// Offscreen document — captures tab audio (or decodes a dropped file) and
+// transcribes it on-device with Chrome's built-in AI (Gemini Nano) via the
+// Prompt API's audio input. No model download and no bundled ML runtime:
+// Chrome manages the model. Audio input requires a GPU; when it isn't
+// available we surface a clear error and the panel stays on captions-only.
 //
-// 2026 stack:
-//   - @huggingface/transformers v3 with WebGPU when available, WASM fallback.
-//   - AudioWorklet for the capture path (ScriptProcessorNode is deprecated).
-//   - Streaming chunk processor with async generator semantics so progress
-//     emits as soon as each 30 s window is decoded, not after the whole
-//     recording.
+// The Prompt API only runs in a document context (not the MV3 service
+// worker), which is why transcription lives here. Talks to the service
+// worker via chrome.runtime.sendMessage — no other surface.
 //
-// Communicates with the service worker via chrome.runtime.sendMessage —
-// no other surface.
+// NOTE: the Gemini Nano audio path needs verification in real Chrome
+// (desktop, supported GPU, recent build); it cannot run in CI/headless.
 
 export {};
 
 import type { Segment } from "@/types/transcript";
 
-interface WhisperPipeline {
-  (
-    audio: Float32Array,
-    options: {
-      return_timestamps: boolean;
-      chunk_length_s: number;
-      stride_length_s: number;
-    },
-  ): Promise<{
-    text: string;
-    chunks?: { timestamp: [number, number]; text: string }[];
-  }>;
+// ---------- Chrome Prompt API (audio input) typings ----------
+// Text-only LanguageModel types live in lib/ai/chrome-ai.ts; the multimodal
+// (audio) surface is declared locally and reached via globalThis so there is
+// no clash with the text path's declaration.
+
+type AudioValue = AudioBuffer | Blob | ArrayBuffer | ArrayBufferView;
+
+interface LmPart {
+  type: "text" | "audio";
+  value: string | AudioValue;
 }
 
-// Subset of @huggingface/transformers' ProgressInfo we actually consume.
-// Defined locally so we don't pull an internal type path through tsc.
-interface PipelineProgressInfo {
-  status: "initiate" | "download" | "progress" | "done" | "ready";
-  file?: string;
-  name?: string;
-  progress?: number;
-  loaded?: number;
-  total?: number;
+interface LmMessage {
+  role: "system" | "user" | "assistant";
+  content: LmPart[];
 }
 
-const MODEL_MAP = {
-  tiny: "onnx-community/whisper-tiny.en",
-  base: "onnx-community/whisper-base.en",
-} as const;
+interface LmExpectation {
+  type: "text" | "audio";
+  languages?: string[];
+}
+
+interface LmSession {
+  prompt(input: LmMessage[], options?: { signal?: AbortSignal }): Promise<string>;
+  clone(options?: { signal?: AbortSignal }): Promise<LmSession>;
+  destroy(): void;
+}
+
+interface LmDownloadMonitor {
+  addEventListener(
+    type: "downloadprogress",
+    listener: (event: { loaded: number }) => void,
+  ): void;
+}
+
+type LmAvailability = "unavailable" | "downloadable" | "downloading" | "available";
+
+interface LmStatic {
+  availability(options?: {
+    expectedInputs?: LmExpectation[];
+    expectedOutputs?: LmExpectation[];
+  }): Promise<LmAvailability>;
+  create(options?: {
+    expectedInputs?: LmExpectation[];
+    expectedOutputs?: LmExpectation[];
+    initialPrompts?: LmMessage[];
+    monitor?: (monitor: LmDownloadMonitor) => void;
+    signal?: AbortSignal;
+  }): Promise<LmSession>;
+}
+
+function getLanguageModel(): LmStatic | undefined {
+  return (globalThis as { LanguageModel?: LmStatic }).LanguageModel;
+}
+
+const AUDIO_MODALITY: {
+  expectedInputs: LmExpectation[];
+  expectedOutputs: LmExpectation[];
+} = {
+  expectedInputs: [{ type: "audio" }, { type: "text", languages: ["en"] }],
+  expectedOutputs: [{ type: "text", languages: ["en"] }],
+};
+
+const UNAVAILABLE_MESSAGE =
+  "On-device transcription isn't available on this device. It needs Chrome's " +
+  "built-in AI (Gemini Nano) with a supported GPU. Captions still work on " +
+  "video pages that provide them.";
+
+const TRANSCRIBE_INSTRUCTION =
+  "Transcribe the speech in this audio clip verbatim. Output only the spoken " +
+  "words as plain text — no timestamps, no speaker labels, no notes, no quotation " +
+  "marks. If there is no intelligible speech, output nothing.";
+
+// ---------- config ----------
 
 const SAMPLE_RATE = 16_000;
-const CHUNK_DURATION_S = 30;
+// Nano's audio context budget is undocumented and smaller than Whisper's 30 s
+// window; keep windows short to stay under the token ceiling and to give finer
+// synthesized timestamps (one Segment per window).
+const CHUNK_DURATION_S = 12;
 const CHUNK_SAMPLES = SAMPLE_RATE * CHUNK_DURATION_S;
-const STRIDE_S = 5;
 
-// Emit at most one progress update every PROGRESS_THROTTLE_MS so the UI
-// gets smooth motion without a per-chunk message flood.
-const PROGRESS_THROTTLE_MS = 200;
-
-let pipeline: WhisperPipeline | null = null;
-let pipelineModel: "tiny" | "base" | null = null;
-let pipelineDevice: "webgpu" | "wasm" | null = null;
-// Serialises concurrent loadPipeline calls so two clicks in quick succession
-// — or a Download click that races with an auto-start — can't write to the
-// global pipeline state out of order.
-let pipelinePromise: Promise<WhisperPipeline> | null = null;
-let pipelinePromiseModel: "tiny" | "base" | null = null;
+let baseSession: LmSession | null = null;
 let mediaStream: MediaStream | null = null;
 let audioContext: AudioContext | null = null;
 let isCapturing = false;
 let isFileTranscribing = false;
 
-function hasWebGpu(): boolean {
-  return typeof (navigator as Navigator & { gpu?: unknown }).gpu !== "undefined";
+function emitError(err: unknown): void {
+  chrome.runtime
+    .sendMessage({
+      type: "transcription-error",
+      error: err instanceof Error ? err.message : String(err),
+    })
+    .catch(() => {});
 }
 
-async function loadPipeline(
-  model: "tiny" | "base",
-  onProgress?: (percent: number) => void,
-): Promise<WhisperPipeline> {
-  // Cached + matching model — done.
-  if (pipeline && pipelineModel === model) return pipeline;
-  // Load already in flight for the same model — join it instead of starting
-  // a parallel transformers.js download.
-  if (pipelinePromise && pipelinePromiseModel === model) return pipelinePromise;
-  // Load in flight for a different model — wait for it to settle before
-  // we wipe the global state, so it can't land on top of our pipeline.
-  if (pipelinePromise) {
-    try { await pipelinePromise; } catch { /* swallow — caller will see our own error if we fail */ }
-    if (pipeline && pipelineModel === model) return pipeline;
-  }
-  pipelinePromiseModel = model;
-  pipelinePromise = doLoadPipeline(model, onProgress);
+// ---------- Nano session + inference ----------
+
+async function ensureAvailable(): Promise<LmStatic> {
+  const lm = getLanguageModel();
+  if (!lm) throw new Error(UNAVAILABLE_MESSAGE);
+  let status: LmAvailability;
   try {
-    const p = await pipelinePromise;
-    pipeline = p;
-    pipelineModel = model;
-    return p;
+    status = await lm.availability(AUDIO_MODALITY);
+  } catch {
+    throw new Error(UNAVAILABLE_MESSAGE);
+  }
+  if (status === "unavailable") throw new Error(UNAVAILABLE_MESSAGE);
+  return lm;
+}
+
+async function getBaseSession(
+  onDownload?: (percent: number) => void,
+): Promise<LmSession> {
+  if (baseSession) return baseSession;
+  const lm = await ensureAvailable();
+  baseSession = await lm.create({
+    ...AUDIO_MODALITY,
+    monitor(monitor) {
+      monitor.addEventListener("downloadprogress", (event) => {
+        onDownload?.(Math.max(1, Math.min(99, Math.round((event.loaded ?? 0) * 100))));
+      });
+    },
+  });
+  return baseSession;
+}
+
+function pcmToAudioBuffer(pcm: Float32Array): AudioBuffer {
+  const buffer = new AudioBuffer({
+    length: pcm.length,
+    numberOfChannels: 1,
+    sampleRate: SAMPLE_RATE,
+  });
+  // Copy into a fresh ArrayBuffer-backed view — copyToChannel's typing
+  // rejects a possibly-SharedArrayBuffer-backed Float32Array.
+  buffer.copyToChannel(new Float32Array(pcm), 0);
+  return buffer;
+}
+
+// Transcribe one PCM window to text. Each window is prompted on an isolated
+// (cloned) context so a prior chunk's audio never bleeds into the model's view.
+async function transcribeChunk(pcm: Float32Array): Promise<string> {
+  const base = await getBaseSession();
+  const session = await base.clone();
+  try {
+    const out = await session.prompt([
+      {
+        role: "user",
+        content: [
+          { type: "text", value: TRANSCRIBE_INSTRUCTION },
+          { type: "audio", value: pcmToAudioBuffer(pcm) },
+        ],
+      },
+    ]);
+    return out.trim();
   } finally {
-    pipelinePromise = null;
-    pipelinePromiseModel = null;
+    session.destroy();
   }
-}
-
-async function doLoadPipeline(
-  model: "tiny" | "base",
-  onProgress?: (percent: number) => void,
-): Promise<WhisperPipeline> {
-  const transformers = await import("@huggingface/transformers");
-
-  // Pin the ORT runtime to the bundled vendor copy so MV3's CSP doesn't
-  // try to fetch ort-wasm-simd-threaded.jsep.{mjs,wasm} from jsdelivr.
-  // numThreads=1 because chrome-extension:// pages can't get the
-  // crossOriginIsolated headers the threaded ORT build needs.
-  const wasmEnv = transformers.env.backends.onnx.wasm;
-  if (wasmEnv) {
-    wasmEnv.wasmPaths = chrome.runtime.getURL("vendor/transformers/");
-    wasmEnv.numThreads = 1;
-  }
-  transformers.env.allowLocalModels = false;
-  transformers.env.allowRemoteModels = true;
-
-  const { pipeline: createPipeline } = transformers;
-  const modelId = MODEL_MAP[model];
-
-  // Aggregate per-file download progress into one 0–99% bar. Transformers.js
-  // emits five status types per file (initiate / download / progress / done /
-  // ready); we keep the latest 0-100 reading per file and average across all
-  // files seen so far, throttled to PROGRESS_THROTTLE_MS so we don't flood
-  // chrome.runtime.sendMessage.
-  const fileProgress = new Map<string, number>();
-  let lastEmit = 0;
-  // Track the highest percent we've actually surfaced to the UI. When a new
-  // file `initiate`s mid-download the file-count denominator grows and the
-  // arithmetic average drops — that would make the bar jump backwards, which
-  // looks broken. Holding the floor at the last value smooths that out: the
-  // bar pauses until the new file catches up, then resumes climbing.
-  let lastEmittedPct = 0;
-  const emit = (force = false): void => {
-    if (!onProgress) return;
-    const now = Date.now();
-    if (!force && now - lastEmit < PROGRESS_THROTTLE_MS) return;
-    lastEmit = now;
-    let avg: number;
-    if (fileProgress.size === 0) {
-      avg = 1;
-    } else {
-      let sum = 0;
-      for (const v of fileProgress.values()) sum += v;
-      avg = sum / fileProgress.size;
-    }
-    // Clamp to 1..99 — the caller emits the final 100% once the awaited
-    // createPipeline resolves so the UI flips cleanly from progress → ready.
-    const next = Math.max(1, Math.min(99, Math.floor(avg)));
-    if (next <= lastEmittedPct) return;
-    lastEmittedPct = next;
-    onProgress(next);
-  };
-
-  const progress_callback = (raw: unknown): void => {
-    const info = raw as PipelineProgressInfo;
-    const file = info.file ?? info.name;
-    switch (info.status) {
-      case "initiate":
-        if (file && !fileProgress.has(file)) fileProgress.set(file, 0);
-        emit();
-        break;
-      case "progress":
-        if (file && typeof info.progress === "number") {
-          fileProgress.set(file, Math.min(99, info.progress));
-          emit();
-        }
-        break;
-      case "done":
-        if (file) {
-          fileProgress.set(file, 100);
-          emit(true);
-        }
-        break;
-    }
-  };
-
-  const wantWebGpu = hasWebGpu();
-  if (wantWebGpu) {
-    try {
-      // q4f16 ≈ 4-bit weights, fp16 activations — the v3 sweet spot for WebGPU
-      // Whisper. Encoder and decoder use the same dtype here for simplicity.
-      const pipe = await createPipeline(
-        "automatic-speech-recognition",
-        modelId,
-        { device: "webgpu", dtype: "q4f16", progress_callback },
-      );
-      pipelineDevice = "webgpu";
-      return wrapPipeline(pipe);
-    } catch (err) {
-      // Fall through to WASM below.
-      // eslint-disable-next-line no-console
-      console.warn("[whisper] WebGPU init failed, falling back to WASM", err);
-      // Reset per-file tracking — the WASM retry below will replay all the
-      // initiate/progress events. We don't want stale 100% entries from a
-      // half-completed WebGPU attempt skewing the average, and the monotonic
-      // floor needs to slide back to zero so the WASM round can re-emit.
-      fileProgress.clear();
-      lastEmittedPct = 0;
-    }
-  }
-
-  const pipe = await createPipeline(
-    "automatic-speech-recognition",
-    modelId,
-    { device: "wasm", dtype: "q8", progress_callback },
-  );
-  pipelineDevice = "wasm";
-  return wrapPipeline(pipe);
-}
-
-// transformers.js' pipeline returns a polymorphic value; we narrow it once.
-type RawPipe = (
-  audio: Float32Array,
-  options: Record<string, unknown>,
-) => Promise<unknown>;
-
-function wrapPipeline(raw: unknown): WhisperPipeline {
-  const fn = raw as RawPipe;
-  return async (audio, options) => {
-    const result = (await fn(audio, options)) as {
-      text: string;
-      chunks?: { timestamp: [number, number]; text: string }[];
-    };
-    return result;
-  };
 }
 
 // ---------- audio capture (AudioWorklet) ----------
@@ -322,13 +271,16 @@ async function captureAndTranscribe(
   title: string,
 ): Promise<void> {
   isCapturing = true;
-  const { getPreferences } = await import("@/lib/storage/preferences");
-  const prefs = await getPreferences();
-  // No progress callback here — model is expected to be cached by this point
-  // (Settings → Download is the only path to a fresh weight pull). If it's
-  // not cached we still load it silently; the user just sees the
-  // "Transcribing…" state without a download bar.
-  const whisperPipeline = await loadPipeline(prefs.whisperModel);
+
+  // Probe + warm the session up front so an unsupported device fails loud
+  // (clear "needs a GPU" error) instead of silently producing nothing.
+  try {
+    await getBaseSession();
+  } catch (err) {
+    emitError(err);
+    isCapturing = false;
+    return;
+  }
 
   const cap = await setupAudioCapture(streamId);
   mediaStream = cap.stream;
@@ -345,24 +297,12 @@ async function captureAndTranscribe(
       chunkIndex++;
 
       try {
-        const result = await whisperPipeline(chunk, {
-          return_timestamps: true,
-          chunk_length_s: CHUNK_DURATION_S,
-          stride_length_s: STRIDE_S,
-        });
-        if (result.chunks && result.chunks.length > 0) {
-          for (const c of result.chunks) {
-            allSegments.push({
-              start: c.timestamp[0] + timeOffset,
-              duration: Math.max(0, c.timestamp[1] - c.timestamp[0]),
-              text: c.text.trim(),
-            });
-          }
-        } else if (result.text.trim()) {
+        const text = await transcribeChunk(chunk);
+        if (text) {
           allSegments.push({
             start: timeOffset,
             duration: chunk.length / SAMPLE_RATE,
-            text: result.text.trim(),
+            text,
           });
         }
         timeOffset += chunk.length / SAMPLE_RATE;
@@ -378,12 +318,7 @@ async function captureAndTranscribe(
           })
           .catch(() => {});
       } catch (err) {
-        chrome.runtime
-          .sendMessage({
-            type: "transcription-error",
-            error: err instanceof Error ? err.message : String(err),
-          })
-          .catch(() => {});
+        emitError(err);
         break;
       }
     }
@@ -459,14 +394,9 @@ async function transcribeFile(
       .catch(() => {});
   };
   try {
-    const { getPreferences } = await import("@/lib/storage/preferences");
-    const prefs = await getPreferences();
-    // A dropped file may be the user's very first transcription — the model
-    // might not be cached yet. Surface the weight download as the first 20%
-    // of the bar instead of sitting silently at 0%.
-    const whisperPipeline = await loadPipeline(prefs.whisperModel, (percent) => {
-      sendProgress(Math.max(1, Math.round(percent * 0.2)), []);
-    });
+    // The model may need a first-run (Chrome-managed) download; surface it as
+    // the first 20% of the bar. Throws loudly on unsupported hardware.
+    await getBaseSession((percent) => sendProgress(Math.max(1, Math.round(percent * 0.2)), []));
     if (!isFileTranscribing) return;
 
     const pcm = await decodeToMono16k(blobUrl);
@@ -480,27 +410,12 @@ async function transcribeFile(
       // A sub-second tail after real content is decoder noise, not speech.
       if (chunk.length < SAMPLE_RATE && allSegments.length > 0) break;
       const timeOffset = offset / SAMPLE_RATE;
-      const result = await whisperPipeline(new Float32Array(chunk), {
-        return_timestamps: true,
-        chunk_length_s: CHUNK_DURATION_S,
-        stride_length_s: STRIDE_S,
-      });
-      if (result.chunks && result.chunks.length > 0) {
-        for (const c of result.chunks) {
-          // transformers.js can emit a null end timestamp on the final cue.
-          const cueStart = c.timestamp[0] ?? 0;
-          const cueEnd = c.timestamp[1] ?? cueStart;
-          allSegments.push({
-            start: cueStart + timeOffset,
-            duration: Math.max(0, cueEnd - cueStart),
-            text: c.text.trim(),
-          });
-        }
-      } else if (result.text.trim()) {
+      const text = await transcribeChunk(new Float32Array(chunk));
+      if (text) {
         allSegments.push({
           start: timeOffset,
           duration: chunk.length / SAMPLE_RATE,
-          text: result.text.trim(),
+          text,
         });
       }
       offset = end;
@@ -522,12 +437,7 @@ async function transcribeFile(
       })
       .catch(() => {});
   } catch (err) {
-    chrome.runtime
-      .sendMessage({
-        type: "transcription-error",
-        error: err instanceof Error ? err.message : String(err),
-      })
-      .catch(() => {});
+    emitError(err);
   } finally {
     isFileTranscribing = false;
   }
@@ -557,108 +467,6 @@ chrome.runtime.onMessage.addListener(
           message["videoId"] as string,
           message["title"] as string,
         );
-        break;
-
-      case "offscreen-check-whisper": {
-        const model = (message["model"] as "tiny" | "base") ?? "tiny";
-        const modelId = MODEL_MAP[model];
-        void (async () => {
-          // transformers.js v3 keeps a single "transformers-cache"
-          // CacheStorage entry and stores each weight as its source URL.
-          // We probe the cache *contents* (not just the cache name) so a
-          // user with Tiny cached but Base selected gets "not-downloaded"
-          // instead of being told the wrong model is ready.
-          let downloaded = false;
-          try {
-            const keys = await self.caches.keys();
-            for (const cacheName of keys) {
-              if (!cacheName.includes("transformers")) continue;
-              const cache = await self.caches.open(cacheName);
-              const requests = await cache.keys();
-              if (requests.some((r) => r.url.includes(modelId))) {
-                downloaded = true;
-                break;
-              }
-            }
-          } catch {
-            downloaded = false;
-          }
-          chrome.runtime
-            .sendMessage({
-              type: "whisper-status-response",
-              downloaded,
-              modelId,
-              model,
-              device: pipelineDevice,
-            })
-            .catch(() => {});
-        })();
-        break;
-      }
-
-      case "offscreen-download-whisper": {
-        const model = (message["model"] as "tiny" | "base") ?? "tiny";
-        void (async () => {
-          try {
-            // Already loaded the same model? Tell the UI it's done so the
-            // "Downloading…" spinner doesn't sit at 0% forever.
-            if (pipeline && pipelineModel === model) {
-              chrome.runtime
-                .sendMessage({
-                  type: "download-whisper-progress",
-                  progress: 100,
-                })
-                .catch(() => {});
-              return;
-            }
-            // Initial heartbeat so the UI bar shows motion even before
-            // transformers.js fires its first `initiate` event.
-            chrome.runtime
-              .sendMessage({ type: "download-whisper-progress", progress: 1 })
-              .catch(() => {});
-            await loadPipeline(model, (percent) => {
-              chrome.runtime
-                .sendMessage({
-                  type: "download-whisper-progress",
-                  progress: percent,
-                })
-                .catch(() => {});
-            });
-            chrome.runtime
-              .sendMessage({ type: "download-whisper-progress", progress: 100 })
-              .catch(() => {});
-          } catch (err) {
-            // Surface the failure both as a -1 progress (so the Settings
-            // UI can flip out of "downloading") and a structured error so
-            // we can show the user what actually went wrong.
-            chrome.runtime
-              .sendMessage({ type: "download-whisper-progress", progress: -1 })
-              .catch(() => {});
-            chrome.runtime
-              .sendMessage({
-                type: "transcription-error",
-                error: `Model download failed: ${err instanceof Error ? err.message : String(err)}`,
-              })
-              .catch(() => {});
-          }
-        })();
-        break;
-      }
-
-      case "offscreen-delete-whisper":
-        void (async () => {
-          try {
-            const keys = await self.caches.keys();
-            for (const key of keys) {
-              if (key.includes("transformers")) await self.caches.delete(key);
-            }
-            pipeline = null;
-            pipelineDevice = null;
-            pipelineModel = null;
-          } catch {
-            /* best effort */
-          }
-        })();
         break;
     }
   },

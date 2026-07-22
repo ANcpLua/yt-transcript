@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Video Transcript",
-  "description": "Turn any video into text — capture transcripts as you browse, or drop a video/audio file for local AI transcription. Free.",
-  "version": "1.5.2",
+  "description": "Turn any video into text — capture transcripts as you browse, or drop a video/audio file for on-device AI transcription. Free.",
+  "version": "2.0.0",
   "permissions": [
     "sidePanel",
     "activeTab",
@@ -14,14 +14,8 @@
   "host_permissions": [
     "*://*.youtube.com/*"
   ],
-  "optional_host_permissions": [
-    "*://huggingface.co/*",
-    "*://*.huggingface.co/*",
-    "*://cdn-lfs.huggingface.co/*",
-    "*://cdn-lfs.hf.co/*"
-  ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://*.youtube.com https://*.googlevideo.com https://huggingface.co https://*.huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs.hf.co"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.youtube.com https://*.googlevideo.com"
   },
   "action": {
     "default_title": "Video Transcript",

@@ -143,32 +143,6 @@ export interface TranscriptionErrorMessage {
   error: string;
 }
 
-export interface CheckWhisperStatusMessage {
-  type: "check-whisper-status";
-  model?: "tiny" | "base";
-}
-
-export interface WhisperStatusMessage {
-  type: "whisper-status";
-  downloaded: boolean;
-  modelId: string;
-  model: "tiny" | "base";
-}
-
-export interface DownloadWhisperMessage {
-  type: "download-whisper";
-  model: "tiny" | "base";
-}
-
-export interface DownloadWhisperProgressMessage {
-  type: "download-whisper-progress";
-  progress: number;
-}
-
-export interface DeleteWhisperMessage {
-  type: "delete-whisper";
-}
-
 export interface PlaylistResultMessage {
   type: "playlist-result";
   data: PlaylistResponse;
@@ -204,10 +178,7 @@ export type PanelToBackgroundMessage =
   | FetchChannelMessage
   | StartTranscriptionMessage
   | StopTranscriptionMessage
-  | TranscribeFileMessage
-  | CheckWhisperStatusMessage
-  | DownloadWhisperMessage
-  | DeleteWhisperMessage;
+  | TranscribeFileMessage;
 
 export type BackgroundToPanelMessage =
   | TranscriptResultMessage
@@ -222,9 +193,7 @@ export type BackgroundToPanelMessage =
   | ChannelErrorMessage
   | TranscriptionProgressMessage
   | TranscriptionCompleteMessage
-  | TranscriptionErrorMessage
-  | WhisperStatusMessage
-  | DownloadWhisperProgressMessage;
+  | TranscriptionErrorMessage;
 
 export type BackgroundToContentMessage = SeekToMessage;
 

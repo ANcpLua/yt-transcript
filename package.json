@@ -1,7 +1,7 @@
 {
   "name": "yt-transcript",
   "private": true,
-  "version": "1.5.2",
+  "version": "2.0.0",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -13,7 +13,6 @@
     "lint": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
-    "@huggingface/transformers": "^4.0.0",
     "@tanstack/react-virtual": "^3.13.6",
     "fflate": "^0.8.2",
     "react": "^19.1.0",

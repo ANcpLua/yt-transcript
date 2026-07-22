@@ -80,7 +80,6 @@ export type AiProviderId = "chrome-ai";
 
 export interface Preferences {
   aiProvider: AiProviderId;
-  whisperModel: "tiny" | "base";
 }
 
 export interface PlaylistResponse {

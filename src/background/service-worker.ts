@@ -116,18 +116,6 @@ chrome.runtime.onMessage.addListener(
         });
         return false;
 
-      case "check-whisper-status":
-        handleCheckWhisperStatus(message.model).then((status) => sendResponse(status));
-        return true;
-
-      case "download-whisper":
-        handleDownloadWhisper(message.model);
-        return false;
-
-      case "delete-whisper":
-        handleDeleteWhisper().then(() => sendResponse({ success: true }));
-        return true;
-
       case "intercepted-capture": {
         const tabId = sender.tab?.id;
         if (!tabId || !message.videoId) return false;
@@ -226,7 +214,7 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(
   { url: [{ hostSuffix: "youtube.com" }] },
 );
 
-// ---------- Whisper transcription ----------
+// ---------- Transcription (offscreen document) ----------
 
 let offscreenCreated = false;
 
@@ -236,7 +224,7 @@ async function ensureOffscreen(): Promise<void> {
     await chrome.offscreen.createDocument({
       url: "offscreen/offscreen.html",
       reasons: [chrome.offscreen.Reason.USER_MEDIA],
-      justification: "Capture tab audio for local Whisper transcription",
+      justification: "Capture tab audio for on-device transcription",
     });
     offscreenCreated = true;
   } catch {
@@ -262,58 +250,4 @@ async function handleStartTranscription(videoId: string, title: string): Promise
 
 function handleStopTranscription(): void {
   chrome.runtime.sendMessage({ type: "offscreen-stop-capture" }).catch(() => {});
-}
-
-const WHISPER_STATUS_TIMEOUT_MS = 10_000;
-
-async function handleCheckWhisperStatus(
-  model: "tiny" | "base" = "tiny",
-): Promise<{ type: string; downloaded: boolean; modelId: string; model: "tiny" | "base" }> {
-  // Check is delegated to offscreen document which has CacheStorage access.
-  // Carry the model through so the caller can verify the response is scoped
-  // to the same model they asked about (avoids a stale "ready" if the user
-  // flipped the selector between request and response).
-  //
-  // Race the listener against a 10s timeout so a crashed/silent offscreen
-  // document doesn't leave the side panel spinning forever — fall back
-  // to `downloaded: false`, which makes the UI show the download button
-  // (worst case the user re-clicks).
-  await ensureOffscreen();
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (downloaded: boolean, modelId?: string): void => {
-      if (settled) return;
-      settled = true;
-      chrome.runtime.onMessage.removeListener(listener);
-      clearTimeout(timer);
-      resolve({
-        type: "whisper-status",
-        downloaded,
-        modelId: modelId ?? `whisper-${model}`,
-        model,
-      });
-    };
-    const listener = (msg: { type: string; downloaded?: boolean; modelId?: string; model?: "tiny" | "base" }) => {
-      if (msg.type !== "whisper-status-response") return;
-      // Strict equality: ignore responses without a model field. The offscreen
-      // producer is contracted to echo the model back; anything else is stale
-      // or malformed and must not resolve this check.
-      if (msg.model !== model) return;
-      finish(msg.downloaded ?? false, msg.modelId);
-    };
-    const timer = setTimeout(() => finish(false), WHISPER_STATUS_TIMEOUT_MS);
-    chrome.runtime.onMessage.addListener(listener);
-    chrome.runtime.sendMessage({ type: "offscreen-check-whisper", model }).catch(() => finish(false));
-  });
-}
-
-function handleDownloadWhisper(model: "tiny" | "base"): void {
-  void ensureOffscreen().then(() => {
-    chrome.runtime.sendMessage({ type: "offscreen-download-whisper", model }).catch(() => {});
-  });
-}
-
-async function handleDeleteWhisper(): Promise<void> {
-  await ensureOffscreen();
-  chrome.runtime.sendMessage({ type: "offscreen-delete-whisper" }).catch(() => {});
 }
