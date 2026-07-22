@@ -5,8 +5,9 @@
 
 import { chromium } from "playwright";
 import { existsSync, mkdirSync } from "fs";
+import { resolve } from "node:path";
 
-const EXTENSION_PATH = "/Users/ancplua/yt-transcript/dist";
+const EXTENSION_PATH = resolve(import.meta.dirname, "../dist");
 const BROWSER = process.env.BROWSER || "chromium"; // chromium | chrome
 const PROFILE_DIR = `/tmp/yt-test-profile-${BROWSER}`;
 const OUT_DIR = "/tmp/yt-screenshots";
