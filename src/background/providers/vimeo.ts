@@ -28,9 +28,9 @@ async function fetchPlayerConfig(videoId: string): Promise<VimeoPlayerConfig | A
     const res = await fetch(`https://player.vimeo.com/video/${videoId}/config`, {
       headers: { "Referer": `https://vimeo.com/${videoId}` },
     });
-    if (res.status === 404) return { error: "invalid_id", message: "Video not found on Vimeo." };
-    if (res.status === 403) return { error: "unavailable", message: "This Vimeo video is private or restricted." };
-    if (!res.ok) return { error: "fetch_failed", message: `Vimeo config HTTP ${res.status}` };
+    if (res.status === 404) return { error: "invalid_id", message: "Video not found." };
+    if (res.status === 403) return { error: "unavailable", message: "This video is private or restricted." };
+    if (!res.ok) return { error: "fetch_failed", message: `Player config request failed (HTTP ${res.status}).` };
     return await res.json() as VimeoPlayerConfig;
   } catch (e) {
     return { error: "fetch_failed", message: e instanceof Error ? e.message : String(e) };

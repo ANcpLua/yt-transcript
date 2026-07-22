@@ -7,7 +7,7 @@ interface PromptTemplate {
 }
 
 const BASE_SYSTEM =
-    "You analyze YouTube video transcripts. Be brief. Prefer terse answers over thorough ones. " +
+    "You analyze video transcripts. Be brief. Prefer terse answers over thorough ones. " +
     "Use timestamps (MM:SS) only when referencing a specific moment. " +
     "If the transcript does not contain the information needed to answer, say so explicitly — " +
     "e.g. \"The transcript doesn't mention that.\" — instead of inventing an answer from related material.";

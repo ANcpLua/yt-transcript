@@ -395,19 +395,19 @@ async function fetchTimedText(textUrl: string, userAgent: string): Promise<unkno
       headers: { "User-Agent": userAgent },
       signal: timeoutSignal(TIMEDTEXT_TIMEOUT_MS),
     });
-    if (!res.ok) return { error: "fetch_failed", message: `YouTube returned HTTP ${res.status} when fetching the transcript.` };
+    if (!res.ok) return { error: "fetch_failed", message: `Transcript request failed (HTTP ${res.status}).` };
     const body = await res.text();
-    if (!body.trim()) return { error: "fetch_failed", message: "YouTube returned an empty response. Open the video in a tab so we can capture it directly." };
+    if (!body.trim()) return { error: "fetch_failed", message: "The transcript request returned an empty response. Open the video in a tab so we can capture it directly." };
     let parsed: unknown;
     try {
       parsed = JSON.parse(body);
     } catch {
-      return { error: "fetch_failed", message: "YouTube returned an unexpected response format. The track URL may have expired — try again." };
+      return { error: "fetch_failed", message: "The transcript request returned an unexpected format. The track URL may have expired — try again." };
     }
     return digArr(parsed as Record<string, unknown>, "events");
   } catch (e) {
     if (isTimeoutError(e)) {
-      return { error: "fetch_failed", message: `Transcript fetch timed out after ${TIMEDTEXT_TIMEOUT_MS}ms. YouTube may be throttling — try again.` };
+      return { error: "fetch_failed", message: `Transcript fetch timed out after ${TIMEDTEXT_TIMEOUT_MS}ms. The server may be throttling — try again.` };
     }
     return { error: "fetch_failed", message: e instanceof Error ? e.message : String(e) };
   }
@@ -430,7 +430,7 @@ export async function fetchTranscript(
   if ("error" in segments) return segments;
 
   if (segments.length === 0)
-    return { error: "fetch_failed", message: "YouTube returned a transcript with no readable segments." };
+    return { error: "fetch_failed", message: "The transcript came back with no readable segments." };
 
   const language = track.languageCode;
   const chapters: Chapter[] = parseChapters(shortDescription);
