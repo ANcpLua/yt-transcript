@@ -9,8 +9,12 @@
 
 ## Scope
 
-Free MV3 Chrome side-panel extension that replaces youtube-transcript.io with zero cost.
-Everything they gate behind credits, logins, or paid tiers — we do free, locally, no backend.
+Free MV3 Chrome side-panel extension: instant transcripts on YouTube (caption
+extraction) plus universal on-device transcription of any other video or dropped
+media file via Chrome's built-in AI (Gemini Nano audio input). Replaces
+youtube-transcript.io with zero cost — everything they gate behind credits,
+logins, or paid tiers, we do free, locally, no backend, and (as of 2.0.0) no
+model download.
 
 When you are asked to work on this project, you must read this entire file first. Do not skip sections.
 Do not propose changes that violate the hard constraints. Do not ask clarifying questions when the answer
@@ -19,7 +23,7 @@ is in this file.
 ## Hard Constraints
 
 - **ZERO COST.** No backend. No paid APIs. No accounts. No credits. No server. Extension only.
-- **AI = Chrome built-in AI only.** No API keys, accounts, provider setup, backend proxy, or paid AI service path. Chrome built-in AI is the managed default.
+- **AI = Chrome built-in AI only.** No API keys, accounts, provider setup, backend proxy, paid AI service, or bundled ML runtime. Gemini Nano does everything: text (summary/Q&A/chat via the Prompt API) AND transcription (Prompt API **audio input**). As of 2.0.0 there is no Whisper / transformers.js. Transcription needs Chrome desktop 138+ with a >4 GB-VRAM GPU (audio input has no CPU fallback) and fails loud via an `availability()` probe when the hardware can't run it — captions still work for everyone.
 - **No tracking.** No analytics, no cookies, no telemetry. Network tab must show zero requests to tracking domains.
 - **No npm packages that phone home.** Audit every dependency.
 - **Stack: React 19, Vite, Tailwind CSS 4, TypeScript strict.** No exceptions.
@@ -45,10 +49,14 @@ is in this file.
   you're already modifying them and the change is non-trivial.
 - Inline SVGs still appear in several components. Four files duplicate the
   same close-X glyph; consolidate when you touch icon code.
-- Local Whisper runs in an offscreen document via `chrome.tabCapture` +
-  `AudioWorkletNode` + `@huggingface/transformers` v3 (WebGPU when
-  available, WASM fallback). Model weights stream from the Hugging Face
-  CDN on first use, then cache in `caches` storage.
+- Transcription (captionless videos + dropped files) runs in the offscreen
+  document: `chrome.tabCapture` + `AudioWorkletNode` (live capture) or
+  `OfflineAudioContext.decodeAudioData` (dropped file) → 16 kHz mono PCM →
+  Chrome Prompt API **audio input** (`LanguageModel.create({expectedInputs:
+  [{type:"audio"}]})` → per-window `clone()` → `prompt([{type:"audio", value:
+  AudioBuffer}])`). No model download; Chrome manages Gemini Nano. Nano returns
+  prose with no per-cue timestamps, so `Segment.start/duration` are synthesized
+  from the 12 s chunk offset. See the Transcription Architecture section.
 
 ## Competitive Target
 
@@ -84,7 +92,7 @@ We replace youtube-transcript.io feature-for-feature. This is the parity table:
 | EXTRA-006 | Offline | They don't have this | **DONE** | Works without internet once fetched |
 | EXTRA-007 | Cancel mid-AI-request | They don't have this | **DONE** | AbortController in `AiPanel.tsx`: switching feature aborts the prior request, "Stop" link next to the spinner, new transcript navigation aborts via cleanup effect. |
 | EXTRA-008 | Click-timestamp scrubs player | They have this | **DONE** | `AiPanel.tsx` post-processes `MM:SS` in markdown text + inline code into clickable buttons; SW forwards `seek-to` to the broadcasting tab via `chrome.tabs.sendMessage`. |
-| EXTRA-009 | Drag-and-drop any-file transcription | They don't have this | **DONE (1.5.0) — NEEDS REAL-CHROME VERIFICATION** | Drop any video/audio file anywhere in the panel (`App.tsx` drop overlay) or use the landing-screen picker (`UrlInput.tsx`). Panel mints a `blob:` URL → SW `transcribe-file` → offscreen `offscreen-transcribe-file` → `decodeToMono16k` (OfflineAudioContext demux/resample to 16 kHz mono) → chunked Whisper with the existing `transcription-progress`/`-complete` message contract. Model download surfaces as the first 20% of the progress bar. |
+| EXTRA-009 | Drag-and-drop any-file transcription | They don't have this | **DONE (2.0.0) — NEEDS REAL-CHROME VERIFICATION (GPU)** | Drop any video/audio file anywhere in the panel (`App.tsx` drop overlay) or use the landing-screen picker (`UrlInput.tsx`). Panel mints a `blob:` URL → SW `transcribe-file` → offscreen `offscreen-transcribe-file` → `decodeToMono16k` (OfflineAudioContext demux/resample to 16 kHz mono) → chunked Gemini Nano audio prompts (`transcribeChunk` clones a base session per 12 s window), same `transcription-progress`/`-complete` contract. No model download; unsupported hardware gets a loud "needs a GPU" state and captions still work. |
 
 </feature_parity>
 
@@ -105,7 +113,7 @@ above for status.
 
 Lower-tier items (`TranscriptView.tsx` / `AiPanel.tsx` splits, icon-set
 consolidation) remain out of scope unless a regression surfaces.
-The Hugging Face host-permission opt-in landed in 1.3.0 — see the Settings.tsx Audio tab.
+Transcription moved to Chrome Prompt API audio (Gemini Nano) in 2.0.0 — Whisper, the Hugging Face opt-in, and the Settings Audio tab are gone; Settings is now AI + Data only.
 
 </priority_classification>
 
@@ -214,29 +222,44 @@ Then `GET {baseUrl}&fmt=json3` for the timestamped events.
 This path covers the rare "paste a link with no matching open tab"
 case. For watch-page traffic L0 always wins.
 
-### Local Whisper (when no transcript exists at all)
+### On-device transcription — Gemini Nano (when no caption transcript exists)
 
-`src/background/transcribe/offscreen.ts` captures tab audio via
-`chrome.tabCapture` + `AudioWorkletNode` and runs Whisper through
-`@huggingface/transformers` v3 — WebGPU + dtype `q4f16` when
-`navigator.gpu` is present, WASM + `q8` fallback otherwise. Model
-weights stream from the Hugging Face CDN on first use and cache in
-`caches` storage.
+`src/background/transcribe/offscreen.ts` transcribes with Chrome's built-in
+AI (Prompt API **audio input**) — the only engine as of 2.0.0. It runs in the
+offscreen document because the Prompt API needs a document context (not the MV3
+service worker) and audio input needs a GPU.
 
-### Local Whisper — dropped-file path (1.5.0)
+Two entry points, one inference path:
 
-Same offscreen document, second entry point (`transcribeFile`): the side
-panel creates `URL.createObjectURL(file)` (blob URLs are same-origin
-between the panel and the offscreen document), the SW forwards it as
-`offscreen-transcribe-file`, and `decodeToMono16k` runs
-`OfflineAudioContext(1, 1, 16000).decodeAudioData` — which both demuxes
-the audio track out of video containers and resamples to the context
-rate — then averages channels to mono. Inference reuses the same 30 s
-chunk loop and `transcription-progress` / `transcription-complete` /
-`transcription-error` messages as the capture path; `offscreen-stop-capture`
-cancels both paths. The panel revokes the blob URL on complete/error/stop.
-Memory note: 16 kHz mono f32 is ~230 MB/hour of media — fine for typical
-clips, unbounded decode is the known ceiling for multi-hour files.
+- **Tab audio** (captionless watch page): SW `chrome.tabCapture.getMediaStreamId`
+  → offscreen `getUserMedia({chromeMediaSource:"tab"})` + `AudioWorkletNode`
+  accumulating 12 s / 16 kHz mono windows.
+- **Dropped file**: the side panel mints `URL.createObjectURL(file)` (blob URLs
+  are same-origin between panel and offscreen), the SW forwards
+  `offscreen-transcribe-file`, and `decodeToMono16k` runs
+  `OfflineAudioContext(1,1,16000).decodeAudioData` — which demuxes the audio out
+  of any container Chrome can decode and resamples to 16 kHz — then averages to
+  mono.
+
+Both feed `transcribeChunk(pcm)`: `pcmToAudioBuffer` wraps the window in an
+`AudioBuffer`, a per-window `clone()` of a base `LanguageModel` session keeps
+each chunk's context isolated, and `session.prompt([{role:"user", content:
+[{type:"text", value: instruction}, {type:"audio", value: audioBuffer}]}])`
+returns the text. Nano has **no per-cue timestamps**, so `Segment.start/duration`
+are synthesized from the 12 s window offset — SRT/VTT and click-to-seek are
+window-granular, not word-granular.
+
+Gating: every run first calls `LanguageModel.availability({expectedInputs:
+[{type:"audio"}], expectedOutputs:[{type:"text",languages:["en"]}]})`. On
+`"unavailable"` it emits a clear "needs a supported GPU" error and the YouTube
+caption path keeps working. Same `transcription-progress` / `-complete` /
+`-error` / `offscreen-stop-capture` contract; the panel revokes the blob URL on
+complete/error/stop.
+
+Hardware: audio input requires Chrome desktop 138+ (extensions channel — no OT
+token needed as of mid-2026), a GPU with >4 GB VRAM (no CPU fallback), a
+supported desktop OS, and ~22 GB free for Chrome's managed Nano download. The
+`availability()` probe is the only per-machine truth — never assume "available".
 
 </extraction_layers>
 
@@ -250,7 +273,7 @@ clips, unbounded decode is the known ceiling for multi-hour files.
   Chrome — usually we beat YouTube's bundle, occasionally not. If a video
   doesn't auto-populate on first nav, a SPA navigation away and back
   re-fires the interceptor.
-- WebGPU isn't universal; WASM fallback is the safety net.
+- Transcription is GPU-only (Nano audio has no CPU fallback) and needs Chrome 138+; the `availability()` probe gates it and the YouTube caption path is unaffected. The Nano audio path (chunk sizing, timestamp granularity, transcript accuracy) still needs a real-Chrome sign-off — it can't run in CI/headless.
 - L0 only fires on watch pages — paste-URL flows still need L1.
 
 </extraction_layers>
@@ -297,17 +320,16 @@ yt-transcript/
   src/
     background/
       service-worker.ts            # Message router; correlator broadcasts;
-                                   # Whisper offscreen lifecycle
+                                   # transcription offscreen lifecycle
       innertube.ts                 # Paste-URL fallback only — single
                                    # WEB_EMBEDDED_PLAYER client + watch-page scrape
       innertube-browse.ts          # Playlist/channel browse via Innertube
       providers/
         types.ts                   # TranscriptProvider interface, isApiError
         youtube.ts                 # Wraps innertube.ts behind the provider iface
-        vimeo.ts                   # Vimeo player.vimeo.com/.../config + VTT parse
       transcribe/
-        offscreen.ts               # Tab-audio capture + Whisper inference
-                                   # (transformers.js v3, WebGPU/q4f16 → WASM/q8)
+        offscreen.ts               # Tab-audio capture + dropped-file decode +
+                                   # Gemini Nano audio transcription (Prompt API)
         worklet-processor.ts       # AudioWorkletProcessor (separate bundle)
         offscreen.html             # Document loaded by chrome.offscreen
     content/
@@ -316,8 +338,6 @@ yt-transcript/
       yt-bridge.ts                 # ISOLATED, document_start. Forwards captures to SW
       content.ts                   # ISOLATED, document_idle. Video-detect + seek-to
                                    # + 1 Hz player-time relay (no DOM extraction)
-      player-content.ts            # Vimeo equivalent of content.ts (still does
-                                   # page-config DOM extraction; Vimeo's auth is simpler)
     sidepanel/                     # Vite entry point for side panel UI
       index.html
       main.tsx
@@ -328,7 +348,7 @@ yt-transcript/
       TranscriptView.tsx           # Transcript display, view modes, search (~26 KB)
       ExportBar.tsx                # Copy + download buttons (all 6 formats)
       AiPanel.tsx                  # AI features panel: Summary / Key points / Q&A buttons + Ask (chat) box
-      Settings.tsx                 # Chrome AI status, Whisper, prefs
+      Settings.tsx                 # AI status + Data (export/clear) tabs
       History.tsx                  # Recent history modal
       SavedList.tsx                # Saved transcripts modal
       BatchProgress.tsx            # Batch processing progress + per-item exports
@@ -338,12 +358,11 @@ yt-transcript/
       LegalPage.tsx                # Legal/privacy hash route (#/legal)
       TagEditor.tsx                # Tag chip input on saved transcripts
     lib/
-      parseUrl.ts                  # YouTube/Vimeo URL → video ID + URL kind
+      parseUrl.ts                  # YouTube URL → video ID + URL kind
       formatTime.ts                # Seconds → timestamp strings
       mergeSegments.ts             # Raw → sentence → paragraph merging
       cleanText.ts                 # Filler-word removal (wired; dead profanity filter removed 2026-07-22)
       parseChapters.ts             # Chapter timestamp parsing
-      parseVtt.ts                  # WebVTT parser used by Vimeo provider
       sanitizeFilename.ts          # Title → safe filename
       exportTxt.ts                 # TXT export
       exportSrt.ts                 # SRT export
@@ -370,10 +389,10 @@ yt-transcript/
       transcript.ts                # Shared types
       messages.ts                  # Extension message protocol types
   dist/                            # Built extension — load as unpacked in Chrome
-  manifest.json                    # MV3 manifest (4 content_scripts entries)
+  manifest.json                    # MV3 manifest (3 YouTube content_scripts entries)
   vite.config.ts
   scripts/
-    build.mjs                      # Vite + esbuild orchestrator (8 bundles)
+    build.mjs                      # Vite + esbuild orchestrator (7 bundles)
   package.json
 ```
 
@@ -430,9 +449,11 @@ automatically.
   not a priority.
 - **Inline-SVG → `components/icons.tsx` consolidation** — four files
   duplicate the close-X glyph; the rest are unique. Low-impact.
-- **YouTube Music app, YouTube Live captions, Prompt-API audio multimodal,
-  Vimeo MAIN-world interceptor, packaged offline Whisper, floating overlay,
-  Web Neural Network API.**
+- **YouTube Music app, YouTube Live captions, ffmpeg.wasm for exotic drop-file
+  containers (mkv/avi/ts/mxf — Chrome natively decodes mp4/webm/mov/mp3/m4a/wav),
+  floating overlay, Web Neural Network API.** Vimeo support and Whisper were
+  removed in 2.0.0 — any non-YouTube video now goes through the universal
+  tab-capture / drop-file Nano path.
 
 ## Validation Checklist
 
@@ -492,22 +513,20 @@ npm run build
 #       background tab auto-closes once segments arrive (see
 #       `captureViaYouTubeTab` in `App.tsx`).
 
-# 6. Whisper-tiny on a captionless video (post-1.3.0):
-#    a. Settings (gear) → Audio tab. State should read
-#       "Not downloaded · permission required".
-#    b. Click "Download". Chrome's native permission prompt asks for
-#       `huggingface.co` access; allow it.
-#    c. Progress bar advances smoothly 1% → ~99% (throttled to one
-#       update every 200 ms) and flips to "Ready" with the WebGPU/WASM
-#       badge once the pipeline initialises.
-#    d. Switch model from Tiny → Base in the same tab. State must
-#       reset to "Not downloaded" with progress 0 (the cached Tiny
-#       pipeline is invalidated by `pipelineModel` tracking).
-#    e. Find a captionless YouTube video (e.g. an old upload with
-#       captions disabled) and open it. Side panel surfaces the
-#       "Transcribe locally" CTA; clicking it pipes tab audio through
-#       AudioWorkletNode into the offscreen Whisper pipeline. Segments
-#       stream in every ~30 s of decoded audio.
+# 6. On-device Nano transcription (captionless video or dropped file):
+#    a. Precondition — on any https page, DevTools console:
+#         await LanguageModel.availability({expectedInputs:[{type:"audio"}],
+#           expectedOutputs:[{type:"text",languages:["en"]}]})
+#       Must return "available" (or "downloadable"/"downloading"). "unavailable"
+#       means this machine can't run it (no GPU / old Chrome) — expected on many
+#       laptops; the panel then shows a "needs a GPU" state and captions still
+#       work. (Confirmed "available" on Apple Silicon + recent Chrome, 2026-07.)
+#    b. Drop a video/audio file with speech anywhere in the panel (or use the
+#       landing picker). Segments should stream in ~every 12 s of decoded audio.
+#    c. Captionless watch page: the panel surfaces a "Transcribe locally" CTA;
+#       clicking it pipes tab audio through the offscreen Nano path.
+#    d. Unsupported machine: confirm the explicit "on-device transcription isn't
+#       available … needs a supported GPU" error instead of silence.
 
 # 7. To inspect the chain when something goes wrong:
 #    a. chrome://extensions → yt-transcript → "service worker"
@@ -517,8 +536,8 @@ npm run build
 #       output (the ANDROID_VR + DOM player fetches in content.ts).
 #    c. The side panel itself: right-click → Inspect.
 #    d. The offscreen document: chrome://extensions → yt-transcript →
-#       "Inspect views: offscreen.html" — shows transformers.js
-#       download progress events as they fire.
+#       "Inspect views: offscreen.html" — shows the Nano
+#       availability()/create()/prompt() calls (no download).
 ```
 
 The Playwright spec is still useful for the path test. Run it with:
@@ -531,31 +550,29 @@ npm run build && \
 
 ## Store Publishing
 
-Chrome Web Store listing id: `ahddbfbjafmbceehebpeanpnlbaimepk` — being
-renamed to the generic **Video Transcript** (old branded name drew a
-trademark complaint; see the naming rule at the top of this file).
-Store state: 1.4.0 (git tag `v1.4.0`) is the published version; 1.5.1
-(git tag `v1.5.1`) supersedes it — generic rename to "Video Transcript",
-EXTRA-009 drop-file transcription, and removal of every residual platform
-name from user-visible runtime strings (trademark remediation). Upload
-`yt-transcript-chrome.zip` (v1.5.1) with the generic listing name/description
-once verified.
-The Edge listing (Product ID `069ca91d-a7cd-4bac-8224-1ee38a2d2a06`) is
-unpublished pending the trademark-modification process; resubmit only
-with the generic branding and the completed modification form. Keep
-`manifest.json` + `package.json` versions bumped in lockstep for every
-upload. Before uploading a new build, run the manual verification above
-and confirm:
+Chrome Web Store listing id: `ahddbfbjafmbceehebpeanpnlbaimepk`, generic name
+**Video Transcript** (the old branded name drew a trademark complaint — see the
+naming rule at the top). Two release lines are in flight:
 
-1. `npm run zip` produces `yt-transcript-chrome.zip` (≈ 6.7 MB as of 1.4.0).
-2. Chrome Web Store: upload to
-   <https://chrome.google.com/webstore/devconsole>. The current build keeps
-   Hugging Face model-download hosts optional and has no AI provider host
-   permissions.
-3. No other browser store targets are supported.
-4. Screenshots in `store/images/` predate the Settings redesign. Refresh
-   `settings-chrome.png` (Settings → Audio tab) before submitting if
-   the store listing displays it.
+- **1.5.2 (tag `v1.5.2`) — trademark-remediation interim, the one to SHIP now.**
+  Whisper-based, works on all hardware, generic name/icon/listing, every residual
+  platform name stripped from user-visible strings. This is what closes the Vimeo
+  trademark complaint. Publish flow: fix the Privacy-tab justifications (storage
+  must NOT claim "API keys"; host-permission field must include `vimeo.com` —
+  1.5.2 still ships Vimeo), upload `yt-transcript-chrome.zip`, submit. The Edge
+  listing (Product ID `069ca91d-a7cd-4bac-8224-1ee38a2d2a06`) stays unpublished
+  pending the modification form.
+- **2.0.0 (tag `v2.0.0`) — universal Gemini Nano rewrite, ships AFTER real-Chrome
+  sign-off.** Whisper + Vimeo removed; transcription is Chrome Prompt API audio
+  (GPU-only, desktop, Chrome 138+). Bundle ~708 KB (was 6.7 MB), 0 npm
+  vulnerabilities, no `huggingface.co` / `optional_host_permissions`, no
+  `wasm-unsafe-eval`. Do NOT publish 2.0.0 until the Nano audio path is verified
+  in real Chrome (see "How to verify") — it silently excludes non-GPU users from
+  transcription (their captions still work).
+
+Keep `manifest.json` + `package.json` versions in lockstep for every upload.
+`npm run zip` produces `yt-transcript-chrome.zip`. No other browser store targets.
+Refresh `store/images/` screenshots if the listing shows a stale Settings panel.
 
 <!-- MAF Doctor steering — managed by `maf-doctor init`; .claude/maf-doctor.md is overwritten on re-run -->
 @.claude/maf-doctor.md
