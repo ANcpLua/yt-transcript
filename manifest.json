@@ -12,9 +12,7 @@
     "offscreen"
   ],
   "host_permissions": [
-    "*://*.youtube.com/*",
-    "*://*.vimeo.com/*",
-    "*://player.vimeo.com/*"
+    "*://*.youtube.com/*"
   ],
   "optional_host_permissions": [
     "*://huggingface.co/*",
@@ -23,7 +21,7 @@
     "*://cdn-lfs.hf.co/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://*.youtube.com https://*.googlevideo.com https://*.vimeo.com https://player.vimeo.com https://huggingface.co https://*.huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs.hf.co"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://*.youtube.com https://*.googlevideo.com https://huggingface.co https://*.huggingface.co https://cdn-lfs.huggingface.co https://cdn-lfs.hf.co"
   },
   "action": {
     "default_title": "Video Transcript",
@@ -64,13 +62,6 @@
         "*://*.youtube.com/live/*"
       ],
       "js": ["content/content.js"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "*://*.vimeo.com/*"
-      ],
-      "js": ["content/player-content.js"],
       "run_at": "document_idle"
     }
   ],

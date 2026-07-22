@@ -74,7 +74,7 @@ export interface SavedTranscript {
   tags: string[];
 }
 
-export type Platform = "youtube" | "vimeo";
+export type Platform = "youtube";
 
 export type AiProviderId = "chrome-ai";
 

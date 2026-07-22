@@ -483,9 +483,7 @@ export function App() {
                     (sum, s) => sum + s.text.split(/\s+/).filter((w) => w.length > 0).length,
                     0,
                 );
-                const thumbnailUrl = platform === "vimeo"
-                    ? `https://vumbnail.com/${videoId}.jpg`
-                    : `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+                const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
                 void addToHistory({
                     videoId: td.videoId,
                     title: td.title,
@@ -859,9 +857,7 @@ export function App() {
                     const canRecover = error.error === "fetch_failed" && !!failedVideoId &&
                         !failedVideoId.startsWith("file-");
                     const watchUrl = canRecover
-                        ? activePlatform === "vimeo"
-                            ? `https://vimeo.com/${failedVideoId}`
-                            : `https://www.youtube.com/watch?v=${failedVideoId}`
+                        ? `https://www.youtube.com/watch?v=${failedVideoId}`
                         : null;
                     return (
                         <ErrorMessage
@@ -962,9 +958,7 @@ export function App() {
                     onClose={() => setModal(null)}
                     onSelectVideo={(videoId) => {
                         setModal(null);
-                        // History entries with numeric-only IDs are Vimeo
-                        const platform: Platform = /^\d+$/.test(videoId) ? "vimeo" : "youtube";
-                        void fetchTranscript(videoId, platform);
+                        void fetchTranscript(videoId, "youtube");
                     }}
                 />
                 <SavedList

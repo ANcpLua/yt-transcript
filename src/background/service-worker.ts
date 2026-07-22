@@ -1,7 +1,6 @@
 import { fetchPlaylist, fetchChannel } from "./innertube-browse";
 import { fetchTrackSegments } from "./innertube";
 import { YouTubeProvider } from "./providers/youtube";
-import { VimeoProvider } from "./providers/vimeo";
 import { isApiError } from "./providers/types";
 import type { TranscriptProvider } from "./providers/types";
 import type { ExtensionMessage } from "../types/messages";
@@ -22,27 +21,7 @@ import {
 
 const providers: Record<Platform, TranscriptProvider> = {
   youtube: new YouTubeProvider(),
-  vimeo: new VimeoProvider(),
 };
-
-// Vimeo's ISOLATED-world content script still extracts player config from
-// the DOM (Vimeo's auth is simpler — no PO tokens, no SAPISIDHASH). YouTube
-// no longer goes through this path; the MAIN-world interceptor + correlator
-// is the live capture and Innertube WEB_EMBEDDED_PLAYER is the paste-URL
-// fallback.
-async function requestVimeoPlayerData(videoId: string): Promise<unknown | null> {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id || !tab.url || !tab.url.includes("vimeo.com")) return null;
-    const response = await chrome.tabs.sendMessage(tab.id, {
-      type: "request-player-data",
-      videoId,
-    });
-    return response?.playerResponse ?? null;
-  } catch {
-    return null;
-  }
-}
 
 chrome.runtime.onMessage.addListener(
   (message: ExtensionMessage, sender, sendResponse) => {
@@ -75,18 +54,11 @@ chrome.runtime.onMessage.addListener(
 
       case "fetch-transcript": {
         const provider = providers[message.platform];
-        const pageDataPromise =
-          message.platform === "vimeo"
-            ? requestVimeoPlayerData(message.videoId)
-            : Promise.resolve(null);
-        pageDataPromise
-          .then((pageData) =>
-            provider.fetchTranscript(message.videoId, {
-              lang: message.lang,
-              translateTo: message.translateTo,
-              pageData: pageData ?? undefined,
-            }),
-          )
+        provider
+          .fetchTranscript(message.videoId, {
+            lang: message.lang,
+            translateTo: message.translateTo,
+          })
           .then((result) => {
             if (isApiError(result)) {
               sendResponse({ type: "transcript-error", error: result });
@@ -99,12 +71,8 @@ chrome.runtime.onMessage.addListener(
 
       case "fetch-tracks": {
         const provider = providers[message.platform];
-        const pageDataPromise =
-          message.platform === "vimeo"
-            ? requestVimeoPlayerData(message.videoId)
-            : Promise.resolve(null);
-        pageDataPromise
-          .then((pageData) => provider.fetchTracks(message.videoId, pageData ?? undefined))
+        provider
+          .fetchTracks(message.videoId)
           .then((result) => {
             if (isApiError(result)) {
               sendResponse({ type: "tracks-error", error: result });
@@ -256,20 +224,6 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(
     }
   },
   { url: [{ hostSuffix: "youtube.com" }] },
-);
-
-// Detect navigation on Vimeo
-chrome.webNavigation.onHistoryStateUpdated.addListener(
-  (details) => {
-    if (details.frameId !== 0) return;
-    const match = /\/(\d+)(?:\?|$|#)/.exec(details.url);
-    if (match?.[1]) {
-      const videoId = match[1];
-      setBadge(details.tabId);
-      chrome.runtime.sendMessage({ type: "video-info", videoId, platform: "vimeo" as Platform }).catch(() => {});
-    }
-  },
-  { url: [{ hostSuffix: "vimeo.com" }] },
 );
 
 // ---------- Whisper transcription ----------

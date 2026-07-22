@@ -62,8 +62,8 @@ export function UrlInput({onSubmit, onSubmitBatch, onSubmitFile, isLoading, comp
             return;
         }
 
-        // YouTube playlist
-        if (parsed.platform === "youtube" && parsed.type === "playlist") {
+        // Playlist
+        if (parsed.type === "playlist") {
             setLoadingList(true);
             try {
                 const data = await new Promise<{playlistTitle: string; videos: {videoId: string; title: string}[]}>((resolve, reject) => {
@@ -82,8 +82,8 @@ export function UrlInput({onSubmit, onSubmitBatch, onSubmitFile, isLoading, comp
             return;
         }
 
-        // YouTube channel
-        if (parsed.platform === "youtube" && parsed.type === "channel") {
+        // Channel
+        if (parsed.type === "channel") {
             setLoadingList(true);
             try {
                 const data = await new Promise<{channelTitle: string; videos: {videoId: string; title: string}[]}>((resolve, reject) => {
@@ -102,7 +102,7 @@ export function UrlInput({onSubmit, onSubmitBatch, onSubmitFile, isLoading, comp
             return;
         }
 
-        // Video (YouTube or Vimeo)
+        // Video
         setValidationError("");
         onSubmit(parsed.videoId, parsed.platform);
     }, [url, onSubmit]);
