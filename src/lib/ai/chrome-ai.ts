@@ -32,23 +32,25 @@ interface LanguageModelExpectation {
   languages?: string[];
 }
 
+interface LanguageModelAvailabilityOptions {
+  expectedInputs?: LanguageModelExpectation[];
+  expectedOutputs?: LanguageModelExpectation[];
+  outputLanguage?: string;
+}
+
+interface LanguageModelCreateOptions extends LanguageModelAvailabilityOptions {
+  initialPrompts?: { role: "system" | "user" | "assistant"; content: string }[];
+  temperature?: number;
+  topK?: number;
+}
+
 interface LanguageModelStatic {
-  availability(): Promise<"unavailable" | "downloadable" | "downloading" | "available">;
-  create(options?: {
-    initialPrompts?: { role: "system" | "user" | "assistant"; content: string }[];
-    temperature?: number;
-    topK?: number;
-    expectedInputs?: LanguageModelExpectation[];
-    expectedOutputs?: LanguageModelExpectation[];
-    // Newer Chrome field. Single ISO code; takes
-    // precedence over expectedOutputs when supported.
-    outputLanguage?: string;
-  }): Promise<LanguageModelSession>;
+  availability(options?: LanguageModelAvailabilityOptions): Promise<"unavailable" | "downloadable" | "downloading" | "available">;
+  create(options?: LanguageModelCreateOptions): Promise<LanguageModelSession>;
 }
 
 function getAi(): AiNamespace | undefined {
-  const s = self as unknown as { ai?: AiNamespace };
-  return s.ai;
+  return (globalThis as { ai?: AiNamespace }).ai;
 }
 
 function getLanguageModel(): LanguageModelStatic | undefined {
@@ -56,12 +58,18 @@ function getLanguageModel(): LanguageModelStatic | undefined {
   return w.LanguageModel;
 }
 
+const TEXT_MODEL_OPTIONS: LanguageModelAvailabilityOptions = {
+  expectedInputs: [{ type: "text", languages: ["en", "de", "es", "fr", "ja"] }],
+  expectedOutputs: [{ type: "text", languages: ["en"] }],
+  outputLanguage: "en",
+};
+
 /** Prompt API (LanguageModel) — supports any prompt, all AI features. */
 export async function isChromeAiPromptAvailable(): Promise<boolean> {
   const lm = getLanguageModel();
   if (!lm) return false;
   try {
-    const status = await lm.availability();
+    const status = await lm.availability(TEXT_MODEL_OPTIONS);
     return status === "available" || status === "downloadable" || status === "downloading";
   } catch {
     return false;
@@ -145,13 +153,11 @@ export async function runChromeAiPrompt(
 ): Promise<string> {
   const lm = getLanguageModel();
   if (!lm) throw new Error("Chrome built-in AI (Prompt API) is not available in this Chrome profile.");
-  const status = await lm.availability();
+  const status = await lm.availability(TEXT_MODEL_OPTIONS);
   if (status === "unavailable") throw new Error("Chrome built-in AI is unavailable on this device.");
   const session = await lm.create({
+    ...TEXT_MODEL_OPTIONS,
     initialPrompts: [{ role: "system", content: systemPrompt }],
-    expectedInputs: [{ type: "text", languages: ["en", "es", "ja"] }],
-    expectedOutputs: [{ type: "text", languages: ["en"] }],
-    outputLanguage: "en",
   });
   try {
     const finalMessage = options.trimmableContent !== undefined

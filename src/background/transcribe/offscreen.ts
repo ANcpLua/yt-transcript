@@ -14,6 +14,10 @@
 export {};
 
 import type { Segment } from "@/types/transcript";
+import {
+  isSilentPcm,
+  sanitizeTranscription,
+} from "@/lib/transcription/audio";
 
 // ---------- Chrome Prompt API (audio input) typings ----------
 // Text-only LanguageModel types live in lib/ai/chrome-ai.ts; the multimodal
@@ -56,10 +60,12 @@ interface LmStatic {
   availability(options?: {
     expectedInputs?: LmExpectation[];
     expectedOutputs?: LmExpectation[];
+    outputLanguage?: string;
   }): Promise<LmAvailability>;
   create(options?: {
     expectedInputs?: LmExpectation[];
     expectedOutputs?: LmExpectation[];
+    outputLanguage?: string;
     initialPrompts?: LmMessage[];
     monitor?: (monitor: LmDownloadMonitor) => void;
     signal?: AbortSignal;
@@ -73,9 +79,14 @@ function getLanguageModel(): LmStatic | undefined {
 const AUDIO_MODALITY: {
   expectedInputs: LmExpectation[];
   expectedOutputs: LmExpectation[];
+  outputLanguage: string;
 } = {
-  expectedInputs: [{ type: "audio" }, { type: "text", languages: ["en"] }],
+  expectedInputs: [
+    { type: "audio", languages: ["en"] },
+    { type: "text", languages: ["en"] },
+  ],
   expectedOutputs: [{ type: "text", languages: ["en"] }],
+  outputLanguage: "en",
 };
 
 const UNAVAILABLE_MESSAGE =
@@ -87,29 +98,43 @@ const TRANSCRIBE_INSTRUCTION =
   "Transcribe the speech in this audio clip verbatim. Output only the spoken " +
   "words as plain text — no timestamps, no speaker labels, no notes, no quotation " +
   "marks. If there is no intelligible speech, output nothing.";
+const TRANSCRIBE_SYSTEM =
+  "You are a speech-to-text engine. Return only words actually spoken in the " +
+  "audio. Never explain limitations, answer the speaker, or offer help.";
 
 // ---------- config ----------
 
 const SAMPLE_RATE = 16_000;
-// Nano's audio context budget is undocumented and smaller than Whisper's 30 s
-// window; keep windows short to stay under the token ceiling and to give finer
+// Nano's audio context budget is undocumented; keep windows short to stay
+// under the token ceiling and to give finer
 // synthesized timestamps (one Segment per window).
-const CHUNK_DURATION_S = 12;
+const CHUNK_DURATION_S = 8;
 const CHUNK_SAMPLES = SAMPLE_RATE * CHUNK_DURATION_S;
+const SILENCE_RMS = 0.002;
 
 let baseSession: LmSession | null = null;
 let mediaStream: MediaStream | null = null;
 let audioContext: AudioContext | null = null;
 let isCapturing = false;
 let isFileTranscribing = false;
+let finalizeCapture = false;
+let stopActiveAudioPump: (() => void) | null = null;
+let suspendActiveAudioPump: ((suspended: boolean) => void) | null = null;
+let playbackPosition: number | null = null;
+let playbackSuspended = false;
 
-function emitError(err: unknown): void {
-  chrome.runtime
-    .sendMessage({
-      type: "transcription-error",
-      error: err instanceof Error ? err.message : String(err),
-    })
-    .catch(() => {});
+function sendPanelMessage(message: object): void {
+  chrome.runtime.sendMessage(message, () => {
+    void chrome.runtime.lastError;
+  });
+}
+
+function emitError(err: unknown, videoId?: string): void {
+  sendPanelMessage({
+    type: "transcription-error",
+    ...(videoId ? { videoId } : {}),
+    error: err instanceof Error ? err.message : String(err),
+  });
 }
 
 // ---------- Nano session + inference ----------
@@ -120,8 +145,9 @@ async function ensureAvailable(): Promise<LmStatic> {
   let status: LmAvailability;
   try {
     status = await lm.availability(AUDIO_MODALITY);
-  } catch {
-    throw new Error(UNAVAILABLE_MESSAGE);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${UNAVAILABLE_MESSAGE} Chrome reported: ${detail}`);
   }
   if (status === "unavailable") throw new Error(UNAVAILABLE_MESSAGE);
   return lm;
@@ -134,6 +160,10 @@ async function getBaseSession(
   const lm = await ensureAvailable();
   baseSession = await lm.create({
     ...AUDIO_MODALITY,
+    initialPrompts: [{
+      role: "system",
+      content: [{ type: "text", value: TRANSCRIBE_SYSTEM }],
+    }],
     monitor(monitor) {
       monitor.addEventListener("downloadprogress", (event) => {
         onDownload?.(Math.max(1, Math.min(99, Math.round((event.loaded ?? 0) * 100))));
@@ -158,6 +188,7 @@ function pcmToAudioBuffer(pcm: Float32Array): AudioBuffer {
 // Transcribe one PCM window to text. Each window is prompted on an isolated
 // (cloned) context so a prior chunk's audio never bleeds into the model's view.
 async function transcribeChunk(pcm: Float32Array): Promise<string> {
+  if (isSilentPcm(pcm, SILENCE_RMS)) return "";
   const base = await getBaseSession();
   const session = await base.clone();
   try {
@@ -170,7 +201,7 @@ async function transcribeChunk(pcm: Float32Array): Promise<string> {
         ],
       },
     ]);
-    return out.trim();
+    return sanitizeTranscription(out);
   } finally {
     session.destroy();
   }
@@ -181,8 +212,9 @@ async function transcribeChunk(pcm: Float32Array): Promise<string> {
 async function setupAudioCapture(streamId: string): Promise<{
   stream: MediaStream;
   ctx: AudioContext;
-  pump: () => Promise<Float32Array | null>;
-  stop: () => void;
+  startPump: () => Promise<() => Promise<Float32Array | null>>;
+  stopPump: () => void;
+  setSuspended: (suspended: boolean) => void;
 }> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
@@ -194,77 +226,116 @@ async function setupAudioCapture(streamId: string): Promise<{
   });
 
   const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
-  // Offscreen documents carry no user gesture, so Chrome's autoplay policy can
-  // leave a real-time AudioContext "suspended" — which would stop the worklet
-  // from ever running and silently kill tab-audio capture. The active
-  // tab-capture stream usually lets it start, but resume() makes it explicit
-  // (and clears the "AudioContext was not allowed to start" warning).
-  if (ctx.state === "suspended") await ctx.resume().catch(() => {});
-  await ctx.audioWorklet.addModule(
-    chrome.runtime.getURL("offscreen/worklet-processor.js"),
-  );
-
+  if (ctx.state === "suspended") await ctx.resume();
   const source = ctx.createMediaStreamSource(stream);
-  const node = new AudioWorkletNode(ctx, "audio-capture", {
-    numberOfInputs: 1,
-    numberOfOutputs: 1,
-    outputChannelCount: [1],
-  });
+  source.connect(ctx.destination);
 
-  // Re-route audio so the tab keeps playing audibly while we record.
-  // The worklet returns silence on its outputs (default behaviour).
-  source.connect(node);
-  // Don't connect node to destination — we don't need audio output, just samples.
-
-  let buffer = new Float32Array(0);
+  const frames: Float32Array[] = [];
+  let firstFrameIndex = 0;
+  let firstFrameOffset = 0;
+  let bufferedSamples = 0;
   let resolveNext: ((value: Float32Array | null) => void) | null = null;
+  let stopped = false;
+  let suspended = false;
 
-  node.port.onmessage = (e: MessageEvent<Float32Array>) => {
-    const incoming = e.data;
-    const merged = new Float32Array(buffer.length + incoming.length);
-    merged.set(buffer, 0);
-    merged.set(incoming, buffer.length);
-    buffer = merged;
-
-    if (buffer.length >= CHUNK_SAMPLES && resolveNext) {
-      const chunk = buffer.slice(0, CHUNK_SAMPLES);
-      buffer = buffer.slice(CHUNK_SAMPLES);
-      const r = resolveNext;
-      resolveNext = null;
-      r(chunk);
-    }
+  const clearFrames = (): void => {
+    frames.length = 0;
+    firstFrameIndex = 0;
+    firstFrameOffset = 0;
+    bufferedSamples = 0;
   };
 
-  let stopped = false;
+  const takeSamples = (count: number): Float32Array => {
+    const output = new Float32Array(count);
+    let written = 0;
+    while (written < count) {
+      const frame = frames[firstFrameIndex];
+      if (!frame) break;
+      const available = frame.length - firstFrameOffset;
+      const copyCount = Math.min(available, count - written);
+      output.set(frame.subarray(firstFrameOffset, firstFrameOffset + copyCount), written);
+      written += copyCount;
+      firstFrameOffset += copyCount;
+      bufferedSamples -= copyCount;
+      if (firstFrameOffset === frame.length) {
+        firstFrameIndex++;
+        firstFrameOffset = 0;
+      }
+    }
+    if (firstFrameIndex > 0) {
+      frames.splice(0, firstFrameIndex);
+      firstFrameIndex = 0;
+    }
+    return output;
+  };
+
+  const takeTail = (): Float32Array | null => {
+    if (bufferedSamples < SAMPLE_RATE) return null;
+    return takeSamples(bufferedSamples);
+  };
+
+  const stopPump = (): void => {
+    if (stopped) return;
+    stopped = true;
+    const resolve = resolveNext;
+    resolveNext = null;
+    if (resolve) resolve(takeTail());
+  };
+
+  for (const track of stream.getTracks()) {
+    track.addEventListener("ended", () => {
+      finalizeCapture = true;
+      isCapturing = false;
+      stopPump();
+    }, { once: true });
+  }
 
   return {
     stream,
     ctx,
-    async pump() {
-      // Resolves with the next CHUNK_SAMPLES of audio, or null when capture
-      // is stopped (drains any remaining buffered partial chunk first).
-      if (stopped) {
-        if (buffer.length > SAMPLE_RATE) {
-          const tail = buffer;
-          buffer = new Float32Array(0);
-          return tail;
-        }
-        return null;
-      }
-      if (buffer.length >= CHUNK_SAMPLES) {
-        const chunk = buffer.slice(0, CHUNK_SAMPLES);
-        buffer = buffer.slice(CHUNK_SAMPLES);
-        return chunk;
-      }
-      return new Promise<Float32Array | null>((resolve) => {
-        resolveNext = (value) => resolve(value);
+    async startPump() {
+      await ctx.audioWorklet.addModule(
+        chrome.runtime.getURL("offscreen/worklet-processor.js"),
+      );
+      if (stopped) return async () => null;
+
+      const node = new AudioWorkletNode(ctx, "audio-capture", {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
       });
+      const silentSink = ctx.createGain();
+      silentSink.gain.value = 0;
+      source.connect(node);
+      node.connect(silentSink);
+      silentSink.connect(ctx.destination);
+
+      node.port.onmessage = (event: MessageEvent<Float32Array>) => {
+        if (suspended) return;
+        const incoming = event.data;
+        frames.push(incoming);
+        bufferedSamples += incoming.length;
+        if (bufferedSamples >= CHUNK_SAMPLES && resolveNext) {
+          const resolve = resolveNext;
+          resolveNext = null;
+          resolve(takeSamples(CHUNK_SAMPLES));
+        }
+      };
+
+      return async () => {
+        if (bufferedSamples >= CHUNK_SAMPLES) {
+          return takeSamples(CHUNK_SAMPLES);
+        }
+        if (stopped) return takeTail();
+        return new Promise<Float32Array | null>((resolve) => {
+          resolveNext = resolve;
+        });
+      };
     },
-    stop() {
-      stopped = true;
-      const r = resolveNext;
-      resolveNext = null;
-      if (r) r(buffer.length > SAMPLE_RATE ? buffer : null);
+    stopPump,
+    setSuspended(value) {
+      suspended = value;
+      if (suspended) clearFrames();
     },
   };
 }
@@ -276,75 +347,92 @@ async function captureAndTranscribe(
   videoId: string,
   title: string,
 ): Promise<void> {
-  isCapturing = true;
-
-  // Probe + warm the session up front so an unsupported device fails loud
-  // (clear "needs a GPU" error) instead of silently producing nothing.
-  try {
-    await getBaseSession();
-  } catch (err) {
-    emitError(err);
-    isCapturing = false;
+  if (isCapturing || isFileTranscribing) {
+    emitError(new Error("Another on-device transcription is already running."), videoId);
     return;
   }
-
-  const cap = await setupAudioCapture(streamId);
-  mediaStream = cap.stream;
-  audioContext = cap.ctx;
-
+  isCapturing = true;
+  finalizeCapture = false;
+  playbackSuspended = false;
   const allSegments: Segment[] = [];
-  let chunkIndex = 0;
   let timeOffset = 0;
+  let cap: Awaited<ReturnType<typeof setupAudioCapture>> | null = null;
+
+  const sendProgress = (progress: number): void => {
+    sendPanelMessage({
+      type: "transcription-progress",
+      videoId,
+      progress,
+      segments: [...allSegments],
+    });
+  };
 
   try {
-    while (isCapturing) {
-      const chunk = await cap.pump();
+    // Consume the short-lived tabCapture stream ID immediately. The model can
+    // then warm up without letting Chrome expire the ID.
+    cap = await setupAudioCapture(streamId);
+    mediaStream = cap.stream;
+    audioContext = cap.ctx;
+    stopActiveAudioPump = cap.stopPump;
+    suspendActiveAudioPump = cap.setSuspended;
+    cap.setSuspended(playbackSuspended);
+
+    // Begin buffering immediately so speech is not lost while Chrome prepares
+    // or downloads its managed model.
+    const pump = await cap.startPump();
+    await getBaseSession((percent) => {
+      sendProgress(Math.max(1, Math.round(percent * 0.2)));
+    });
+    if (!isCapturing && !finalizeCapture) return;
+
+    while (true) {
+      const chunk = await pump();
       if (!chunk) break;
-      chunkIndex++;
 
-      try {
-        const text = await transcribeChunk(chunk);
-        if (text) {
-          allSegments.push({
-            start: timeOffset,
-            duration: chunk.length / SAMPLE_RATE,
-            text,
-          });
-        }
-        timeOffset += chunk.length / SAMPLE_RATE;
-
-        chrome.runtime
-          .sendMessage({
-            type: "transcription-progress",
-            videoId,
-            // No reliable total when streaming live capture; emit a soft
-            // "frames decoded" pulse so the UI bar advances.
-            progress: Math.min(99, chunkIndex * 5),
-            segments: [...allSegments],
-          })
-          .catch(() => {});
-      } catch (err) {
-        emitError(err);
-        break;
+      const text = await transcribeChunk(chunk);
+      const duration = chunk.length / SAMPLE_RATE;
+      const segmentStart = playbackPosition === null
+        ? timeOffset
+        : Math.max(0, playbackPosition - duration);
+      if (text) {
+        allSegments.push({
+          start: segmentStart,
+          duration,
+          text,
+        });
       }
+      timeOffset += duration;
+      sendProgress(0);
+      if (!isCapturing && !finalizeCapture) break;
     }
 
-    chrome.runtime
-      .sendMessage({
-        type: "transcription-complete",
-        videoId,
-        title,
-        segments: allSegments,
-      })
-      .catch(() => {});
+    if (!finalizeCapture) return;
+    if (allSegments.length === 0) {
+      throw new Error("No speech was captured. Start playback, then try again.");
+    }
+
+    sendPanelMessage({
+      type: "transcription-complete",
+      videoId,
+      title,
+      segments: allSegments,
+    });
+  } catch (error) {
+    emitError(error, videoId);
   } finally {
-    cap.stop();
-    stopCapture();
+    cap?.stopPump();
+    stopCapture(false);
   }
 }
 
-function stopCapture(): void {
+function stopCapture(shouldFinalize: boolean): void {
+  finalizeCapture = shouldFinalize;
   isCapturing = false;
+  stopActiveAudioPump?.();
+  stopActiveAudioPump = null;
+  suspendActiveAudioPump = null;
+  playbackPosition = null;
+  playbackSuspended = false;
   if (mediaStream) {
     for (const track of mediaStream.getTracks()) track.stop();
     mediaStream = null;
@@ -393,11 +481,13 @@ async function transcribeFile(
   videoId: string,
   title: string,
 ): Promise<void> {
+  if (isCapturing || isFileTranscribing) {
+    emitError(new Error("Another on-device transcription is already running."), videoId);
+    return;
+  }
   isFileTranscribing = true;
   const sendProgress = (progress: number, segments: Segment[]): void => {
-    chrome.runtime
-      .sendMessage({ type: "transcription-progress", videoId, progress, segments })
-      .catch(() => {});
+    sendPanelMessage({ type: "transcription-progress", videoId, progress, segments });
   };
   try {
     // The model may need a first-run (Chrome-managed) download; surface it as
@@ -434,16 +524,14 @@ async function transcribeFile(
     // User hit Stop — the panel already reset itself; stay quiet.
     if (!isFileTranscribing) return;
 
-    chrome.runtime
-      .sendMessage({
-        type: "transcription-complete",
-        videoId,
-        title,
-        segments: allSegments,
-      })
-      .catch(() => {});
+    sendPanelMessage({
+      type: "transcription-complete",
+      videoId,
+      title,
+      segments: allSegments,
+    });
   } catch (err) {
-    emitError(err);
+    emitError(err, videoId);
   } finally {
     isFileTranscribing = false;
   }
@@ -463,7 +551,7 @@ chrome.runtime.onMessage.addListener(
         break;
 
       case "offscreen-stop-capture":
-        stopCapture();
+        stopCapture(true);
         isFileTranscribing = false;
         break;
 
@@ -474,6 +562,25 @@ chrome.runtime.onMessage.addListener(
           message["title"] as string,
         );
         break;
+
+      case "media-playback-state": {
+        const state = message["state"];
+        if (typeof state !== "object" || state === null) break;
+        const playback = state as {
+          currentTime?: unknown;
+          paused?: unknown;
+          ended?: unknown;
+          muted?: unknown;
+        };
+        if (typeof playback.currentTime === "number") {
+          playbackPosition = playback.currentTime;
+        }
+        const suspended = playback.paused === true || playback.muted === true;
+        playbackSuspended = suspended;
+        suspendActiveAudioPump?.(suspended);
+        if (playback.ended === true && isCapturing) stopCapture(true);
+        break;
+      }
     }
   },
 );

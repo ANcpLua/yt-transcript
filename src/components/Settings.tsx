@@ -77,7 +77,7 @@ export function Settings({isOpen, onClose}: SettingsProps) {
                     usage: est.usage ?? 0,
                     quota: est.quota ?? 0,
                 });
-            }).catch(() => {});
+            }).catch(() => setStorageEstimate(null));
         }
     }, [isOpen]);
 
@@ -89,7 +89,7 @@ export function Settings({isOpen, onClose}: SettingsProps) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = "yt-transcript-backup.json";
+        a.download = "video-transcript-backup.json";
         a.click();
         URL.revokeObjectURL(url);
     };

@@ -1,4 +1,6 @@
 const VIDEO_ID_RE = /^[a-zA-Z0-9_-]{11}$/;
+const URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z\d+.-]*:/;
+const DOMAIN_LIKE_RE = /^(?:[^.\s/]+\.)+[^.\s/]+(?:[/?#]|$)/;
 
 const PATTERNS: readonly RegExp[] = [
     // youtube.com/watch?v=ID (standard, mobile, www, music)
@@ -74,7 +76,28 @@ export function parseChannelHandle(input: string): string | null {
 export type ParsedUrl =
     | { platform: "youtube"; type: "video"; videoId: string }
     | { platform: "youtube"; type: "playlist"; playlistId: string }
-    | { platform: "youtube"; type: "channel"; handle: string };
+    | { platform: "youtube"; type: "channel"; handle: string }
+    | { type: "web"; url: string };
+
+export function parseWebUrl(input: string): string | null {
+    const trimmed = input.trim().replaceAll("&amp;", "&");
+    if (trimmed.length === 0) return null;
+
+    const candidate = URL_SCHEME_RE.test(trimmed)
+        ? trimmed
+        : DOMAIN_LIKE_RE.test(trimmed)
+            ? `https://${trimmed}`
+            : null;
+    if (!candidate) return null;
+
+    try {
+        const url = new URL(candidate);
+        if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+        return url.href;
+    } catch {
+        return null;
+    }
+}
 
 export function parseUrl(input: string): ParsedUrl | null {
     const trimmed = input.trim();
@@ -88,9 +111,9 @@ export function parseUrl(input: string): ParsedUrl | null {
     const channelHandle = parseChannelHandle(trimmed);
     if (channelHandle) return { platform: "youtube", type: "channel", handle: channelHandle };
 
-    // YouTube video
-    const videoId = parseVideoId(trimmed);
-    if (videoId) return { platform: "youtube", type: "video", videoId };
+    const webUrl = parseWebUrl(trimmed);
+    if (webUrl) return { type: "web", url: webUrl };
 
-    return null;
+    const videoId = parseVideoId(trimmed);
+    return videoId ? { platform: "youtube", type: "video", videoId } : null;
 }

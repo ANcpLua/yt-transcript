@@ -4,15 +4,25 @@ import type {Platform} from "../types/transcript";
 
 interface UrlInputProps {
     onSubmit: (videoId: string, platform: Platform) => void;
+    onSubmitUrl: (url: string) => Promise<void>;
     onSubmitBatch: (videoIds: string[]) => void;
-    /** Transcribe a local video/audio file with on-device Whisper. */
+    onDiscoverCurrentTab: () => void;
+    /** Transcribe a local video/audio file with Chrome's on-device AI. */
     onSubmitFile: (file: File) => void;
     isLoading: boolean;
     /** When true, render the slim top-anchored form (transcript loaded, loading, or error). */
     compact: boolean;
 }
 
-export function UrlInput({onSubmit, onSubmitBatch, onSubmitFile, isLoading, compact}: UrlInputProps) {
+export function UrlInput({
+    onSubmit,
+    onSubmitUrl,
+    onSubmitBatch,
+    onDiscoverCurrentTab,
+    onSubmitFile,
+    isLoading,
+    compact,
+}: UrlInputProps) {
     const [url, setUrl] = useState("");
     const [validationError, setValidationError] = useState("");
     const [videoList, setVideoList] = useState<{videoId: string; title: string; selected: boolean}[]>([]);
@@ -62,6 +72,16 @@ export function UrlInput({onSubmit, onSubmitBatch, onSubmitFile, isLoading, comp
             return;
         }
 
+        if (parsed.type !== "web") {
+            const granted = await chrome.permissions.request({
+                origins: ["https://*.youtube.com/*"],
+            });
+            if (!granted) {
+                setValidationError("Page access is required for this bulk or ID-only source.");
+                return;
+            }
+        }
+
         // Playlist
         if (parsed.type === "playlist") {
             setLoadingList(true);
@@ -77,7 +97,9 @@ export function UrlInput({onSubmit, onSubmitBatch, onSubmitFile, isLoading, comp
                 });
                 setVideoList(data.videos.map(v => ({...v, selected: true})));
                 setListTitle(data.playlistTitle);
-            } catch { /* fetch failed — list simply won't appear */ }
+            } catch (error) {
+                setValidationError(error instanceof Error ? error.message : "Could not load this playlist");
+            }
             setLoadingList(false);
             return;
         }
@@ -97,15 +119,27 @@ export function UrlInput({onSubmit, onSubmitBatch, onSubmitFile, isLoading, comp
                 });
                 setVideoList(data.videos.map(v => ({...v, selected: true})));
                 setListTitle(data.channelTitle);
-            } catch { /* fetch failed — list simply won't appear */ }
+            } catch (error) {
+                setValidationError(error instanceof Error ? error.message : "Could not load this channel");
+            }
             setLoadingList(false);
+            return;
+        }
+
+        if (parsed.type === "web") {
+            setValidationError("");
+            try {
+                await onSubmitUrl(parsed.url);
+            } catch (error) {
+                setValidationError(error instanceof Error ? error.message : "Could not open this URL");
+            }
             return;
         }
 
         // Video
         setValidationError("");
         onSubmit(parsed.videoId, parsed.platform);
-    }, [url, onSubmit]);
+    }, [url, onSubmit, onSubmitUrl]);
 
     const handleChange = useCallback((value: string) => {
         setUrl(value);
@@ -152,6 +186,12 @@ export function UrlInput({onSubmit, onSubmitBatch, onSubmitFile, isLoading, comp
             </div>
         </div>
     );
+    const parsedInput = parseUrl(url);
+    const submitLabel = loadingList
+        ? "Loading…"
+        : parsedInput?.type === "web"
+            ? "Open and find transcript"
+            : "Get transcript";
 
     // Landing state: full-width URL input, action stacked below.
     if (!compact && !isLoading) {
@@ -177,8 +217,19 @@ export function UrlInput({onSubmit, onSubmitBatch, onSubmitFile, isLoading, comp
                         disabled={isLoading || loadingList || url.length === 0}
                         className="mt-2 block min-h-[44px] w-full rounded-lg bg-blue-600 px-4 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-offset-slate-900"
                     >
-                        {loadingList ? "Loading…" : "Get transcript"}
+                        {submitLabel}
                     </button>
+                    <button
+                        type="button"
+                        onClick={onDiscoverCurrentTab}
+                        disabled={isLoading || loadingList}
+                        className="mt-2 block min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus:ring-offset-slate-900"
+                    >
+                        Find transcript on current tab
+                    </button>
+                    <p className="mt-1.5 text-center text-[11px] text-slate-400 dark:text-slate-600">
+                        Checks native captions and subtitle tracks first. Playback can stay paused.
+                    </p>
                     <div className="mt-3 flex items-center justify-center gap-3">
                         <input ref={fileInputRef} type="file" accept=".csv,.txt" onChange={handleCsvUpload} className="hidden" />
                         <input ref={mediaInputRef} type="file"
@@ -195,7 +246,7 @@ export function UrlInput({onSubmit, onSubmitBatch, onSubmitFile, isLoading, comp
                         </button>
                     </div>
                     <p className="mt-2 text-center text-[11px] text-slate-400 dark:text-slate-600">
-                        You can also drop any video or audio file anywhere in this panel — transcription runs on this device.
+                        You can also drop any video or audio file anywhere in this panel.
                     </p>
                     {validationError && (
                         <p className="mt-2 text-sm text-red-500 dark:text-red-400" role="alert">
@@ -227,18 +278,11 @@ export function UrlInput({onSubmit, onSubmitBatch, onSubmitFile, isLoading, comp
                             validationError ? "border-red-400 dark:border-red-500" : "border-slate-200 dark:border-slate-600"
                         }`}
                     />
-                    <button type="button" onClick={() => fileInputRef.current?.click()}
-                        title="Upload CSV"
-                        className="min-h-[44px] rounded-lg border-2 border-slate-200 bg-white px-2.5 text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700">
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                        </svg>
-                    </button>
                     <button
                         type="submit"
                         disabled={isLoading || loadingList || url.length === 0}
-                        title="Get transcript"
-                        aria-label="Get transcript"
+                        title={parsedInput?.type === "web" ? "Open and find transcript" : "Get transcript"}
+                        aria-label={parsedInput?.type === "web" ? "Open and find transcript" : "Get transcript"}
                         className="min-h-[44px] whitespace-nowrap rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-blue-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-offset-slate-900"
                     >
                         {loadingList || isLoading ? (
@@ -254,6 +298,26 @@ export function UrlInput({onSubmit, onSubmitBatch, onSubmitFile, isLoading, comp
                     </button>
                 </div>
                 <input ref={fileInputRef} type="file" accept=".csv,.txt" onChange={handleCsvUpload} className="hidden" />
+                <input ref={mediaInputRef} type="file"
+                    accept="video/*,audio/*,.mkv,.mov,.avi,.m4a,.opus,.flac"
+                    onChange={handleMediaUpload} className="hidden" />
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <button type="button" onClick={onDiscoverCurrentTab}
+                        disabled={isLoading || loadingList}
+                        className="text-xs text-slate-500 hover:text-slate-700 disabled:opacity-50 dark:text-slate-500 dark:hover:text-slate-300">
+                        Find current tab transcript
+                    </button>
+                    <button type="button" onClick={() => mediaInputRef.current?.click()}
+                        disabled={isLoading || loadingList}
+                        className="text-xs text-slate-500 hover:text-slate-700 disabled:opacity-50 dark:text-slate-500 dark:hover:text-slate-300">
+                        Transcribe file
+                    </button>
+                    <button type="button" onClick={() => fileInputRef.current?.click()}
+                        disabled={isLoading || loadingList}
+                        className="text-xs text-slate-500 hover:text-slate-700 disabled:opacity-50 dark:text-slate-500 dark:hover:text-slate-300">
+                        Upload CSV
+                    </button>
+                </div>
                 {validationError && (
                     <p className="mt-1.5 text-sm text-red-500 dark:text-red-400" role="alert">
                         {validationError}
@@ -264,4 +328,3 @@ export function UrlInput({onSubmit, onSubmitBatch, onSubmitFile, isLoading, comp
         </>
     );
 }
-

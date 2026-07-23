@@ -1,15 +1,15 @@
 {
   "name": "yt-transcript",
   "private": true,
-  "version": "2.0.0",
+  "version": "3.0.0",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
     "build": "tsc -b && node scripts/build.mjs",
-    "zip": "node scripts/build.mjs && node scripts/package-stores.mjs",
-    "zip:chrome": "node scripts/build.mjs && cd dist && zip -r ../yt-transcript-chrome.zip .",
-    "test:browser": "node scripts/test-extension.mjs",
+    "zip": "npm run build && node scripts/package-stores.mjs",
+    "zip:chrome": "npm run build && cd dist && zip -r ../yt-transcript-chrome.zip .",
+    "test": "node --test tests/unit/*.test.mjs",
     "lint": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {

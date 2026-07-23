@@ -16,13 +16,14 @@ test.afterAll(async () => {
     await fixtureServer.close();
 });
 
-test("local fixture watch page auto-populates transcript through the MV3 interceptor", async ({
+test("local fixture uses the optional page adapter after generic discovery", async ({
     extensionContext,
+    extensionId,
     extensionManifest,
     openExtensionPage,
 }) => {
-    const popupPath = extensionManifest.action?.default_popup;
-    expect(popupPath).toBeTruthy();
+    const sidePanelPath = extensionManifest.side_panel?.default_path;
+    expect(sidePanelPath).toBeTruthy();
 
     const unexpectedNetwork: string[] = [];
     extensionContext.on("request", (request) => {
@@ -34,18 +35,35 @@ test("local fixture watch page auto-populates transcript through the MV3 interce
         }
     });
 
-    const popup = await openExtensionPage(popupPath ?? "");
-    await popup.setViewportSize({width: 400, height: 900});
+    const panel = await openExtensionPage(sidePanelPath ?? "");
+    await panel.setViewportSize({width: 400, height: 900});
 
     const watchPage = await extensionContext.newPage();
     await watchPage.goto(`${fixtureServer.baseUrl}/watch?v=${FIXTURE_VIDEO_ID}`, {
         waitUntil: "domcontentloaded",
     });
 
+    const browserInstance = extensionContext.browser();
+    expect(browserInstance).not.toBeNull();
+    const browserSession = await browserInstance!.newBrowserCDPSession();
+    const targets = await browserSession.send("Target.getTargets", {
+        filter: [{type: "tab"}],
+    }) as {
+        targetInfos: {targetId: string; type: string; url: string}[];
+    };
+    const tabTarget = targets.targetInfos.find((target) =>
+        target.type === "tab" && target.url === `${fixtureServer.baseUrl}/watch?v=${FIXTURE_VIDEO_ID}`
+    );
+    expect(tabTarget).toBeDefined();
+    await browserSession.send("Extensions.triggerAction", {
+        id: extensionId,
+        targetId: tabTarget!.targetId,
+    });
+
     await expect
         .poll(
             async () =>
-                popup
+                panel
                     .locator('[role="list"][aria-label="Transcript segments"] [role="listitem"]')
                     .count(),
             {
@@ -55,14 +73,15 @@ test("local fixture watch page auto-populates transcript through the MV3 interce
         )
         .toBeGreaterThanOrEqual(FIXTURE_SEGMENTS.length);
 
-    await expect(popup.getByText("Local Fixture Transcript")).toBeVisible();
-    await expect(popup.getByText(FIXTURE_SEGMENTS[0])).toBeVisible();
-    await expect(popup.getByText(FIXTURE_SEGMENTS[FIXTURE_SEGMENTS.length - 1])).toBeVisible();
+    await expect(panel.getByText("Local Fixture Transcript")).toBeVisible();
+    await expect(panel.getByText(FIXTURE_SEGMENTS[0])).toBeVisible();
+    await expect(panel.getByText(FIXTURE_SEGMENTS[FIXTURE_SEGMENTS.length - 1])).toBeVisible();
 
-    const horizontalOverflow = await popup.evaluate(() => {
+    const horizontalOverflow = await panel.evaluate(() => {
         const root = document.documentElement;
         return root.scrollWidth > root.clientWidth;
     });
     expect(horizontalOverflow).toBe(false);
     expect(unexpectedNetwork).toEqual([]);
+    await browserSession.detach();
 });

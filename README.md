@@ -1,84 +1,61 @@
-# yt-transcript
+# Video Transcript
 
-**Video Transcript** — a Chrome side-panel extension (Manifest V3) that
-turns any video into text. It extracts transcripts from the video pages you
-browse, transcribes **any dropped video or audio file** locally with Whisper,
-and analyzes results with Chrome built-in AI. No backend, no accounts, no
-telemetry.
+A free Manifest V3 Chrome side-panel extension that discovers the transcript
+already exposed by a media page and uses Chrome built-in AI only when no
+readable timed text exists. No backend, accounts, API keys, telemetry, or paid
+services.
 
-![License: MIT](https://img.shields.io/badge/license-MIT-blue)
-![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)
-![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6)
-![React 19](https://img.shields.io/badge/React-19-61DAFB)
+## How extraction works
 
-<img src="docs/screenshot.png" alt="yt-transcript side panel showing a transcript with search, AI panel, and timestamped segments" width="420">
+The primary path is platform-independent:
+
+1. The user opens the extension on an active media tab.
+2. Chrome grants temporary `activeTab` access for that page.
+3. The extension inspects every accessible `<video>` and `<audio>` element,
+   its `TextTrackList`, runtime cues, and child `<track>` elements.
+4. A page-world observer checks already-loaded and future `fetch`/XHR resources
+   against timed-text URL and MIME candidates. Text bodies are capped at 2 MiB.
+5. WebVTT, SRT, TTML/DFXP, ASS/SSA, SAMI, SBV, LRC, and common JSON cue shapes
+   are normalized into one transcript model. HLS and DASH manifests are
+   expanded to discover subtitle resources.
+6. If the page has no readable timed text, the UI offers explicit live-audio
+   transcription through Chrome's on-device Prompt API.
+
+No static content script runs on every site, and there is no permanent
+all-sites host permission. Cross-origin players and caption CDNs are handled
+through a user-visible optional permission prompt for only the detected
+origins.
+
+A narrowly scoped page adapter remains for a source whose authenticated caption
+responses require site-specific handling. It is injected only after generic
+discovery yields nothing. Playlist, channel, and ID-only bulk helpers also ask
+for optional source-site access at the moment the user invokes them.
 
 ## Features
 
-**Extraction**
+- Native/runtime caption discovery works while playback is paused.
+- Multiple discovered text tracks remain selectable by language/label.
+- Clickable timestamps seek the active media element.
+- Search, highlights, notes, saved transcripts, tags, and recent history.
+- TXT, SRT, VTT, JSON, CSV, Markdown, Notion, and Obsidian exports.
+- Playlist/channel/CSV batch extraction and ZIP export.
+- On-device Summary, Key points, Q&A, and transcript chat.
+- Live active-tab transcription and dropped-file transcription through Chrome
+  built-in AI.
 
-- On YouTube watch pages, a MAIN-world content script intercepts the
-  transcript and player responses the page itself fetches, so the side panel
-  populates automatically. This also works for videos whose caption requests
-  require session-bound tokens.
-- Pasted URLs are fetched via YouTube's Innertube API. If YouTube blocks
-  that, the extension briefly opens the watch page in a background tab,
-  captures the transcript, and closes the tab.
-- Vimeo transcripts come from the page's player config (WebVTT track).
-- Local Whisper transcription for videos with no captions at all: tab audio
-  runs through `whisper-tiny.en` or `whisper-base.en` in-browser via
-  transformers.js, using WebGPU when available and WASM otherwise. Model
-  weights download from Hugging Face only after an explicit opt-in
-  permission prompt.
-- **Drag-and-drop file transcription**: drop any video or audio file
-  (MP4, WebM, MOV, MKV, MP3, WAV, OGG, FLAC, …) anywhere in the side panel —
-  or use the file picker — and the audio track is decoded and transcribed
-  entirely on-device through the same Whisper pipeline. Nothing is uploaded.
+Live transcription follows the player state: it suspends while playback is
+paused or muted, finishes when media ends, reports media-time progress, skips
+silent chunks, and discards model refusal prose. File transcription uses real
+decode progress.
 
-**Viewing**
+## Install from source
 
-- Search, chapter dividers parsed from the video description, speaker-label
-  detection, and a filler-word removal toggle.
-- Per-segment highlights and notes, persisted in IndexedDB.
-- Click any timestamp, in the transcript or in AI output, to seek the video
-  player.
+Requirements:
 
-**Export**
-
-- Download as TXT, SRT, VTT, JSON, CSV, or Markdown.
-- Copy as plain text, Notion-flavored Markdown, Obsidian-flavored Markdown
-  (with front matter), or highlights only.
-- Batch results export as a ZIP of individual files or one merged file.
-
-**Batch (YouTube only)**
-
-- Paste a playlist or channel URL, or upload a `.csv`/`.txt` of video URLs,
-  then pick which videos to fetch.
-- Transcripts are fetched four at a time, with retry for failed items.
-
-**AI (on-device)**
-
-- Summary, key points, Q&A, and a chat box grounded in the transcript, all
-  running on Chrome built-in AI (Gemini Nano) where the browser provides it.
-  Input is measured and trimmed to fit the on-device model's quota.
-- No API keys, no provider accounts, no cloud AI calls. The Settings panel
-  shows whether built-in AI is available in your Chrome.
-
-**Other**
-
-- Recent-history and saved-transcripts modals, with tags.
-- Everything is stored locally (`chrome.storage` and IndexedDB).
-
-## Install
-
-**Chrome Web Store**: [Video Transcript](https://chromewebstore.google.com/detail/ahddbfbjafmbceehebpeanpnlbaimepk)
-(listing rename to the generic name is rolling out with 1.5.0).
-The store build lags this repository — install from source below for the
-current code.
-
-Building requires Node 22+; running it requires a Chrome version with
-side-panel support (114+). AI features additionally require a Chrome build
-with built-in AI available.
+- Node 22 or newer.
+- Chrome with side-panel support.
+- Chrome desktop 138+ and supported GPU hardware only for audio transcription.
+  Native caption extraction does not require built-in AI.
 
 ```bash
 git clone https://github.com/ANcpLua/yt-transcript.git
@@ -87,79 +64,74 @@ npm install
 npm run build
 ```
 
-Then in Chrome: `chrome://extensions` → enable **Developer mode** →
-**Load unpacked** → select the `dist/` directory.
-
-After loading (or later reloading) the extension, reload any YouTube tabs
-that were already open so they pick up the content scripts.
+Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**,
+and select `dist/`.
 
 ## Usage
 
-1. Open any YouTube watch page and open the side panel from the toolbar
-   icon. The transcript populates automatically and a "Live" pill appears.
-2. Alternatively, paste a YouTube or Vimeo URL into the input. The
-   transcript is fetched directly; for YouTube videos where that's blocked,
-   the extension briefly opens the watch page in a background tab, captures
-   the transcript, and closes the tab.
-3. Paste a playlist or channel URL (or upload a CSV) to batch-fetch multiple
-   transcripts; export them as a ZIP or one merged file.
-4. Drop any video or audio file anywhere in the panel (or click
-   **Transcribe a video/audio file**) to transcribe it locally — the audio
-   never leaves your machine.
-5. Use **Copy** or the **Export** menu for the format you need.
-6. If Chrome built-in AI is available, the Summary / Key points / Q&A
-   buttons and the Ask box work on the loaded transcript.
-7. For videos with no captions, the panel offers **Transcribe locally**.
-   The first use asks for Hugging Face host permission and downloads the
-   Whisper model, which is then cached.
+1. Open a media page and click the Video Transcript toolbar action.
+2. The side panel checks native timed text immediately; playback may remain
+   paused.
+3. For a pasted URL, the extension opens the page visibly. Click the toolbar
+   action on that page once to grant temporary inspection access.
+4. If a cross-origin media source could not be inspected, choose
+   **Inspect media sources** and accept Chrome's exact-origin prompt. The
+   extension then fetches only detected timed-text resources in its service
+   worker, outside the page's Content Security Policy.
+5. Use **Transcribe live audio** only when no native transcript is available;
+   start or resume playback first.
+6. Drop a local audio/video file anywhere in the panel for on-device
+   transcription.
 
-## Privacy
+## Supported timed-text discovery
 
-There is no backend and no telemetry. The extension makes no network
-requests beyond fetching transcripts from `youtube.com` / `vimeo.com`, plus
-`huggingface.co` for Whisper model weights only after you opt in.
-Transcripts, history, highlights, and preferences stay in your browser, and
-AI features run on-device via Chrome built-in AI.
+Fully parsed:
 
-Declared permissions: `sidePanel`, `activeTab`, `storage`, `webNavigation`,
-`tabCapture`, `offscreen`, with host access to `youtube.com` and `vimeo.com`.
-The `huggingface.co` hosts are optional permissions, requested only if you
-enable local Whisper.
+- HTML runtime `TextTrack` / `VTTCue`
+- WebVTT and segmented WebVTT text resources
+- SRT
+- TTML, DFXP, and text-based IMSC documents
+- ASS and SSA
+- SAMI
+- SBV
+- LRC
+- common timestamped JSON cue shapes
 
-Details, including the exact scope of the YouTube response interception, are
-in [PRIVACY.md](PRIVACY.md).
+Manifest/resource discovery:
 
-## Limitations
+- HLS subtitle playlists, WebVTT segments, and closed-caption signaling
+- DASH text adaptations and `wvtt`, `stpp`, `tx3g`, `c608`, and `c708`
+  indicators
+- MP4/fMP4, bitmap, broadcast, and legacy subtitle candidates
 
-- Chrome only. There are no Firefox or other browser builds.
-- Batch mode is YouTube-only.
-- YouTube can throttle or block some direct requests; having the video open
-  in a normal tab gives the extension its best capture path.
-- Chrome built-in AI availability depends on your Chrome version, hardware,
-  and the Gemini Nano download state.
+Binary/in-band formats are detected but not falsely presented as parsed text.
+When the browser/player does not expose their decoded cues through
+`TextTrack`, live on-device transcription is the fallback.
+
+## Privacy and permissions
+
+Required permissions are `sidePanel`, `activeTab`, `scripting`, `storage`,
+`tabCapture`, and `offscreen`. Optional HTTP(S) host access exists only so the
+user can grant an embedded frame or bulk source at runtime. There is no
+permanent host permission and no always-on content script.
+
+See [PRIVACY.md](PRIVACY.md).
 
 ## Development
 
 ```bash
-npm run dev          # Vite dev server (side panel UI only, no extension APIs)
-npm run lint         # tsc --noEmit (type check)
-npm run build        # production build → dist/
-npm run zip          # build + package yt-transcript-chrome.zip
-node --test tests/unit/manifest.test.mjs   # manifest invariants
+npm run lint
+npm test
+npm run build
+npx playwright test
+npm run zip
 ```
 
-The Playwright spec (`e2e/transcript-extraction.spec.ts`) is a path
-regression guard, not a content test: YouTube bot-detects Playwright's
-Chromium, so caption bodies come back empty there even when the code is
-correct. Manual verification steps for real Chrome are in
-[AGENTS.md](AGENTS.md#how-to-verify-the-extension-actually-works).
-
-There is also a standalone CLI extractor at `scripts/transcribe`
-(requires `yt-dlp` and `python3`):
-
-```bash
-./scripts/transcribe "https://www.youtube.com/watch?v=VIDEO_ID" [--json] [--no-timestamps]
-```
+The browser suite uses an unpacked extension and CDP's real toolbar-action
+invocation. Its paused-media fixtures prove runtime cues and WebVTT are found
+before audio transcription, including a cross-origin VTT blocked by page CSP.
+A deterministic watch-page fixture verifies the optional page-adapter fallback
+without external network traffic.
 
 ## License
 

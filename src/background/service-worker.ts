@@ -1,45 +1,82 @@
 import { fetchPlaylist, fetchChannel } from "./innertube-browse";
-import { fetchTrackSegments } from "./innertube";
 import { YouTubeProvider } from "./providers/youtube";
 import { isApiError } from "./providers/types";
 import type { TranscriptProvider } from "./providers/types";
 import type { ExtensionMessage } from "../types/messages";
-import type { Platform } from "../types/transcript";
 import {
-  claimAutoFetchTrack,
+  cancelPendingTranscription,
+  finishTabTranscription,
+  getTabTranscriptionState,
+  handleActionClick,
+  handleCapturedTabClosed,
+  startActiveTabTranscription,
+  startFileTranscription,
+  stopTranscription,
+} from "./transcribe/tab-capture";
+import {
+  cancelPendingDiscovery,
+  clearDiscoveryTab,
+  discoverCurrentTab,
+  getDiscoveryState,
+  handleDiscoveryAction,
+  prepareUrlDiscovery,
+  recordAdapterTranscript,
+  rediscoverTab,
+  recordMediaState,
+  recordPageSnapshot,
+  recordTimedTextResource,
+  selectDiscoveredTrack,
+} from "./discovery/coordinator";
+import {
   clearTab,
   getBroadcastingTabId,
-  notifyNavigate,
-  recordAutoFetchedSegments,
   recordBroadcast,
   recordPlayer,
   recordTimedText,
-  recordTranscript,
-  releaseAutoFetch,
   takeIfReady,
 } from "../lib/intercept/correlator";
 
-const providers: Record<Platform, TranscriptProvider> = {
-  youtube: new YouTubeProvider(),
-};
+const youtubeProvider: TranscriptProvider = new YouTubeProvider();
+
+function sendPanelMessage(message: object): void {
+  chrome.runtime.sendMessage(message, () => {
+    void chrome.runtime.lastError;
+  });
+}
+
+function sendTabMessage(tabId: number, message: object): void {
+  chrome.tabs.sendMessage(tabId, message, () => {
+    void chrome.runtime.lastError;
+  });
+}
 
 chrome.runtime.onMessage.addListener(
   (message: ExtensionMessage, sender, sendResponse) => {
     switch (message.type) {
-      case "video-detected":
-        if (sender.tab?.id) {
-          setBadge(sender.tab.id);
-        }
-        chrome.runtime.sendMessage({
-          type: "video-info",
-          videoId: message.videoId,
-          platform: message.platform,
-        }).catch(() => {});
+      case "player-time":
+        sendPanelMessage(message);
         return false;
 
-      case "player-time":
-        chrome.runtime.sendMessage(message).catch(() => {});
+      case "timed-text-page-snapshot": {
+        const tabId = sender.tab?.id;
+        if (tabId === undefined) return false;
+        recordPageSnapshot(tabId, sender.frameId ?? 0, message.snapshot);
         return false;
+      }
+
+      case "timed-text-resource": {
+        const tabId = sender.tab?.id;
+        if (tabId === undefined) return false;
+        void recordTimedTextResource(tabId, sender.frameId ?? 0, message.resource);
+        return false;
+      }
+
+      case "media-playback-state": {
+        const tabId = sender.tab?.id;
+        if (tabId === undefined) return false;
+        recordMediaState(tabId, sender.frameId ?? 0, message.state);
+        return false;
+      }
 
       case "seek-to": {
         // chrome.runtime.sendMessage from the side panel doesn't reach
@@ -47,14 +84,23 @@ chrome.runtime.onMessage.addListener(
         // the tab that produced the currently-displayed transcript.
         const tabId = getBroadcastingTabId();
         if (tabId !== null) {
-          chrome.tabs.sendMessage(tabId, message).catch(() => {});
+          sendTabMessage(tabId, message);
         }
         return false;
       }
 
       case "fetch-transcript": {
-        const provider = providers[message.platform];
-        provider
+        if (message.platform !== "youtube") {
+          sendResponse({
+            type: "transcript-error",
+            error: {
+              error: "invalid_request",
+              message: "Single-page transcripts are discovered from the active media page.",
+            },
+          });
+          return false;
+        }
+        youtubeProvider
           .fetchTranscript(message.videoId, {
             lang: message.lang,
             translateTo: message.translateTo,
@@ -69,6 +115,60 @@ chrome.runtime.onMessage.addListener(
         return true;
       }
 
+      case "discover-current-tab":
+        discoverCurrentTab().then(sendResponse);
+        return true;
+
+      case "rediscover-tab":
+        rediscoverTab(message.tabId).then(sendResponse);
+        return true;
+
+      case "prepare-url-discovery":
+        prepareUrlDiscovery(message.url).then(sendResponse);
+        return true;
+
+      case "get-discovery-state":
+        getDiscoveryState().then(sendResponse);
+        return true;
+
+      case "cancel-pending-discovery":
+        cancelPendingDiscovery(message.tabId)
+          .then(() => sendResponse({ status: "idle" }))
+          .catch((error: unknown) => {
+            sendResponse({
+              status: "error",
+              error: error instanceof Error ? error.message : "Could not cancel page discovery.",
+            });
+          });
+        return true;
+
+      case "select-discovered-track": {
+        selectDiscoveredTrack(message.videoId, message.trackId)
+          .then((data) => {
+            sendResponse(data
+              ? { type: "transcript-result", data }
+              : {
+                  type: "transcript-error",
+                  error: {
+                    error: "fetch_failed",
+                    message: "That text track is no longer available on the page.",
+                  },
+                });
+          })
+          .catch((error: unknown) => {
+            sendResponse({
+              type: "transcript-error",
+              error: {
+                error: "fetch_failed",
+                message: error instanceof Error
+                  ? error.message
+                  : "That text track could not be restored.",
+              },
+            });
+          });
+        return true;
+      }
+
       case "fetch-playlist":
         fetchPlaylist(message.playlistId).then((result) => sendResponse(result));
         return true;
@@ -78,162 +178,115 @@ chrome.runtime.onMessage.addListener(
         return true;
 
       case "start-transcription":
-        handleStartTranscription(message.videoId, message.title)
-          .catch((err: unknown) => {
-            chrome.runtime.sendMessage({
-              type: "transcription-error",
-              error: String(err),
-            }).catch(() => {});
+        startActiveTabTranscription(message.videoId, message.title)
+          .then(sendResponse)
+          .catch((error: unknown) => {
+            sendResponse({
+              status: "error",
+              error: error instanceof Error ? error.message : "Could not start tab transcription.",
+            });
           });
-        return false;
+        return true;
+
+      case "get-tab-transcription-state":
+        getTabTranscriptionState()
+          .then(sendResponse)
+          .catch((error: unknown) => {
+            sendResponse({
+              status: "error",
+              error: error instanceof Error ? error.message : "Could not read transcription state.",
+            });
+          });
+        return true;
+
+      case "cancel-pending-transcription":
+        cancelPendingTranscription(message.tabId)
+          .then(() => sendResponse({ status: "idle" }))
+          .catch((error: unknown) => {
+            sendResponse({
+              status: "error",
+              error: error instanceof Error ? error.message : "Could not cancel this request.",
+            });
+          });
+        return true;
 
       case "stop-transcription":
-        handleStopTranscription();
+        void stopTranscription().catch((error: unknown) => {
+          sendPanelMessage({
+            type: "transcription-error",
+            error: error instanceof Error ? error.message : "Could not stop transcription.",
+          });
+        });
         return false;
 
       case "transcribe-file":
-        void ensureOffscreen().then(() => {
-          chrome.runtime.sendMessage({
-            type: "offscreen-transcribe-file",
-            blobUrl: message.blobUrl,
-            videoId: message.videoId,
-            title: message.title,
-          }).catch(() => {});
-        });
+        void startFileTranscription(message.blobUrl, message.videoId, message.title)
+          .catch((error: unknown) => {
+            sendPanelMessage({
+              type: "transcription-error",
+              videoId: message.videoId,
+              error: error instanceof Error ? error.message : "Could not start file transcription.",
+            });
+          });
+        return false;
+
+      case "transcription-complete":
+        void finishTabTranscription(message.videoId);
+        return false;
+
+      case "transcription-error":
+        void finishTabTranscription(message.videoId);
         return false;
 
       case "intercepted-capture": {
         const tabId = sender.tab?.id;
         if (!tabId || !message.videoId) return false;
-        console.log(`[intercept] kind=${message.kind} videoId=${message.videoId} bodyLen=${message.bodyText?.length ?? 0}`);
         if (message.kind === "player") {
           recordPlayer(tabId, message.videoId, message.bodyText);
-        } else if (message.kind === "get_transcript") {
-          recordTranscript(tabId, message.videoId, message.bodyText);
-        } else if (message.kind === "timedtext") {
+        } else {
           recordTimedText(tabId, message.videoId, message.bodyText);
         }
         const ready = takeIfReady(tabId);
         if (ready) {
-          console.log(`[intercept] emitting intercepted-transcript videoId=${ready.videoId} segments=${ready.segments.length}`);
+          ready.source = "platform-adapter";
+          recordAdapterTranscript(tabId, ready);
           recordBroadcast(tabId);
-          chrome.runtime
-            .sendMessage({ type: "intercepted-transcript", data: ready })
-            .catch(() => {});
-        } else if (message.kind === "player") {
-          // YouTube doesn't fetch /youtubei/v1/get_transcript until the user
-          // opens its transcript panel, so wait-for-segments would stall on
-          // a fresh page load. Auto-fetch the captionTrack baseUrl from the
-          // captured player to close that gap.
-          console.log(`[intercept] auto-fetch requested for ${message.videoId}`);
-          maybeAutoFetchTimedText(tabId, message.videoId);
+          sendPanelMessage({ type: "intercepted-transcript", data: ready });
         }
         return false;
       }
-
-      case "intercepted-navigate": {
-        const tabId = sender.tab?.id;
-        if (!tabId) return false;
-        notifyNavigate(tabId, message.videoId);
-        return false;
-      }
     }
   },
 );
 
-function maybeAutoFetchTimedText(tabId: number, videoId: string): void {
-  const track = claimAutoFetchTrack(tabId, videoId);
-  if (!track) {
-    console.log(`[auto-fetch] skip (no track or already claimed) ${videoId}`);
-    return;
-  }
-  console.log(`[auto-fetch] claim ${videoId} ${track.languageCode} ${track.baseUrl.slice(0, 80)}`);
-  void fetchTrackSegments(track.baseUrl, track.languageCode)
-    .then((result) => {
-      if (isApiError(result)) {
-        console.log(`[auto-fetch] failed: ${result.error} ${result.message}`);
-        releaseAutoFetch(tabId);
-        return;
-      }
-      console.log(`[auto-fetch] ok: ${result.length} segments`);
-      recordAutoFetchedSegments(tabId, videoId, result);
-      const ready = takeIfReady(tabId);
-      if (ready) {
-        recordBroadcast(tabId);
-        chrome.runtime
-          .sendMessage({ type: "intercepted-transcript", data: ready })
-          .catch(() => {});
-      }
-    })
-    .catch((err) => {
-      console.log(`[auto-fetch] error: ${err}`);
-      releaseAutoFetch(tabId);
-    });
-}
-
-// Drop correlator state when a tab closes so we don't leak captured
-// JSON across the SW lifetime.
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearTab(tabId);
+  void clearDiscoveryTab(tabId);
+  void handleCapturedTabClosed(tabId).catch((error: unknown) => {
+    sendPanelMessage({
+      type: "transcription-error",
+      error: error instanceof Error ? error.message : "Could not stop the closed tab capture.",
+    });
+  });
 });
 
-// Open side panel when extension icon is clicked
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-
-function setBadge(tabId: number): void {
-  if (!chrome.action) return;
-  chrome.action.setBadgeText({ text: "1", tabId }).catch(() => {});
-  chrome.action.setBadgeBackgroundColor({ color: "#22c55e", tabId }).catch(() => {});
-}
-
-// Detect navigation on YouTube
-chrome.webNavigation.onHistoryStateUpdated.addListener(
-  (details) => {
-    if (details.frameId !== 0) return;
-    const url = new URL(details.url);
-    const videoId = url.searchParams.get("v");
-    if (videoId) {
-      setBadge(details.tabId);
-      chrome.runtime.sendMessage({ type: "video-info", videoId, platform: "youtube" as Platform }).catch(() => {});
-    }
-  },
-  { url: [{ hostSuffix: "youtube.com" }] },
-);
-
-// ---------- Transcription (offscreen document) ----------
-
-let offscreenCreated = false;
-
-async function ensureOffscreen(): Promise<void> {
-  if (offscreenCreated) return;
-  try {
-    await chrome.offscreen.createDocument({
-      url: "offscreen/offscreen.html",
-      reasons: [chrome.offscreen.Reason.USER_MEDIA],
-      justification: "Capture tab audio for on-device transcription",
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.id === undefined) return;
+  void chrome.sidePanel.open({ tabId: tab.id }).catch((error: unknown) => {
+    sendPanelMessage({
+      type: "discovery-error",
+      error: error instanceof Error ? error.message : "Could not open the side panel.",
     });
-    offscreenCreated = true;
-  } catch {
-    // Already exists
-    offscreenCreated = true;
-  }
-}
-
-async function handleStartTranscription(videoId: string, title: string): Promise<void> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) throw new Error("No active tab");
-
-  const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
-  await ensureOffscreen();
-
-  chrome.runtime.sendMessage({
-    type: "offscreen-start-capture",
-    streamId,
-    videoId,
-    title,
-  }).catch(() => {});
-}
-
-function handleStopTranscription(): void {
-  chrome.runtime.sendMessage({ type: "offscreen-stop-capture" }).catch(() => {});
-}
+  });
+  void handleActionClick(tab)
+    .then((handledTranscription) => {
+      if (!handledTranscription) return handleDiscoveryAction(tab);
+      return true;
+    })
+    .catch((error: unknown) => {
+      sendPanelMessage({
+        type: "discovery-error",
+        error: error instanceof Error ? error.message : "Could not inspect this media page.",
+      });
+    });
+});

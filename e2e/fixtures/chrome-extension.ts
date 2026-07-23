@@ -20,6 +20,9 @@ interface ExtensionManifest {
     side_panel?: {
         default_path?: string;
     };
+    permissions?: string[];
+    host_permissions?: string[];
+    optional_host_permissions?: string[];
     content_scripts?: {
         matches?: string[];
         js?: string[];

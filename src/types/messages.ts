@@ -1,21 +1,38 @@
 import type { TranscriptResponse, ApiError, PlaylistResponse, ChannelResponse, Platform, Segment } from "./transcript";
+import type {
+  DiscoveryDiagnostics,
+  DiscoveryResponse,
+  DiscoveryTarget,
+  MediaPlaybackState,
+  PageDiscoverySnapshot,
+  TimedTextResource,
+} from "./discovery";
 
 // -- Content script -> Background --
-
-export interface VideoDetectedMessage {
-  type: "video-detected";
-  videoId: string;
-  platform: Platform;
-}
 
 export interface PlayerTimeMessage {
   type: "player-time";
   currentTime: number;
 }
 
+export interface TimedTextPageSnapshotMessage {
+  type: "timed-text-page-snapshot";
+  snapshot: PageDiscoverySnapshot;
+}
+
+export interface TimedTextResourceMessage {
+  type: "timed-text-resource";
+  resource: TimedTextResource;
+}
+
+export interface MediaPlaybackStateMessage {
+  type: "media-playback-state";
+  state: MediaPlaybackState;
+}
+
 // -- ISOLATED-world bridge -> Background (intercepted YouTube responses) --
 
-export type InterceptKind = "get_transcript" | "player" | "timedtext";
+export type InterceptKind = "player" | "timedtext";
 
 export interface InterceptedCaptureMessage {
   type: "intercepted-capture";
@@ -24,12 +41,6 @@ export interface InterceptedCaptureMessage {
   url: string;
   status: number;
   bodyText: string;
-}
-
-export interface InterceptedNavigateMessage {
-  type: "intercepted-navigate";
-  url: string;
-  videoId: string | null;
 }
 
 // -- Side panel -> Background --
@@ -57,6 +68,35 @@ export interface SeekToMessage {
   time: number;
 }
 
+export interface DiscoverCurrentTabMessage {
+  type: "discover-current-tab";
+}
+
+export interface RediscoverTabMessage {
+  type: "rediscover-tab";
+  tabId: number;
+}
+
+export interface PrepareUrlDiscoveryMessage {
+  type: "prepare-url-discovery";
+  url: string;
+}
+
+export interface GetDiscoveryStateMessage {
+  type: "get-discovery-state";
+}
+
+export interface CancelPendingDiscoveryMessage {
+  type: "cancel-pending-discovery";
+  tabId: number;
+}
+
+export interface SelectDiscoveredTrackMessage {
+  type: "select-discovered-track";
+  videoId: string;
+  trackId: string;
+}
+
 // -- Background -> Side panel --
 
 export interface TranscriptResultMessage {
@@ -69,12 +109,6 @@ export interface TranscriptErrorMessage {
   error: ApiError;
 }
 
-export interface VideoInfoMessage {
-  type: "video-info";
-  videoId: string;
-  platform: Platform;
-}
-
 // Side-panel-side notification of a freshly intercepted transcript.
 // Same payload shape as TranscriptResultMessage but distinct type so
 // the side panel can decide whether to auto-load (idle) or show a
@@ -84,12 +118,49 @@ export interface IntercepedTranscriptMessage {
   data: TranscriptResponse;
 }
 
-// -- Transcription (Whisper local) --
+export interface DiscoveryStartedMessage extends DiscoveryTarget {
+  type: "discovery-started";
+}
+
+export interface DiscoveryAwaitingActionMessage extends DiscoveryTarget {
+  type: "discovery-awaiting-action";
+}
+
+export interface DiscoveryResultMessage {
+  type: "discovery-result";
+  target: DiscoveryTarget;
+  data: TranscriptResponse;
+  diagnostics: DiscoveryDiagnostics;
+}
+
+export interface DiscoveryEmptyMessage {
+  type: "discovery-empty";
+  target: DiscoveryTarget;
+  diagnostics: DiscoveryDiagnostics;
+  media: MediaPlaybackState | null;
+}
+
+export interface DiscoveryErrorMessage {
+  type: "discovery-error";
+  error: string;
+  target?: DiscoveryTarget;
+}
+
+// -- On-device transcription --
 
 export interface StartTranscriptionMessage {
   type: "start-transcription";
-  videoId: string;
-  title: string;
+  videoId?: string;
+  title?: string;
+}
+
+export interface GetTabTranscriptionStateMessage {
+  type: "get-tab-transcription-state";
+}
+
+export interface CancelPendingTranscriptionMessage {
+  type: "cancel-pending-transcription";
+  tabId: number;
 }
 
 export interface StopTranscriptionMessage {
@@ -124,7 +195,29 @@ export interface TranscriptionCompleteMessage {
 export interface TranscriptionErrorMessage {
   type: "transcription-error";
   error: string;
+  videoId?: string;
 }
+
+export interface TabTranscriptionTarget {
+  tabId: number;
+  videoId: string;
+  title: string;
+  url: string;
+}
+
+export interface TranscriptionStartedMessage extends TabTranscriptionTarget {
+  type: "transcription-started";
+}
+
+export interface TranscriptionAwaitingActionMessage extends TabTranscriptionTarget {
+  type: "transcription-awaiting-action";
+}
+
+export type TabTranscriptionResponse =
+  | ({ status: "started" } & TabTranscriptionTarget)
+  | ({ status: "awaiting-action" } & TabTranscriptionTarget)
+  | { status: "idle" }
+  | { status: "error"; error: string };
 
 export interface PlaylistResultMessage {
   type: "playlist-result";
@@ -149,16 +242,25 @@ export interface ChannelErrorMessage {
 // -- Union types --
 
 export type ContentToBackgroundMessage =
-  | VideoDetectedMessage
   | PlayerTimeMessage
-  | InterceptedCaptureMessage
-  | InterceptedNavigateMessage;
+  | TimedTextPageSnapshotMessage
+  | TimedTextResourceMessage
+  | MediaPlaybackStateMessage
+  | InterceptedCaptureMessage;
 
 export type PanelToBackgroundMessage =
   | FetchTranscriptMessage
   | FetchPlaylistMessage
   | FetchChannelMessage
+  | DiscoverCurrentTabMessage
+  | RediscoverTabMessage
+  | PrepareUrlDiscoveryMessage
+  | GetDiscoveryStateMessage
+  | CancelPendingDiscoveryMessage
+  | SelectDiscoveredTrackMessage
   | StartTranscriptionMessage
+  | GetTabTranscriptionStateMessage
+  | CancelPendingTranscriptionMessage
   | StopTranscriptionMessage
   | TranscribeFileMessage;
 
@@ -166,16 +268,31 @@ export type BackgroundToPanelMessage =
   | TranscriptResultMessage
   | TranscriptErrorMessage
   | IntercepedTranscriptMessage
-  | VideoInfoMessage
+  | DiscoveryStartedMessage
+  | DiscoveryAwaitingActionMessage
+  | DiscoveryResultMessage
+  | DiscoveryEmptyMessage
+  | DiscoveryErrorMessage
   | PlaylistResultMessage
   | PlaylistErrorMessage
   | ChannelResultMessage
   | ChannelErrorMessage
   | TranscriptionProgressMessage
   | TranscriptionCompleteMessage
-  | TranscriptionErrorMessage;
+  | TranscriptionErrorMessage
+  | TranscriptionStartedMessage
+  | TranscriptionAwaitingActionMessage
+  | MediaPlaybackStateMessage;
 
-export type BackgroundToContentMessage = SeekToMessage;
+export interface ScanTimedTextMessage {
+  type: "scan-timed-text";
+}
+
+export type BackgroundToContentMessage =
+  | SeekToMessage
+  | ScanTimedTextMessage;
+
+export type { DiscoveryResponse };
 
 export type ExtensionMessage =
   | ContentToBackgroundMessage

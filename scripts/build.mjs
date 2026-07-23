@@ -35,32 +35,31 @@ runBin("esbuild", [
   "--outfile=dist/background/service-worker.js",
 ]);
 
-// 3. Content script — YouTube (esbuild, IIFE)
+// 3. Optional page adapter (esbuild, IIFE)
 mkdirSync(resolve(dist, "content"), { recursive: true });
+mkdirSync(resolve(dist, "content/adapters"), { recursive: true });
 runBin("esbuild", [
-  "src/content/content.ts",
+  "src/content/adapters/youtube.ts",
   "--bundle",
   "--format=iife",
   "--target=es2022",
-  "--outfile=dist/content/content.js",
+  "--outfile=dist/content/adapters/youtube.js",
 ]);
 
-// 4a. YouTube MAIN-world fetch interceptor (esbuild, IIFE)
+// 4. Generic user-invoked timed-text discovery
 runBin("esbuild", [
-  "src/content/yt-interceptor.ts",
+  "src/content/timed-text-main.ts",
   "--bundle",
   "--format=iife",
   "--target=es2022",
-  "--outfile=dist/content/yt-interceptor.js",
+  "--outfile=dist/content/timed-text-main.js",
 ]);
-
-// 4b. YouTube ISOLATED-world bridge (esbuild, IIFE)
 runBin("esbuild", [
-  "src/content/yt-bridge.ts",
+  "src/content/timed-text-bridge.ts",
   "--bundle",
   "--format=iife",
   "--target=es2022",
-  "--outfile=dist/content/yt-bridge.js",
+  "--outfile=dist/content/timed-text-bridge.js",
 ]);
 
 // 5. Offscreen document (esbuild, ESM — runs in offscreen page context)

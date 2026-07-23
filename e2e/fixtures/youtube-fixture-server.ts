@@ -10,14 +10,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const FIXTURE_SEGMENTS = [
     "We begin with a local transcript fixture.",
     "The page is served by a deterministic HTTP server.",
-    "The MAIN world interceptor observes the player request.",
-    "The isolated bridge forwards captures to the service worker.",
-    "The MV3 service worker records the player payload.",
-    "It also records transcript cues from youtubei.",
-    "The correlator joins both halves by video id.",
-    "The side panel receives an intercepted transcript message.",
+    "Generic timed-text discovery runs before the page adapter.",
+    "The adapter requests the authenticated player payload.",
+    "The page fetches the selected caption track.",
+    "The service worker correlates player metadata and timed text.",
+    "The side panel receives the completed transcript.",
+    "The adapter remains isolated from the generic discovery path.",
     "No external media website is involved in this test.",
-    "The popup path comes from the extension manifest.",
+    "The side-panel path comes from the extension manifest.",
     "Artifacts are retained when this gate fails.",
     "This final cue proves the list has enough rows.",
 ] as const;
@@ -61,36 +61,6 @@ function timedTextPayload(): Record<string, unknown> {
     };
 }
 
-function getTranscriptPayload(): Record<string, unknown> {
-    return {
-        actions: [
-            {
-                updateEngagementPanelAction: {
-                    content: {
-                        transcriptRenderer: {
-                            content: {
-                                transcriptSearchPanelRenderer: {
-                                    body: {
-                                        transcriptSegmentListRenderer: {
-                                            initialSegments: FIXTURE_SEGMENTS.map((text, index) => ({
-                                                transcriptSegmentRenderer: {
-                                                    snippet: {runs: [{text}]},
-                                                    startMs: String(index * 2_000),
-                                                    endMs: String(index * 2_000 + 1_500),
-                                                },
-                                            })),
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
-        ],
-    };
-}
-
 function playerPayload(port: number): Record<string, unknown> {
     return {
         playabilityStatus: {status: "OK"},
@@ -126,15 +96,10 @@ function watchPage(port: number): string {
     <main>
       <h1>Local Fixture Transcript</h1>
       <video controls width="320" height="180" aria-label="Fixture media"></video>
-      <button type="button" aria-label="Show transcript">Show transcript</button>
     </main>
     <script>
       var ytInitialPlayerResponse = ${playerJson};
       var ytFixtureReady = true;
-
-      function transcriptParams(videoId) {
-        return btoa(String.fromCharCode(10, videoId.length) + videoId);
-      }
 
       async function runFixtureRequests() {
         await fetch("/youtubei/v1/player?prettyPrint=false", {
@@ -143,14 +108,6 @@ function watchPage(port: number): string {
           body: JSON.stringify({
             context: {client: {clientName: "WEB", clientVersion: "fixture"}},
             videoId: "${FIXTURE_VIDEO_ID}"
-          })
-        });
-        await fetch("/youtubei/v1/get_transcript?prettyPrint=false", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({
-            context: {client: {clientName: "WEB", clientVersion: "fixture"}},
-            params: transcriptParams("${FIXTURE_VIDEO_ID}")
           })
         });
       }
@@ -186,11 +143,6 @@ async function handleRequest(
     if (url.pathname === "/youtubei/v1/player") {
         await readBody(request);
         json(response, playerPayload(port));
-        return;
-    }
-    if (url.pathname === "/youtubei/v1/get_transcript") {
-        await readBody(request);
-        json(response, getTranscriptPayload());
         return;
     }
     if (url.pathname === "/api/timedtext") {

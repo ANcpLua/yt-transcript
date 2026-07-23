@@ -1,4 +1,4 @@
-import type {Chapter, ParagraphSegment, Segment} from "../types/transcript";
+import type {Chapter, Segment} from "../types/transcript";
 import {sanitizeFilename} from "./sanitizeFilename";
 
 function triggerDownload(content: string, filename: string, mimeType: string): void {
@@ -39,15 +39,11 @@ type MarkdownFormat = "standard" | "notion" | "obsidian";
 
 interface ExportMarkdownOptions {
     title: string;
-    videoId: string;
     language: string;
     segments: Segment[];
-    paragraphs?: ParagraphSegment[];
     chapters?: Chapter[];
-    bilingualSegments?: Segment[];
-    bilingualLanguage?: string;
+    sourceUrl?: string;
     format?: MarkdownFormat;
-    obsidianTags?: string[];
 }
 
 function timestampedLine(segment: Segment): string {
@@ -58,54 +54,6 @@ function notionTimestampedLine(segment: Segment): string {
     return `\`${formatTimestamp(segment.start)}\` ${segment.text}`;
 }
 
-function renderBilingualTable(
-    original: Segment[],
-    translated: Segment[],
-    originalLang: string,
-    translatedLang: string,
-): string {
-    const lines: string[] = [
-        `| ${originalLang} | ${translatedLang} |`,
-        "| --- | --- |",
-    ];
-
-    const maxLen = Math.max(original.length, translated.length);
-    for (let i = 0; i < maxLen; i++) {
-        const orig = original[i];
-        const trans = translated[i];
-        const origCell = orig
-            ? `**[${formatTimestamp(orig.start)}]** ${orig.text}`
-            : "";
-        const transCell = trans?.text ?? "";
-        lines.push(`| ${origCell} | ${transCell} |`);
-    }
-
-    return lines.join("\n");
-}
-
-function renderBilingualAlternating(
-    original: Segment[],
-    translated: Segment[],
-): string {
-    const lines: string[] = [];
-    const maxLen = Math.max(original.length, translated.length);
-
-    for (let i = 0; i < maxLen; i++) {
-        const orig = original[i];
-        const trans = translated[i];
-        if (orig) {
-            lines.push(timestampedLine(orig));
-        }
-        if (trans) {
-            lines.push(`> ${trans.text}`);
-        }
-        lines.push("");
-    }
-
-    return lines.join("\n");
-}
-
-/** Render segments with optional chapter headings, using a per-line formatter. */
 function renderBody(
     items: Segment[],
     chapters: Chapter[] | undefined,
@@ -134,41 +82,29 @@ function renderBody(
 }
 
 function generateStandard(options: ExportMarkdownOptions): string {
-    const {title, videoId, language, segments, paragraphs, chapters, bilingualSegments, bilingualLanguage} = options;
-    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    const {title, language, segments, chapters, sourceUrl} = options;
 
     const lines: string[] = [
         `# ${title}`, "",
-        `**Source:** ${url}`,
+        ...(sourceUrl ? [`**Source:** ${sourceUrl}`] : []),
         `**Language:** ${language}`,
         `**Extracted:** ${formatDate()}`, "",
         "---", "",
     ];
 
-    if (bilingualSegments && bilingualLanguage) {
-        lines.push(renderBilingualTable(segments, bilingualSegments, language, bilingualLanguage), "");
-        return lines.join("\n");
-    }
-
-    lines.push(...renderBody(paragraphs ?? segments, chapters, timestampedLine));
+    lines.push(...renderBody(segments, chapters, timestampedLine));
     return lines.join("\n");
 }
 
 function generateNotion(options: ExportMarkdownOptions): string {
-    const {title, videoId, language, segments, chapters, bilingualSegments, bilingualLanguage} = options;
-    const url = `https://www.youtube.com/watch?v=${videoId}`;
+    const {title, language, segments, chapters, sourceUrl} = options;
 
     const lines: string[] = [
         `# ${title}`, "",
-        `> **Source:** ${url}`,
+        ...(sourceUrl ? [`> **Source:** ${sourceUrl}`] : []),
         `> **Language:** ${language}`,
         `> **Extracted:** ${formatDate()}`, "",
     ];
-
-    if (bilingualSegments && bilingualLanguage) {
-        lines.push(renderBilingualAlternating(segments, bilingualSegments));
-        return lines.join("\n");
-    }
 
     if (chapters && chapters.length > 0) {
         for (let ci = 0; ci < chapters.length; ci++) {
@@ -192,37 +128,20 @@ function generateNotion(options: ExportMarkdownOptions): string {
 }
 
 function generateObsidian(options: ExportMarkdownOptions): string {
-    const {
-        title,
-        videoId,
-        language,
-        segments,
-        paragraphs,
-        chapters,
-        bilingualSegments,
-        bilingualLanguage,
-        obsidianTags
-    } = options;
-    const url = `https://www.youtube.com/watch?v=${videoId}`;
-    const tags = obsidianTags ?? ["youtube", "transcript"];
+    const {title, language, segments, chapters, sourceUrl} = options;
 
     const lines: string[] = [
         "---",
         `title: "${title.replace(/"/g, '\\"')}"`,
-        `source: "${url}"`,
+        ...(sourceUrl ? [`source: "${sourceUrl.replace(/"/g, '\\"')}"`] : []),
         `language: "${language}"`,
         `date: "${formatDate()}"`,
-        `tags: [${tags.map((t) => `"${t}"`).join(", ")}]`,
+        'tags: ["transcript"]',
         "---", "",
         `# ${title}`, "",
     ];
 
-    if (bilingualSegments && bilingualLanguage) {
-        lines.push(renderBilingualTable(segments, bilingualSegments, language, bilingualLanguage), "");
-        return lines.join("\n");
-    }
-
-    lines.push(...renderBody(paragraphs ?? segments, chapters, timestampedLine));
+    lines.push(...renderBody(segments, chapters, timestampedLine));
     return lines.join("\n");
 }
 

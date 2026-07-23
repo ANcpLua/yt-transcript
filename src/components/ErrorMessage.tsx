@@ -13,7 +13,7 @@ const HEADINGS: Record<string, { heading: string; description: string }> = {
     },
     fetch_failed: {
         heading: "Couldn't fetch transcript",
-        description: "Some videos (premium-gated, age-restricted, region-locked) need an authenticated session we can't replicate from a paste-URL flow. Open the video in its own tab and we'll capture the transcript automatically the moment the page loads. Or transcribe the audio locally.",
+        description: "The page's timed-text data could not be read.",
     },
     unavailable: {
         heading: "Video unavailable",
@@ -27,17 +27,17 @@ const HEADINGS: Record<string, { heading: string; description: string }> = {
         heading: "Invalid URL",
         description: "Paste a full video link.",
     },
+    transcription_failed: {
+        heading: "Couldn't transcribe audio",
+        description: "On-device transcription couldn't finish. Try again after playback starts.",
+    },
 };
 
 const FALLBACK = { heading: "Something went wrong", description: "Try again." };
 
 export function ErrorMessage({error, message, onRetry, onOpenOriginal, onTranscribeLocal}: ErrorMessageProps) {
     const config = HEADINGS[error] ?? FALLBACK;
-    // Prefer the more informative description: ours when it's specific, else the server message.
-    const isFetchFailedDefault = error === "fetch_failed";
-    const description = isFetchFailedDefault
-        ? config.description
-        : (message && message !== config.description ? message : config.description);
+    const description = message || config.description;
 
     return (
         <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-center dark:border-slate-700 dark:bg-slate-800/60" role="alert">

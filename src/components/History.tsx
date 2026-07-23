@@ -3,12 +3,12 @@ import {clearHistory, getHistory} from "../lib/storage/history";
 import type {HistoryEntry} from "../types/transcript";
 
 interface HistoryProps {
-    onSelectVideo: (videoId: string) => void;
+    onSelectEntry: (entry: HistoryEntry) => void;
     isOpen: boolean;
     onClose: () => void;
 }
 
-export function History({onSelectVideo, isOpen, onClose}: HistoryProps) {
+export function History({onSelectEntry, isOpen, onClose}: HistoryProps) {
     const [entries, setEntries] = useState<HistoryEntry[]>([]);
 
     useEffect(() => {
@@ -52,17 +52,23 @@ export function History({onSelectVideo, isOpen, onClose}: HistoryProps) {
                             <button
                                 key={entry.videoId + entry.fetchedAt}
                                 onClick={() => {
-                                    onSelectVideo(entry.videoId);
+                                    onSelectEntry(entry);
                                     onClose();
                                 }}
                                 className="flex w-full gap-3 rounded-lg p-2 text-left transition hover:bg-slate-100 dark:hover:bg-slate-800"
                             >
-                                <img
-                                    src={entry.thumbnailUrl}
-                                    alt=""
-                                    className="h-14 w-24 shrink-0 rounded-md object-cover"
-                                    loading="lazy"
-                                />
+                                {entry.thumbnailUrl ? (
+                                    <img
+                                        src={entry.thumbnailUrl}
+                                        alt=""
+                                        className="h-14 w-24 shrink-0 rounded-md object-cover"
+                                        loading="lazy"
+                                    />
+                                ) : (
+                                    <div className="flex h-14 w-24 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[10px] uppercase tracking-wider text-slate-400 dark:bg-slate-800 dark:text-slate-600">
+                                        Page
+                                    </div>
+                                )}
                                 <div className="min-w-0 flex-1">
                                     <p className="truncate text-sm text-slate-900 dark:text-white">
                                         {entry.title}
