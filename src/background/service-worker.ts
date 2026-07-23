@@ -69,20 +69,6 @@ chrome.runtime.onMessage.addListener(
         return true;
       }
 
-      case "fetch-tracks": {
-        const provider = providers[message.platform];
-        provider
-          .fetchTracks(message.videoId)
-          .then((result) => {
-            if (isApiError(result)) {
-              sendResponse({ type: "tracks-error", error: result });
-            } else {
-              sendResponse({ type: "tracks-result", ...result });
-            }
-          });
-        return true;
-      }
-
       case "fetch-playlist":
         fetchPlaylist(message.playlistId).then((result) => sendResponse(result));
         return true;

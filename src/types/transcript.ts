@@ -29,12 +29,6 @@ export interface TranscriptResponse {
   translatedTo?: string;
 }
 
-export interface TracksResponse {
-  videoId: string;
-  title: string;
-  tracks: Track[];
-}
-
 export interface ApiError {
   error: "no_captions" | "invalid_id" | "unavailable" | "rate_limited" | "fetch_failed" | "invalid_request";
   message: string;
@@ -75,12 +69,6 @@ export interface SavedTranscript {
 }
 
 export type Platform = "youtube";
-
-export type AiProviderId = "chrome-ai";
-
-export interface Preferences {
-  aiProvider: AiProviderId;
-}
 
 export interface PlaylistResponse {
   playlistTitle: string;

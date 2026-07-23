@@ -1,5 +1,5 @@
 import {lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState} from "react";
-import type {ApiError, Chapter, NoteEntry, Platform, Preferences, SavedTranscript, Segment, Track, TranscriptResponse} from "../types/transcript";
+import type {ApiError, Chapter, NoteEntry, Platform, SavedTranscript, Segment, Track, TranscriptResponse} from "../types/transcript";
 import {UrlInput} from "../components/UrlInput";
 import {TranscriptView, countTranscriptWords, transcriptDurationSeconds} from "../components/TranscriptView";
 import {formatTimestamp} from "../lib/formatTime";
@@ -207,7 +207,6 @@ export function App() {
     const [error, setError] = useState<ApiError | null>(null);
     const [cleanFillers, setCleanFillers] = useState(false);
     const [modal, setModal] = useState<Modal>(null);
-    const [prefsVersion, setPrefsVersion] = useState(0);
     const [isSaved, setIsSaved] = useState(false);
     const [tags, setTags] = useState<string[]>([]);
     const [selectedLang, setSelectedLang] = useState<string | null>(null);
@@ -534,10 +533,6 @@ export function App() {
         setIsSaved(true);
     }, []);
 
-    const handlePreferencesChange = useCallback((_prefs: Preferences) => {
-        setPrefsVersion((v) => v + 1);
-    }, []);
-
     const handleRetry = useCallback(() => {
         setState("idle");
         setError(null);
@@ -838,7 +833,6 @@ export function App() {
                             <>
                                 <TranscriptHeader transcript={transcript}/>
                                 <TranscriptView
-                                    key={prefsVersion}
                                     segments={transcript.segments}
                                     language={transcript.language}
                                     playerRef={playerRef}
@@ -918,7 +912,6 @@ export function App() {
 
                         {/* Transcript reference */}
                         <TranscriptView
-                            key={prefsVersion}
                             segments={transcript.segments}
                             language={transcript.language}
                             playerRef={playerRef}
@@ -951,7 +944,6 @@ export function App() {
                 <Settings
                     isOpen={modal === "settings"}
                     onClose={() => setModal(null)}
-                    onPreferencesChange={handlePreferencesChange}
                 />
                 <History
                     isOpen={modal === "history"}

@@ -15,18 +15,8 @@ interface AiSummarizerFactory {
   create(options?: { type?: string; length?: string }): Promise<AiSummarizer>;
 }
 
-interface AiLanguageDetector {
-  detect(text: string): Promise<Array<{ detectedLanguage: string; confidence: number }>>;
-  destroy(): void;
-}
-
-interface AiLanguageDetectorFactory {
-  create(): Promise<AiLanguageDetector>;
-}
-
 interface AiNamespace {
   summarizer?: AiSummarizerFactory;
-  languageDetector?: AiLanguageDetectorFactory;
 }
 
 interface LanguageModelSession {
@@ -191,17 +181,5 @@ export async function chromeAiSummarize(text: string): Promise<string> {
     return await summarizer.summarize(text);
   } finally {
     summarizer.destroy();
-  }
-}
-
-export async function chromeAiDetectLanguage(text: string): Promise<string | null> {
-  const ai = getAi();
-  if (!ai?.languageDetector) return null;
-  const detector = await ai.languageDetector.create();
-  try {
-    const results = await detector.detect(text);
-    return results[0]?.detectedLanguage ?? null;
-  } finally {
-    detector.destroy();
   }
 }

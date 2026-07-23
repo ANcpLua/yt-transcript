@@ -1,5 +1,4 @@
 import {useEffect, useState} from "react";
-import type {Preferences} from "../types/transcript";
 import {clearAllData, exportAllData} from "../lib/storage/saved";
 import {clearHistory} from "../lib/storage/history";
 import {isChromeAiAvailable, isChromeAiPromptAvailable} from "../lib/ai/chrome-ai";
@@ -12,7 +11,6 @@ type TabId = "ai" | "data";
 interface SettingsProps {
     isOpen: boolean;
     onClose: () => void;
-    onPreferencesChange: (prefs: Preferences) => void;
 }
 
 export function formatQuota(kb: number): string {

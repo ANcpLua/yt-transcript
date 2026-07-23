@@ -1,4 +1,4 @@
-import type { TranscriptResponse, ApiError, Track, PlaylistResponse, ChannelResponse, Platform, Segment } from "./transcript";
+import type { TranscriptResponse, ApiError, PlaylistResponse, ChannelResponse, Platform, Segment } from "./transcript";
 
 // -- Content script -> Background --
 
@@ -42,12 +42,6 @@ export interface FetchTranscriptMessage {
   translateTo?: string;
 }
 
-export interface FetchTracksMessage {
-  type: "fetch-tracks";
-  videoId: string;
-  platform: Platform;
-}
-
 export interface FetchPlaylistMessage {
   type: "fetch-playlist";
   playlistId: string;
@@ -72,17 +66,6 @@ export interface TranscriptResultMessage {
 
 export interface TranscriptErrorMessage {
   type: "transcript-error";
-  error: ApiError;
-}
-
-export interface TracksResultMessage {
-  type: "tracks-result";
-  tracks: Track[];
-  title: string;
-}
-
-export interface TracksErrorMessage {
-  type: "tracks-error";
   error: ApiError;
 }
 
@@ -173,7 +156,6 @@ export type ContentToBackgroundMessage =
 
 export type PanelToBackgroundMessage =
   | FetchTranscriptMessage
-  | FetchTracksMessage
   | FetchPlaylistMessage
   | FetchChannelMessage
   | StartTranscriptionMessage
@@ -184,8 +166,6 @@ export type BackgroundToPanelMessage =
   | TranscriptResultMessage
   | TranscriptErrorMessage
   | IntercepedTranscriptMessage
-  | TracksResultMessage
-  | TracksErrorMessage
   | VideoInfoMessage
   | PlaylistResultMessage
   | PlaylistErrorMessage

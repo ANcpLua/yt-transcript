@@ -462,15 +462,3 @@ async function fetchSegmentsWithPoTokenRetry(
   return fetchWithPoTokenRetryCore(track.baseUrl, track.languageCode, userAgent, translateTo);
 }
 
-export async function fetchTracks(
-  videoId: string,
-): Promise<{ tracks: Track[]; title: string } | ApiError> {
-  const player = await resolvePlayer(videoId);
-  if ("error" in player) return player;
-
-  const { title, captionTracks } = player;
-  if (captionTracks.length === 0)
-    return { error: "no_captions", message: "This video has no transcript. Captions weren't created for it." };
-
-  return { tracks: mapTracks(captionTracks), title };
-}
