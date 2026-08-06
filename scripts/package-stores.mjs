@@ -1,9 +1,10 @@
 /**
- * Package the extension for the Chrome Web Store.
+ * Package the extension for the Chrome Web Store and Firefox Add-ons.
  * Run after `npm run build` — expects dist/ to exist.
  *
  * Outputs:
  *   yt-transcript-chrome.zip  — Chrome Web Store.
+ *   video-transcript-firefox.zip — Firefox Add-ons.
  */
 import {execSync} from "child_process";
 import {existsSync, rmSync} from "fs";
@@ -14,6 +15,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 const dist = resolve(root, "dist");
 const chromeZip = resolve(root, "yt-transcript-chrome.zip");
+const firefoxDist = resolve(root, "packages/extension/dist-firefox");
+const firefoxZip = resolve(root, "video-transcript-firefox.zip");
 
 if (!existsSync(resolve(dist, "manifest.json"))) {
     console.error("dist/manifest.json not found. Run `npm run build` first.");
@@ -24,5 +27,14 @@ if (existsSync(chromeZip)) rmSync(chromeZip);
 execSync("zip -r ../yt-transcript-chrome.zip .", {cwd: dist, stdio: "inherit"});
 console.log("✅ yt-transcript-chrome.zip");
 
+if (!existsSync(resolve(firefoxDist, "manifest.json"))) {
+    console.error("packages/extension/dist-firefox/manifest.json not found. Run `npm run build` first.");
+    process.exit(1);
+}
+if (existsSync(firefoxZip)) rmSync(firefoxZip);
+execSync("zip -r ../../../video-transcript-firefox.zip .", {cwd: firefoxDist, stdio: "inherit"});
+console.log("✅ video-transcript-firefox.zip");
+
 console.log("\nDone. Upload to:");
 console.log("  https://chrome.google.com/webstore/devconsole");
+console.log("  https://addons.mozilla.org/developers/");

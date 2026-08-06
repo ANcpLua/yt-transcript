@@ -12,7 +12,8 @@ import {
   startActiveTabTranscription,
   startFileTranscription,
   stopTranscription,
-} from "./transcribe/tab-capture";
+} from "@extension-transcription";
+import {openExtensionPanel} from "@extension-panel";
 import {
   cancelPendingDiscovery,
   clearDiscoveryTab,
@@ -178,6 +179,10 @@ chrome.runtime.onMessage.addListener(
         return true;
 
       case "start-transcription":
+        if (__FIREFOX__) {
+          sendResponse({status: "error", error: "On-device audio transcription is unavailable in Firefox."});
+          return false;
+        }
         startActiveTabTranscription(message.videoId, message.title)
           .then(sendResponse)
           .catch((error: unknown) => {
@@ -189,6 +194,10 @@ chrome.runtime.onMessage.addListener(
         return true;
 
       case "get-tab-transcription-state":
+        if (__FIREFOX__) {
+          sendResponse({status: "idle"});
+          return false;
+        }
         getTabTranscriptionState()
           .then(sendResponse)
           .catch((error: unknown) => {
@@ -200,6 +209,10 @@ chrome.runtime.onMessage.addListener(
         return true;
 
       case "cancel-pending-transcription":
+        if (__FIREFOX__) {
+          sendResponse({status: "idle"});
+          return false;
+        }
         cancelPendingTranscription(message.tabId)
           .then(() => sendResponse({ status: "idle" }))
           .catch((error: unknown) => {
@@ -211,6 +224,7 @@ chrome.runtime.onMessage.addListener(
         return true;
 
       case "stop-transcription":
+        if (__FIREFOX__) return false;
         void stopTranscription().catch((error: unknown) => {
           sendPanelMessage({
             type: "transcription-error",
@@ -220,6 +234,14 @@ chrome.runtime.onMessage.addListener(
         return false;
 
       case "transcribe-file":
+        if (__FIREFOX__) {
+          sendPanelMessage({
+            type: "transcription-error",
+            videoId: message.videoId,
+            error: "On-device file transcription is unavailable in Firefox.",
+          });
+          return false;
+        }
         void startFileTranscription(message.blobUrl, message.videoId, message.title)
           .catch((error: unknown) => {
             sendPanelMessage({
@@ -231,10 +253,12 @@ chrome.runtime.onMessage.addListener(
         return false;
 
       case "transcription-complete":
+        if (__FIREFOX__) return false;
         void finishTabTranscription(message.videoId);
         return false;
 
       case "transcription-error":
+        if (__FIREFOX__) return false;
         void finishTabTranscription(message.videoId);
         return false;
 
@@ -262,31 +286,42 @@ chrome.runtime.onMessage.addListener(
 chrome.tabs.onRemoved.addListener((tabId) => {
   clearTab(tabId);
   void clearDiscoveryTab(tabId);
-  void handleCapturedTabClosed(tabId).catch((error: unknown) => {
-    sendPanelMessage({
-      type: "transcription-error",
-      error: error instanceof Error ? error.message : "Could not stop the closed tab capture.",
+  if (!__FIREFOX__) {
+    void handleCapturedTabClosed(tabId).catch((error: unknown) => {
+      sendPanelMessage({
+        type: "transcription-error",
+        error: error instanceof Error ? error.message : "Could not stop the closed tab capture.",
+      });
     });
-  });
+  }
 });
 
 chrome.action.onClicked.addListener((tab) => {
   if (tab.id === undefined) return;
-  void chrome.sidePanel.open({ tabId: tab.id }).catch((error: unknown) => {
+  void openExtensionPanel(tab.id).catch((error: unknown) => {
     sendPanelMessage({
       type: "discovery-error",
       error: error instanceof Error ? error.message : "Could not open the side panel.",
     });
   });
-  void handleActionClick(tab)
-    .then((handledTranscription) => {
-      if (!handledTranscription) return handleDiscoveryAction(tab);
-      return true;
-    })
-    .catch((error: unknown) => {
-      sendPanelMessage({
-        type: "discovery-error",
-        error: error instanceof Error ? error.message : "Could not inspect this media page.",
+  if (__FIREFOX__) {
+    void handleDiscoveryAction(tab).catch((error: unknown) => {
+        sendPanelMessage({
+          type: "discovery-error",
+          error: error instanceof Error ? error.message : "Could not inspect this media page.",
+        });
       });
-    });
+  } else {
+    void handleActionClick(tab)
+      .then((handledTranscription) => {
+        if (!handledTranscription) return handleDiscoveryAction(tab);
+        return true;
+      })
+      .catch((error: unknown) => {
+        sendPanelMessage({
+          type: "discovery-error",
+          error: error instanceof Error ? error.message : "Could not inspect this media page.",
+        });
+      });
+  }
 });

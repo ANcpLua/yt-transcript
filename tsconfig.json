@@ -22,6 +22,12 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@extension-panel": [
+        "./src/background/panel/chromium.ts"
+      ],
+      "@extension-transcription": [
+        "./src/background/transcribe/tab-capture.ts"
       ]
     }
   },

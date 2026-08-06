@@ -9,6 +9,7 @@
     "build": "tsc -b && node scripts/build.mjs",
     "zip": "npm run build && node scripts/package-stores.mjs",
     "zip:chrome": "npm run build && cd dist && zip -r ../yt-transcript-chrome.zip .",
+    "zip:firefox": "npm run build && rm -f video-transcript-firefox.zip && cd packages/extension/dist-firefox && zip -r ../../../video-transcript-firefox.zip .",
     "test": "node --test tests/unit/*.test.mjs",
     "lint": "tsc --noEmit -p tsconfig.app.json"
   },

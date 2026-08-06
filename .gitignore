@@ -14,6 +14,7 @@ packages/extension/dist-chrome/
 
 # Build artifacts
 yt-transcript-*.zip
+video-transcript-firefox*.zip
 yt-transcript-chrome*/
 test-results/
 playwright-report/

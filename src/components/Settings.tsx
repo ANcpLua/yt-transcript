@@ -2,6 +2,7 @@ import {useEffect, useState} from "react";
 import {clearAllData, exportAllData} from "../lib/storage/saved";
 import {clearHistory} from "../lib/storage/history";
 import {isChromeAiAvailable, isChromeAiPromptAvailable} from "../lib/ai/chrome-ai";
+import {isFirefoxRuntime} from "../lib/browser-capabilities";
 
 // ---------- types & constants ----------
 
@@ -42,14 +43,15 @@ function CloseIcon() {
 // ---------- main component ----------
 
 export function Settings({isOpen, onClose}: SettingsProps) {
-    const [tab, setTab] = useState<TabId>("ai");
+    const isFirefox = __FIREFOX__ || isFirefoxRuntime();
+    const [tab, setTab] = useState<TabId>(isFirefox ? "data" : "ai");
     const [storageEstimate, setStorageEstimate] = useState<{usage: number; quota: number} | null>(null);
     const [chromeAiStatus, setChromeAiStatus] = useState<"checking" | "available" | "summarizer-only" | "unavailable">("checking");
     const [chromeAiProviderStatus, setChromeAiProviderStatus] = useState<ProviderStatus>("checking");
 
     // ----- Chrome AI probe -----
     useEffect(() => {
-        if (!isOpen) return;
+        if (!isOpen || isFirefox) return;
         let cancelled = false;
         setChromeAiProviderStatus("checking");
         void (async () => {
@@ -66,7 +68,7 @@ export function Settings({isOpen, onClose}: SettingsProps) {
             setChromeAiProviderStatus(summarizerOk ? "saved" : "unreachable");
         })();
         return () => { cancelled = true; };
-    }, [isOpen]);
+    }, [isFirefox, isOpen]);
 
     // ----- Storage estimate -----
     useEffect(() => {
@@ -128,7 +130,7 @@ export function Settings({isOpen, onClose}: SettingsProps) {
                     role="tablist" on a generic container. */}
                 <div className="flex border-b border-slate-100 dark:border-slate-800" role="tablist">
                     {([
-                        {id: "ai" as TabId, label: "AI"},
+                        ...(!isFirefox ? [{id: "ai" as TabId, label: "AI"}] : []),
                         {id: "data" as TabId, label: "Data"},
                     ]).map((t) => {
                         const active = tab === t.id;
@@ -155,7 +157,7 @@ export function Settings({isOpen, onClose}: SettingsProps) {
 
                 {/* Tab content */}
                 <div className="max-h-[68vh] overflow-y-auto px-5 py-4">
-                    {tab === "ai" && (
+                    {!isFirefox && tab === "ai" && (
                         <section className="space-y-4">
                             <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 dark:border-slate-800 dark:bg-slate-800/40">
                                 <span className="text-xs text-slate-500 dark:text-slate-400">AI engine</span>

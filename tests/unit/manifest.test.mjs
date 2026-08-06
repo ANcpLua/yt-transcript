@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 
 const root = resolve(import.meta.dirname, "../..");
 const manifest = JSON.parse(readFileSync(resolve(root, "manifest.json"), "utf8"));
+const firefoxManifest = JSON.parse(readFileSync(resolve(root, "manifest.firefox.json"), "utf8"));
 const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
 const packageLock = JSON.parse(readFileSync(resolve(root, "package-lock.json"), "utf8"));
 
@@ -28,11 +29,30 @@ test("release versions stay in lockstep", () => {
   assert.equal(packageLock.packages?.[""]?.version, packageJson.version);
 });
 
-test("manifest keeps browser support Chrome-only at source level", () => {
+test("Chrome and Firefox manifests keep browser-specific UI and background boundaries", () => {
   assert.equal(manifest.browser_specific_settings, undefined);
   assert.equal(manifest.applications, undefined);
   assert.equal(manifest.sidebar_action, undefined);
+  assert.equal(firefoxManifest.manifest_version, 3);
+  assert.deepEqual(firefoxManifest.background?.scripts, ["background/service-worker.js"]);
+  assert.equal(firefoxManifest.background?.service_worker, undefined);
+  assert.equal(firefoxManifest.sidebar_action?.default_panel, "sidepanel/index.html");
+  assert.equal(firefoxManifest.side_panel, undefined);
+  assert.equal(firefoxManifest.permissions.includes("sidePanel"), false);
+  assert.equal(firefoxManifest.permissions.includes("tabCapture"), false);
+  assert.equal(firefoxManifest.permissions.includes("offscreen"), false);
+  assert.equal(firefoxManifest.browser_specific_settings?.gecko?.id, "video-transcript@qyl.at");
+  assert.equal(firefoxManifest.browser_specific_settings?.gecko?.strict_min_version, "142.0");
+  assert.deepEqual(
+    firefoxManifest.browser_specific_settings?.gecko?.data_collection_permissions?.required,
+    ["none"],
+  );
   assert.equal(packageJson.devDependencies?.[["web", "ext"].join("-")], undefined);
+});
+
+test("Firefox and Chrome release versions stay in lockstep", () => {
+  assert.equal(firefoxManifest.version, manifest.version);
+  assert.equal(firefoxManifest.version, packageJson.version);
 });
 
 test("manifest has no AI provider host permissions", () => {

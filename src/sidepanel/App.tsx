@@ -22,11 +22,14 @@ import type {
     DiscoveryTarget,
     MediaPlaybackState,
 } from "../types/discovery";
+import {isFirefoxRuntime, supportsOnDeviceTranscription} from "../lib/browser-capabilities";
 
 // ---------- lazy imports ----------
 
 const Settings = lazy(() => import("../components/Settings").then((m) => ({default: m.Settings})));
-const AiPanel = lazy(() => import("../components/AiPanel").then((m) => ({default: m.AiPanel})));
+const AiPanel = __FIREFOX__
+    ? null
+    : lazy(() => import("../components/AiPanel").then((m) => ({default: m.AiPanel})));
 const History = lazy(() => import("../components/History").then((m) => ({default: m.History})));
 const SavedList = lazy(() => import("../components/SavedList").then((m) => ({default: m.SavedList})));
 const BatchProgress = lazy(() => import("../components/BatchProgress").then((m) => ({default: m.BatchProgress})));
@@ -150,6 +153,8 @@ function TranscriptHeader({transcript}: { transcript: TranscriptData }) {
 // ---------- main app ----------
 
 export function App() {
+    const isFirefox = __FIREFOX__ || isFirefoxRuntime();
+    const canTranscribeOnDevice = supportsOnDeviceTranscription();
     const [state, setState] = useState<AppState>("idle");
     const [transcript, setTranscript] = useState<TranscriptData | null>(null);
     const [error, setError] = useState<ApiError | null>(null);
@@ -297,6 +302,7 @@ export function App() {
     }, [currentTime]);
 
     useEffect(() => {
+        if (!canTranscribeOnDevice) return;
         let cancelled = false;
         chrome.runtime.sendMessage(
             {type: "get-tab-transcription-state"},
@@ -308,7 +314,7 @@ export function App() {
         return () => {
             cancelled = true;
         };
-    }, [applyTabTranscriptionResponse]);
+    }, [applyTabTranscriptionResponse, canTranscribeOnDevice]);
 
     useEffect(() => {
         let cancelled = false;
@@ -674,7 +680,7 @@ export function App() {
         if (!granted) {
             setError({
                 error: "fetch_failed",
-                message: "Chrome did not grant access to the media source.",
+            message: "The browser did not grant access to the media source.",
             });
             setState("error");
             return;
@@ -881,19 +887,22 @@ export function App() {
         <div
             className="min-h-screen bg-white text-slate-900 dark:bg-[#0b0d10] dark:text-slate-100"
             onDragEnter={(e) => {
+                if (!canTranscribeOnDevice) return;
                 if (!e.dataTransfer.types.includes("Files")) return;
                 e.preventDefault();
                 dragDepthRef.current += 1;
                 setIsDragging(true);
             }}
             onDragOver={(e) => {
-                if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+                if (canTranscribeOnDevice && e.dataTransfer.types.includes("Files")) e.preventDefault();
             }}
             onDragLeave={() => {
+                if (!canTranscribeOnDevice) return;
                 dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
                 if (dragDepthRef.current === 0) setIsDragging(false);
             }}
             onDrop={(e) => {
+                if (!canTranscribeOnDevice) return;
                 e.preventDefault();
                 dragDepthRef.current = 0;
                 setIsDragging(false);
@@ -902,7 +911,7 @@ export function App() {
             }}
         >
             {/* Drop-anywhere overlay */}
-            {isDragging && (
+            {canTranscribeOnDevice && isDragging && (
                 <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center rounded-lg border-2 border-dashed border-blue-500 bg-blue-500/10">
                     <div className="rounded-xl bg-white px-5 py-4 text-center shadow-lg dark:bg-slate-800">
                         <p className="text-sm font-semibold text-slate-900 dark:text-white">Drop to transcribe</p>
@@ -957,7 +966,9 @@ export function App() {
                     onSubmitUrl={handlePrepareUrlDiscovery}
                     onSubmitBatch={handleSubmitBatch}
                     onDiscoverCurrentTab={() => void requestCurrentTabDiscovery()}
+                    useToolbarForCurrentTab={isFirefox}
                     onSubmitFile={handleFileTranscribe}
+                    allowLocalTranscription={canTranscribeOnDevice}
                     isLoading={
                         state === "loading" ||
                         state === "discovering" ||
@@ -1016,7 +1027,7 @@ export function App() {
                             Ready to inspect the opened media page
                         </h3>
                         <p className="mt-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-400">
-                            Click the Video Transcript toolbar icon on that tab. Chrome grants temporary
+                            Click the Video Transcript toolbar icon on that tab. The browser grants temporary
                             access to discover its subtitle data; the video does not need to be playing.
                         </p>
                         <button
@@ -1039,7 +1050,7 @@ export function App() {
                     </div>
                 )}
 
-                {state === "capture-permission" && captureTarget && (
+                {canTranscribeOnDevice && state === "capture-permission" && captureTarget && (
                     <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-400/20 dark:bg-blue-400/[0.06]">
                         <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-700 dark:text-blue-300">
                             One permission click
@@ -1049,7 +1060,7 @@ export function App() {
                         </h3>
                         <p className="mt-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-400">
                             Start playing the video, then click the Video Transcript toolbar icon once.
-                            Chrome grants tab-audio access from that click and transcription starts automatically.
+                            The browser grants tab-audio access from that click and transcription starts automatically.
                         </p>
                         <div className="mt-3 flex items-center gap-2">
                             <button
@@ -1097,19 +1108,23 @@ export function App() {
                                     Inspect media sources
                                 </button>
                             )}
-                            <button
-                                onClick={() => void requestTabTranscription(
-                                    pendingVideoId ?? undefined,
-                                    pendingTitle || undefined,
-                                )}
-                                className="rounded-md border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                            >
-                                Transcribe live audio
-                            </button>
+                            {canTranscribeOnDevice && (
+                                <button
+                                    onClick={() => void requestTabTranscription(
+                                        pendingVideoId ?? undefined,
+                                        pendingTitle || undefined,
+                                    )}
+                                    className="rounded-md border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                                >
+                                    Transcribe live audio
+                                </button>
+                            )}
                         </div>
-                        <p className="mt-2 text-xs text-slate-400 dark:text-slate-600">
-                            Start or resume playback first. Audio stays on this device.
-                        </p>
+                        {canTranscribeOnDevice && (
+                            <p className="mt-2 text-xs text-slate-400 dark:text-slate-600">
+                                Start or resume playback first. Audio stays on this device.
+                            </p>
+                        )}
                     </div>
                 )}
 
@@ -1215,10 +1230,12 @@ export function App() {
 
                         {/* AI Panel first — promoted above the transcript so users don't have to scroll past
                             the whole reading view to reach the analyze tools. */}
-                        <Suspense
-                            fallback={<div className="h-32 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800"/>}>
-                            <AiPanel transcript={transcript as TranscriptResponse} onSeek={handleSeek}/>
-                        </Suspense>
+                        {!isFirefox && AiPanel && (
+                            <Suspense
+                                fallback={<div className="h-32 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800"/>}>
+                                <AiPanel transcript={transcript as TranscriptResponse} onSeek={handleSeek}/>
+                            </Suspense>
+                        )}
 
                         {/* Transcript reference */}
                         <TranscriptView

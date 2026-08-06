@@ -7,6 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 const dist = resolve(root, "dist");
 const chromeDist = resolve(root, "packages/extension/dist-chrome");
+const firefoxDist = resolve(root, "packages/extension/dist-firefox");
 
 function bin(name) {
   return resolve(root, "node_modules/.bin", process.platform === "win32" ? `${name}.cmd` : name);
@@ -20,6 +21,7 @@ function runBin(name, args) {
 // Clean
 if (existsSync(dist)) rmSync(dist, { recursive: true });
 if (existsSync(chromeDist)) rmSync(chromeDist, { recursive: true });
+if (existsSync(firefoxDist)) rmSync(firefoxDist, { recursive: true });
 mkdirSync(dist, { recursive: true });
 
 // 1. Side panel (Vite React build)
@@ -32,6 +34,7 @@ runBin("esbuild", [
   "--bundle",
   "--format=esm",
   "--target=es2022",
+  "--define:__FIREFOX__=false",
   "--outfile=dist/background/service-worker.js",
 ]);
 
@@ -95,4 +98,21 @@ if (existsSync(resolve(root, "public/fonts"))) {
 mkdirSync(dirname(chromeDist), { recursive: true });
 cpSync(dist, chromeDist, { recursive: true });
 
-console.log("\nExtension built to dist/ and packages/extension/dist-chrome/");
+// Firefox uses an event-page background script and sidebar_action. Its build
+// intentionally omits Chromium-only tab audio/offscreen transcription files.
+cpSync(dist, firefoxDist, { recursive: true });
+cpSync(resolve(root, "manifest.firefox.json"), resolve(firefoxDist, "manifest.json"));
+rmSync(resolve(firefoxDist, "offscreen"), { recursive: true, force: true });
+runBin("vite", ["build", "--mode", "firefox"]);
+runBin("esbuild", [
+  "src/background/service-worker.ts",
+  "--bundle",
+  "--format=esm",
+  "--target=es2022",
+  "--define:__FIREFOX__=true",
+  "--alias:@extension-panel=./src/background/panel/firefox.ts",
+  "--alias:@extension-transcription=./src/background/transcribe/tab-capture.firefox.ts",
+  "--outfile=packages/extension/dist-firefox/background/service-worker.js",
+]);
+
+console.log("\nExtension built to dist/, packages/extension/dist-chrome/, and packages/extension/dist-firefox/");

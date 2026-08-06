@@ -7,8 +7,10 @@ interface UrlInputProps {
     onSubmitUrl: (url: string) => Promise<void>;
     onSubmitBatch: (videoIds: string[]) => void;
     onDiscoverCurrentTab: () => void;
-    /** Transcribe a local video/audio file with Chrome's on-device AI. */
+    useToolbarForCurrentTab: boolean;
+    /** Transcribe a local video/audio file when the browser exposes the required APIs. */
     onSubmitFile: (file: File) => void;
+    allowLocalTranscription: boolean;
     isLoading: boolean;
     /** When true, render the slim top-anchored form (transcript loaded, loading, or error). */
     compact: boolean;
@@ -19,7 +21,9 @@ export function UrlInput({
     onSubmitUrl,
     onSubmitBatch,
     onDiscoverCurrentTab,
+    useToolbarForCurrentTab,
     onSubmitFile,
+    allowLocalTranscription,
     isLoading,
     compact,
 }: UrlInputProps) {
@@ -219,35 +223,47 @@ export function UrlInput({
                     >
                         {submitLabel}
                     </button>
-                    <button
-                        type="button"
-                        onClick={onDiscoverCurrentTab}
-                        disabled={isLoading || loadingList}
-                        className="mt-2 block min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus:ring-offset-slate-900"
-                    >
-                        Find transcript on current tab
-                    </button>
+                    {useToolbarForCurrentTab ? (
+                        <div className="mt-2 flex min-h-[44px] w-full items-center justify-center rounded-lg border border-slate-300 bg-slate-50 px-4 text-center text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                            Current tab: click Video Transcript in Firefox&apos;s Extensions menu
+                        </div>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={onDiscoverCurrentTab}
+                            disabled={isLoading || loadingList}
+                            className="mt-2 block min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus:ring-offset-slate-900"
+                        >
+                            Find transcript on current tab
+                        </button>
+                    )}
                     <p className="mt-1.5 text-center text-[11px] text-slate-400 dark:text-slate-600">
                         Checks native captions and subtitle tracks first. Playback can stay paused.
                     </p>
                     <div className="mt-3 flex items-center justify-center gap-3">
                         <input ref={fileInputRef} type="file" accept=".csv,.txt" onChange={handleCsvUpload} className="hidden" />
-                        <input ref={mediaInputRef} type="file"
-                            accept="video/*,audio/*,.mkv,.mov,.avi,.m4a,.opus,.flac"
-                            onChange={handleMediaUpload} className="hidden" />
-                        <button type="button" onClick={() => mediaInputRef.current?.click()}
-                            className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300">
-                            Transcribe a video/audio file
-                        </button>
-                        <span className="text-slate-300 dark:text-slate-700">·</span>
+                        {allowLocalTranscription && (
+                            <>
+                                <input ref={mediaInputRef} type="file"
+                                    accept="video/*,audio/*,.mkv,.mov,.avi,.m4a,.opus,.flac"
+                                    onChange={handleMediaUpload} className="hidden" />
+                                <button type="button" onClick={() => mediaInputRef.current?.click()}
+                                    className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300">
+                                    Transcribe a video/audio file
+                                </button>
+                                <span className="text-slate-300 dark:text-slate-700">·</span>
+                            </>
+                        )}
                         <button type="button" onClick={() => fileInputRef.current?.click()}
                             className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300">
                             Upload a CSV
                         </button>
                     </div>
-                    <p className="mt-2 text-center text-[11px] text-slate-400 dark:text-slate-600">
-                        You can also drop any video or audio file anywhere in this panel.
-                    </p>
+                    {allowLocalTranscription && (
+                        <p className="mt-2 text-center text-[11px] text-slate-400 dark:text-slate-600">
+                            You can also drop any video or audio file anywhere in this panel.
+                        </p>
+                    )}
                     {validationError && (
                         <p className="mt-2 text-sm text-red-500 dark:text-red-400" role="alert">
                             {validationError}
@@ -298,20 +314,30 @@ export function UrlInput({
                     </button>
                 </div>
                 <input ref={fileInputRef} type="file" accept=".csv,.txt" onChange={handleCsvUpload} className="hidden" />
-                <input ref={mediaInputRef} type="file"
-                    accept="video/*,audio/*,.mkv,.mov,.avi,.m4a,.opus,.flac"
-                    onChange={handleMediaUpload} className="hidden" />
+                {allowLocalTranscription && (
+                    <input ref={mediaInputRef} type="file"
+                        accept="video/*,audio/*,.mkv,.mov,.avi,.m4a,.opus,.flac"
+                        onChange={handleMediaUpload} className="hidden" />
+                )}
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <button type="button" onClick={onDiscoverCurrentTab}
-                        disabled={isLoading || loadingList}
-                        className="text-xs text-slate-500 hover:text-slate-700 disabled:opacity-50 dark:text-slate-500 dark:hover:text-slate-300">
-                        Find current tab transcript
-                    </button>
-                    <button type="button" onClick={() => mediaInputRef.current?.click()}
-                        disabled={isLoading || loadingList}
-                        className="text-xs text-slate-500 hover:text-slate-700 disabled:opacity-50 dark:text-slate-500 dark:hover:text-slate-300">
-                        Transcribe file
-                    </button>
+                    {useToolbarForCurrentTab ? (
+                        <span className="text-xs text-slate-500 dark:text-slate-500">
+                            Current tab: use Firefox&apos;s Extensions menu
+                        </span>
+                    ) : (
+                        <button type="button" onClick={onDiscoverCurrentTab}
+                            disabled={isLoading || loadingList}
+                            className="text-xs text-slate-500 hover:text-slate-700 disabled:opacity-50 dark:text-slate-500 dark:hover:text-slate-300">
+                            Find current tab transcript
+                        </button>
+                    )}
+                    {allowLocalTranscription && (
+                        <button type="button" onClick={() => mediaInputRef.current?.click()}
+                            disabled={isLoading || loadingList}
+                            className="text-xs text-slate-500 hover:text-slate-700 disabled:opacity-50 dark:text-slate-500 dark:hover:text-slate-300">
+                            Transcribe file
+                        </button>
+                    )}
                     <button type="button" onClick={() => fileInputRef.current?.click()}
                         disabled={isLoading || loadingList}
                         className="text-xs text-slate-500 hover:text-slate-700 disabled:opacity-50 dark:text-slate-500 dark:hover:text-slate-300">

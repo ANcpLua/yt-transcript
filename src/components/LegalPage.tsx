@@ -1,22 +1,29 @@
 import React from "react";
+import {isFirefoxRuntime} from "../lib/browser-capabilities";
 
 interface LegalSection {
     title: string;
     body: string;
 }
 
-const sections: LegalSection[] = [
-    {
-        title: "How It Works",
-        body: "This tool extracts publicly available transcript data from video pages you visit, and can transcribe local video/audio files with on-device AI. All processing happens in your browser.",
-    },
+function legalSections(): LegalSection[] {
+    const firefox = isFirefoxRuntime();
+    return [
+        {
+            title: "How It Works",
+            body: firefox
+                ? "This tool discovers readable caption and transcript data from video pages you explicitly select. Processing happens in your browser."
+                : "This tool discovers readable transcript data from video pages you select and can transcribe local video/audio files with on-device browser AI. Processing happens in your browser.",
+        },
     {
         title: "No Server-Side Storage",
-        body: "We do not store any data on our servers. Your transcripts and preferences are stored locally in your browser using chrome.storage and IndexedDB.",
+        body: "We do not store any data on our servers. Your transcripts and preferences are stored locally using the browser's extension storage and IndexedDB.",
     },
     {
         title: "Third-Party Services",
-        body: "AI features use Chrome built-in AI in the browser. We never see or proxy AI requests.",
+        body: firefox
+            ? "This Firefox build does not send transcript content to an AI provider or developer service."
+            : "Optional AI features use the browser's built-in on-device AI. We never see or proxy AI requests.",
     },
     {
         title: "Trademarks & Affiliation",
@@ -38,9 +45,11 @@ const sections: LegalSection[] = [
         title: "Open Source",
         body: "This tool is provided as-is, without warranty of any kind, express or implied. Use it at your own risk. No guarantee is made regarding availability, accuracy, or fitness for a particular purpose.",
     },
-];
+    ];
+}
 
 export function LegalPage({onBack}: { onBack: () => void }): React.JSX.Element {
+    const sections = legalSections();
     return (
         <div className="mx-auto max-w-3xl px-4 py-8">
             <button
