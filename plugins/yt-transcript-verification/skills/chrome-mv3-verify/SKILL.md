@@ -10,14 +10,15 @@ the local Chrome extension gate.
 
 ## Contract
 
-- Run `pnpm verify` from the repository root.
+- Run `npm test`, `npm run build`, and `npx playwright test` from the repository
+  root.
 - The gate must typecheck, build the Chrome extension, run unit tests, and run
   deterministic Playwright E2E.
 - The Playwright tests load `packages/extension/dist-chrome`, derive the
   extension id from the MV3 service worker, and open
   `manifest.action.default_popup`.
 - E2E media coverage uses only the local fixture server. Do not replace it with
-  live YouTube, Vimeo, or non-Chrome browser coverage.
+  live third-party media sites or non-Chrome browser coverage.
 - Treat `playwright-report/e2e`, `test-results/e2e-results.json`, and
   `test-results/e2e-artifacts` as the first artifact locations to inspect on
   failure.

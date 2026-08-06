@@ -51,9 +51,9 @@ test("arbitrary media URLs enter the user-granted page discovery flow at 400px",
     const sidePanelPath = extensionManifest.side_panel?.default_path;
     expect(sidePanelPath).toBeTruthy();
 
-    const pastedUrl = "https://vimeo.com/915999269?fl=pl&amp;fe=cm";
-    const targetUrl = "https://vimeo.com/915999269?fl=pl&fe=cm";
-    await extensionContext.route("https://vimeo.com/**", async (route) => {
+    const pastedUrl = "https://media.example/915999269?fl=pl&amp;fe=cm";
+    const targetUrl = "https://media.example/915999269?fl=pl&fe=cm";
+    await extensionContext.route("https://media.example/**", async (route) => {
         await route.fulfill({
             status: 200,
             contentType: "text/html",

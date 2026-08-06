@@ -50,7 +50,7 @@ on GitHub — you can audit every line.
 
 The extension's outgoing network footprint:
 
-1. `youtube.com` and `vimeo.com` — to fetch transcripts.
+1. The selected media page or its caption delivery host — to fetch transcripts.
 2. `huggingface.co` — only if you choose local Whisper transcription
    (the model weights stream from the Hugging Face CDN on first use and
    then cache locally; opt-in, never automatic).

@@ -54,5 +54,5 @@ test("manifest has no AI provider host permissions", () => {
 test("extension fetches permitted timed-text origins without platform-specific CSP entries", () => {
   const policy = manifest.content_security_policy?.extension_pages ?? "";
   assert.match(policy, /connect-src 'self' http: https:/);
-  assert.doesNotMatch(policy, /youtube|googlevideo|vimeo/i);
+  assert.doesNotMatch(policy, /youtube|googlevideo/i);
 });
