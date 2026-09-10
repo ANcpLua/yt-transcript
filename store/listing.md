@@ -40,3 +40,30 @@ Tools
 ## Language
 
 English
+
+## AMO description
+
+Firefox has no keyword-spam rule of Chrome's kind, but the same copy was
+carrying the same acronym run, so it is kept in step here. Wording differs
+only where the browser does: Firefox uses a sidebar and has no built-in
+on-device AI, so this text promises neither.
+
+Applied with `node scripts/publish/update-amo-listing.mjs`.
+
+Video Transcript turns the captions and subtitle tracks a video page already
+offers into searchable text in Firefox's sidebar.
+
+Open it from Firefox's Extensions menu while you are on a video page. It reads
+the page only after you invoke it.
+
+• Finds captions a media page already provides, when you ask it to
+• Reads the subtitle formats browsers already understand
+• Search and jump through timestamped segments
+• Keep highlights, notes, and tags alongside a transcript
+• Save the result to a file
+• Work through a list of pages in one run
+• Keeps what you save on your machine and available offline
+
+No account, analytics, advertising, remote code, or developer-operated
+backend. Your transcripts and preferences stay in Firefox. The extension asks
+for page access only for the media page or caption origin you select.
