@@ -23,6 +23,7 @@ import type {
     MediaPlaybackState,
 } from "../types/discovery";
 import {isFirefoxRuntime, supportsOnDeviceTranscription} from "../lib/browser-capabilities";
+import {isOnDeviceAudioAvailable} from "../lib/ai/chrome-ai";
 
 // ---------- lazy imports ----------
 
@@ -154,7 +155,25 @@ function TranscriptHeader({transcript}: { transcript: TranscriptData }) {
 
 export function App() {
     const isFirefox = __FIREFOX__ || isFirefoxRuntime();
-    const canTranscribeOnDevice = supportsOnDeviceTranscription();
+    // The extension APIs being present says nothing about Gemini Nano being
+    // usable here, so the panel probes the audio model before offering
+    // transcription. Null means the probe has not answered yet.
+    const hasTranscriptionApis = supportsOnDeviceTranscription();
+    const [audioModelReady, setAudioModelReady] = useState<boolean | null>(null);
+    useEffect(() => {
+        if (!hasTranscriptionApis) {
+            setAudioModelReady(false);
+            return;
+        }
+        let cancelled = false;
+        void isOnDeviceAudioAvailable().then((ok) => {
+            if (!cancelled) setAudioModelReady(ok);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [hasTranscriptionApis]);
+    const canTranscribeOnDevice = hasTranscriptionApis && audioModelReady === true;
     const [state, setState] = useState<AppState>("idle");
     const [transcript, setTranscript] = useState<TranscriptData | null>(null);
     const [error, setError] = useState<ApiError | null>(null);

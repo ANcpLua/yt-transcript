@@ -1,0 +1,91 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      stores:
+        description: Which stores to publish to
+        type: choice
+        default: all
+        options: [all, edge, chrome, firefox]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish to Chrome, Edge, and Firefox stores
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.11.0
+          cache: npm
+      - run: npm ci
+
+      - name: Resolve version
+        id: v
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          MANIFEST=$(node -p "require('./manifest.json').version")
+          FIREFOX=$(node -p "require('./manifest.firefox.json').version")
+          if [ "$PKG" != "$MANIFEST" ] || [ "$PKG" != "$FIREFOX" ]; then
+            echo "::error::version mismatch: package.json=$PKG manifest.json=$MANIFEST manifest.firefox.json=$FIREFOX"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            TAG="${GITHUB_REF_NAME#v}"
+            if [ "$TAG" != "$PKG" ]; then
+              echo "::error::tag v$TAG does not match version $PKG"
+              exit 1
+            fi
+          fi
+          echo "version=$PKG" >> "$GITHUB_OUTPUT"
+          echo "notes=v$PKG automated release" >> "$GITHUB_OUTPUT"
+
+      - run: npm test
+      - name: Build and pack store zips
+        run: npm run zip
+
+      - name: Pack source archive for AMO
+        run: git archive --format=zip -o "video-transcript-source-${{ steps.v.outputs.version }}.zip" HEAD
+
+      - name: Publish to Edge Add-ons
+        if: ${{ contains(fromJSON('["all","edge"]'), inputs.stores || 'all') }}
+        env:
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+        run: node scripts/publish/publish-edge.mjs release --notes "${{ steps.v.outputs.notes }}"
+
+      - name: Publish to Chrome Web Store
+        if: ${{ !cancelled() && contains(fromJSON('["all","chrome"]'), inputs.stores || 'all') }}
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_ITEM_ID: ${{ secrets.CWS_ITEM_ID }}
+        run: node scripts/publish/publish-chrome.mjs release
+
+      - name: Publish to Firefox Add-ons
+        if: ${{ !cancelled() && contains(fromJSON('["all","firefox"]'), inputs.stores || 'all') }}
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          node scripts/publish/publish-firefox.mjs release \
+            --notes "${{ steps.v.outputs.notes }}" \
+            --source "video-transcript-source-${{ steps.v.outputs.version }}.zip"
+
+      - name: Create GitHub release with store zips
+        if: ${{ !cancelled() && github.ref_type == 'tag' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            yt-transcript-chrome.zip video-transcript-firefox.zip video-transcript-source-*.zip \
+            --title "$GITHUB_REF_NAME" --generate-notes

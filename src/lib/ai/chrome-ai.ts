@@ -28,7 +28,7 @@ interface LanguageModelSession {
 }
 
 interface LanguageModelExpectation {
-  type: "text";
+  type: "text" | "audio";
   languages?: string[];
 }
 
@@ -70,6 +70,31 @@ export async function isChromeAiPromptAvailable(): Promise<boolean> {
   if (!lm) return false;
   try {
     const status = await lm.availability(TEXT_MODEL_OPTIONS);
+    return status === "available" || status === "downloadable" || status === "downloading";
+  } catch {
+    return false;
+  }
+}
+
+const AUDIO_MODEL_OPTIONS: LanguageModelAvailabilityOptions = {
+  expectedInputs: [
+    { type: "audio", languages: ["en"] },
+    { type: "text", languages: ["en"] },
+  ],
+  expectedOutputs: [{ type: "text", languages: ["en"] }],
+  outputLanguage: "en",
+};
+
+/**
+ * Audio input for the Prompt API. The offscreen document gates on the same
+ * modality before it starts, so probing here keeps the panel from offering
+ * transcription that would only fail after the user commits to it.
+ */
+export async function isOnDeviceAudioAvailable(): Promise<boolean> {
+  const lm = getLanguageModel();
+  if (!lm) return false;
+  try {
+    const status = await lm.availability(AUDIO_MODEL_OPTIONS);
     return status === "available" || status === "downloadable" || status === "downloading";
   } catch {
     return false;
