@@ -12,7 +12,7 @@
         "zod": "^4.6.2",
       },
       "devDependencies": {
-        "@ancplua/store-publish": "github:ANcpLua/store-publish#v1.4.2",
+        "@ancplua/store-publish": "github:ANcpLua/store-publish#v1.4.3",
         "@playwright/test": "1.62.1",
         "@tailwindcss/vite": "4.3.3",
         "@types/chrome": "0.2.7",
@@ -31,7 +31,7 @@
     },
   },
   "packages": {
-    "@ancplua/store-publish": ["@ancplua/store-publish@github:ANcpLua/store-publish#22ba74a", { "bin": { "store-publish": "./bin/store-publish.mjs" } }, "ANcpLua-store-publish-22ba74a", "sha512-nV5T97/uehIetOfKkHULhhoIAZx/Sc9DSdXDgT7aCFEYbsp7top+SroG2tShq7szdywkxM9ONwXLxU4FpIBXTQ=="],
+    "@ancplua/store-publish": ["@ancplua/store-publish@github:ANcpLua/store-publish#1553a45", { "bin": { "store-publish": "./bin/store-publish.mjs" } }, "ANcpLua-store-publish-1553a45", "sha512-5Xbq8lVJyF9y5wMEOhhqTttrEg/VqkigGZXWiXJtMXXFVsbixDyvTQmPTMPYgsN5tFl84i7gT7JXRPoGWW+gag=="],
 
     "@babel/code-frame": ["@babel/code-frame@7.29.7", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.29.7", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="],
 
