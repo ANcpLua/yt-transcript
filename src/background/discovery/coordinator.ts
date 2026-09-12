@@ -6,6 +6,7 @@ import {
   type ManifestInspection,
 } from "../../lib/timed-text/manifest";
 import { parseTimedText } from "../../lib/timed-text/parse";
+import { browserLanguages, compareTracks, semanticTrackKey } from "../../lib/timed-text/track-order";
 import { fetchTimedTextResource } from "./fetch-resource";
 import type {
   DiscoveryDiagnostics,
@@ -255,16 +256,6 @@ function mergeSegments(
   return [...keyed.values()].sort((left, right) => left.start - right.start);
 }
 
-function rankTrack(track: DiscoveredTrack): number {
-  const role = /^(?:subtitles|captions)$/i.test(track.kind) ? 1_000_000 : 0;
-  const runtime = track.source === "page-track" ? 100_000 : 0;
-  return role + runtime + track.segments.length;
-}
-
-function semanticTrackKey(track: DiscoveredTrack): string {
-  return `${track.language}\u0000${track.label}\u0000${track.kind}`;
-}
-
 function selectionId(track: DiscoveredTrack): string {
   return `track-${hashUrl(semanticTrackKey(track))}`;
 }
@@ -291,12 +282,12 @@ function transcriptFor(
       uniqueTracks.set(key, track);
     }
   }
-  // Equal ranks fall back to the semantic key so the default track does not
-  // depend on which resource happened to arrive first.
+  // Page language, then browser language, then English, then the track's
+  // rank; equal tracks fall back to the semantic key so the default does
+  // not depend on which resource happened to arrive first.
+  const context = { pageLanguage: session.documentLanguage, browserLanguages: browserLanguages() };
   const tracks = [...uniqueTracks.values()]
-    .sort((left, right) =>
-      rankTrack(right) - rankTrack(left)
-      || semanticTrackKey(left).localeCompare(semanticTrackKey(right)));
+    .sort((left, right) => compareTracks(left, right, context));
   const selected = tracks.find((track) => selectionId(track) === selectedTrackId) ?? tracks[0];
   if (!selected) return null;
   return {
