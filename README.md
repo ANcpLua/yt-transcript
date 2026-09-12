@@ -88,8 +88,8 @@ and, on a tag, a tag that differs from them.
 ```sh
 # 1. bump the three versions, add a CHANGELOG entry, commit, wait for ci.yml
 # 2. tag and push; the tag builds, checks, and creates the GitHub release with the four zips
-git tag v3.2.1
-git push origin main v3.2.1
+git tag v3.3.0
+git push origin main v3.3.0
 # 3. submit to the stores explicitly; each store reviews on its own schedule
 gh workflow run release.yml -R ANcpLua/yt-transcript --ref main -f stores=all
 # 4. watch it; cancel on the first red job

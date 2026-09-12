@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Video Transcript",
   "description": "Turn any video into text. Find the captions a page already has, or transcribe the tab or a dropped file on your device.",
-  "version": "3.2.1",
+  "version": "3.3.0",
   "permissions": [
     "sidePanel",
     "activeTab",

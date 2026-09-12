@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Video Transcript",
   "description": "Turn video captions into searchable text. Discover, save, and export transcripts from the browser side panel.",
-  "version": "3.2.1",
+  "version": "3.3.0",
   "permissions": [
     "sidePanel",
     "activeTab",

@@ -2,12 +2,25 @@
 
 ## Unreleased
 
+## 3.3.0 (2026-09-12)
+
+- The toolbar click opens the side panel again on every page in Chromium
+  browsers. The per-tab panel from 3.2.0 waited on `setOptions` before
+  `sidePanel.open`, which used up the click gesture; Edge then refused to
+  open and the icon did nothing. The panel is the manifest default again,
+  one per window.
+- The default transcript track is chosen by language first: the page
+  language, then a browser language, then English. A longer caption file in
+  another language no longer wins; the talk page in English opened in
+  Portuguese before.
 - The Edge package now has its own manifest without `tabCapture` and
   `offscreen`, and without the offscreen document. Edge does not expose the
   built-in model with audio input, so those permissions were declared but
   unused there.
 - The default transcript track no longer depends on which caption resource
-  arrived first; equal ranks now sort by language and label.
+  arrived first; equal ranks sort by language and label.
+- Dependency bots are off: Renovate is disabled and there is no Dependabot
+  config. store-publish 1.6.0 lints the package script and the add-on id.
 
 ## 3.2.1 (2026-09-12)
 
