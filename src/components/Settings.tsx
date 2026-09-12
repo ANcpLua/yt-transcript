@@ -163,26 +163,26 @@ export function Settings({isOpen, onClose}: SettingsProps) {
                                 <span className="text-xs text-slate-500 dark:text-slate-400">AI engine</span>
                                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-200">
                                     <StatusDot status={chromeAiProviderStatus}/>
-                                    Chrome AI
-                                    {chromeAiProviderStatus === "ready" && " — ready"}
-                                    {chromeAiProviderStatus === "saved" && " — summary only"}
-                                    {chromeAiProviderStatus === "unreachable" && " — unavailable"}
-                                    {chromeAiProviderStatus === "checking" && " — checking"}
+                                    Built-in AI
+                                    {chromeAiProviderStatus === "ready" && ": ready"}
+                                    {chromeAiProviderStatus === "saved" && ": summary only"}
+                                    {chromeAiProviderStatus === "unreachable" && ": unavailable"}
+                                    {chromeAiProviderStatus === "checking" && ": checking"}
                                 </span>
                             </div>
 
                             <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800/40">
                                 <p className="text-sm text-slate-700 dark:text-slate-200">
-                                    Chrome built-in AI is the only AI engine for this extension.
+                                    The browser's built-in AI is the only AI engine for this extension.
                                 </p>
                                 <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                    {chromeAiStatus === "checking" && "Checking this Chrome profile…"}
+                                    {chromeAiStatus === "checking" && "Checking this browser profile…"}
                                     {chromeAiStatus === "available" && "Ready for Summary, Key points, Q&A, and Chat."}
-                                    {chromeAiStatus === "summarizer-only" && "Ready for Summary. Chat and Q&A need Chrome's Prompt API."}
-                                    {chromeAiStatus === "unavailable" && "Unavailable in this Chrome profile."}
+                                    {chromeAiStatus === "summarizer-only" && "Ready for Summary. Chat and Q&A need the built-in Prompt API."}
+                                    {chromeAiStatus === "unavailable" && "Unavailable in this browser profile."}
                                 </p>
                                 <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                    On-device transcription of captionless or dropped-in videos also uses Chrome's built-in AI and needs a supported GPU.
+                                    On-device transcription of captionless or dropped-in videos also uses the browser's built-in AI and needs a supported GPU.
                                 </p>
                             </div>
                         </section>

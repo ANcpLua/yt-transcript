@@ -187,7 +187,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                 return;
             }
 
-            throw new Error("Chrome AI is not available in this Chrome profile.");
+            throw new Error("Built-in AI is not available in this browser profile.");
         } catch (err) {
             if (signal.aborted || isAbortError(err)) return;
             setError(err instanceof Error ? err.message : "AI request failed");
@@ -264,7 +264,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                 <h3 className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-700 dark:text-amber-300">Analyze</h3>
                 {!hasAnyProvider && (
                     <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-amber-600 dark:text-amber-400">
-                        Chrome AI unavailable
+                        Built-in AI unavailable
                     </span>
                 )}
             </div>
@@ -342,7 +342,7 @@ export function AiPanel({transcript, onSeek}: AiPanelProps) {
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && void sendChat()}
-                        placeholder={canChat ? "Ask about this video" : "Chrome AI unavailable"}
+                        placeholder={canChat ? "Ask about this video" : "Built-in AI unavailable"}
                         disabled={!canChat || chatLoading}
                         className="flex-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-[14px] placeholder:text-slate-400 focus:border-amber-400 focus:outline-hidden focus:ring-1 focus:ring-amber-300 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:border-amber-300 dark:focus:ring-amber-300/40"
                     />

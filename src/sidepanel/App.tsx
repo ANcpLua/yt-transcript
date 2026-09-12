@@ -925,7 +925,7 @@ export function App() {
                     <div className="rounded-xl bg-white px-5 py-4 text-center shadow-lg dark:bg-slate-800">
                         <p className="text-sm font-semibold text-slate-900 dark:text-white">Drop to transcribe</p>
                         <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                            Any video or audio file — transcribed on this device, never uploaded
+                            Any video or audio file, transcribed on this device, never uploaded
                         </p>
                     </div>
                 </div>
@@ -1145,11 +1145,11 @@ export function App() {
                                     ? "Finishing transcript…"
                                     : transcriptionSource === "tab"
                                         ? mediaPlayback?.ended
-                                            ? "Playback ended — finishing transcript…"
+                                            ? "Playback ended, finishing the transcript…"
                                             : mediaPlayback?.paused
-                                                ? "Playback paused — resume the video"
+                                                ? "Playback paused. Resume the video"
                                                 : mediaPlayback?.muted
-                                                    ? "Video is muted — unmute to continue"
+                                                    ? "Video is muted. Unmute to continue"
                                                     : "Transcribing live audio"
                                         : `Transcribing… ${transcriptionProgress}%`}
                             </span>

@@ -387,12 +387,12 @@ async function fetchTimedText(textUrl: string, userAgent: string): Promise<unkno
     try {
       parsed = JSON.parse(body);
     } catch {
-      return { error: "fetch_failed", message: "The transcript request returned an unexpected format. The track URL may have expired — try again." };
+      return { error: "fetch_failed", message: "The transcript request returned an unexpected format. The track URL may have expired. Try again." };
     }
     return digArr(parsed as Record<string, unknown>, "events");
   } catch (e) {
     if (isTimeoutError(e)) {
-      return { error: "fetch_failed", message: `Transcript fetch timed out after ${TIMEDTEXT_TIMEOUT_MS}ms. The server may be throttling — try again.` };
+      return { error: "fetch_failed", message: `Transcript fetch timed out after ${TIMEDTEXT_TIMEOUT_MS}ms. The server may be throttling. Try again.` };
     }
     return { error: "fetch_failed", message: e instanceof Error ? e.message : String(e) };
   }

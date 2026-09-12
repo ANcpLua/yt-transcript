@@ -91,8 +91,8 @@ const AUDIO_MODALITY: {
 };
 
 const UNAVAILABLE_MESSAGE =
-  "On-device transcription isn't available on this device. It needs Chrome's " +
-  "built-in AI (Gemini Nano) with a supported GPU. Captions still work on " +
+  "On-device transcription isn't available on this device. It needs the " +
+  "browser's built-in on-device model with a supported GPU. Captions still work on " +
   "video pages that provide them.";
 
 const TRANSCRIBE_INSTRUCTION =

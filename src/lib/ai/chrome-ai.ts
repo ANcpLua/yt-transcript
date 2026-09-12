@@ -177,9 +177,9 @@ export async function runChromeAiPrompt(
   options: ChromeAiPromptOptions = {},
 ): Promise<string> {
   const lm = getLanguageModel();
-  if (!lm) throw new Error("Chrome built-in AI (Prompt API) is not available in this Chrome profile.");
+  if (!lm) throw new Error("Built-in AI (Prompt API) is not available in this browser profile.");
   const status = await lm.availability(TEXT_MODEL_OPTIONS);
-  if (status === "unavailable") throw new Error("Chrome built-in AI is unavailable on this device.");
+  if (status === "unavailable") throw new Error("Built-in AI is unavailable on this device.");
   const session = await lm.create({
     ...TEXT_MODEL_OPTIONS,
     initialPrompts: [{ role: "system", content: systemPrompt }],
@@ -204,7 +204,7 @@ export async function chromeAiSummarize(text: string): Promise<string> {
     );
   }
   const ai = getAi();
-  if (!ai?.summarizer) throw new Error("Chrome AI Summarizer not available");
+  if (!ai?.summarizer) throw new Error("Built-in AI Summarizer not available");
   const caps = await ai.summarizer.capabilities();
   if (caps.available === "no") throw new Error("Summarizer not supported on this device");
   const summarizer = await ai.summarizer.create({ type: "key-points", length: "medium" });

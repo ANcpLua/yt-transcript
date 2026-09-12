@@ -2,11 +2,14 @@
 
 ## Unreleased
 
+- Public text no longer uses em dashes, the "Free." tagline, or browser names:
+  both manifest descriptions, the AI settings and panel strings, and the error
+  messages for unavailable built-in AI.
 - Unit tests run on Vitest, the runner save-media uses, so both repositories
   share one toolchain. A `ci.yml` runs lint, tests, build, listing checks, and
   the Playwright suite on every push and pull request.
 
-## 3.2.0 — 2026-09-12
+## 3.2.0 (2026-09-12)
 
 - The side panel is now enabled per tab instead of everywhere. It opens on the
   tab where the toolbar action was clicked and follows a pasted URL to its new
@@ -29,7 +32,7 @@
   sample; words cut by an 8-second window boundary come back garbled, and the
   first inference after a cold start takes about 20 seconds.
 
-## 3.1.0 — 2026-09-12
+## 3.1.0 (2026-09-12)
 
 - Added a Firefox build with sidebar support, so the extension ships from one
   source to Chrome, Edge, and Firefox.
@@ -48,7 +51,7 @@
 - The end-to-end fixture certificate is generated on first run instead of living
   in the repository, keeping a private key out of the source archive.
 
-## 3.0.0 — 2026-07-23
+## 3.0.0 (2026-07-23)
 
 - Replaced the static single-platform interceptor with user-invoked discovery
   across runtime `TextTrack` cues, `<track>` resources, bounded fetch/XHR

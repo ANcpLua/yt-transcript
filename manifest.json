@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Video Transcript",
-  "description": "Turn any video into text — capture transcripts as you browse, or drop a video/audio file for on-device AI transcription. Free.",
+  "description": "Turn any video into text. Find the captions a page already has, or transcribe the tab or a dropped file on your device.",
   "version": "3.2.0",
   "permissions": [
     "sidePanel",

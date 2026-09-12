@@ -309,7 +309,7 @@ test("Prompt API availability probes always declare an output language", async (
     const sidePanelPath = extensionManifest.side_panel?.default_path;
     const panel = await openExtensionPage(sidePanelPath ?? "");
     await panel.getByTitle("Settings").click();
-    await expect(panel.getByText("Chrome AI — unavailable")).toBeVisible();
+    await expect(panel.getByText("Built-in AI: unavailable")).toBeVisible();
 
     const calls = await panel.evaluate(() => {
         const root = globalThis as typeof globalThis & {

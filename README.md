@@ -179,6 +179,9 @@ pull request.
 - `chrome.storage` and IndexedDB, never `localStorage`.
 - Designed for a 400 px side panel.
 - No `console.log` in shipped code.
+- Public text (README, listing, release notes, manifest description, UI
+  strings): no em dashes, no emojis, no platform or browser names, claims
+  verified first.
 - Correctness and coherence over API stability. Delete superseded paths
   instead of adding compatibility layers; update every caller in the same
   change.
