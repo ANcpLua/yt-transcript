@@ -18,6 +18,7 @@ import {
   isSilentPcm,
   sanitizeTranscription,
 } from "@/lib/transcription/audio";
+import { parseOffscreenMessage } from "@/lib/messages/schema";
 
 // ---------- Chrome Prompt API (audio input) typings ----------
 // Text-only LanguageModel types live in lib/ai/chrome-ai.ts; the multimodal
@@ -540,14 +541,12 @@ async function transcribeFile(
 // ---------- service worker bridge ----------
 
 chrome.runtime.onMessage.addListener(
-  (message: { type: string; [key: string]: unknown }) => {
+  (raw: unknown) => {
+    const message = parseOffscreenMessage(raw);
+    if (!message) return;
     switch (message.type) {
       case "offscreen-start-capture":
-        void captureAndTranscribe(
-          message["streamId"] as string,
-          message["videoId"] as string,
-          message["title"] as string,
-        );
+        void captureAndTranscribe(message.streamId, message.videoId, message.title);
         break;
 
       case "offscreen-stop-capture":
@@ -556,29 +555,16 @@ chrome.runtime.onMessage.addListener(
         break;
 
       case "offscreen-transcribe-file":
-        void transcribeFile(
-          message["blobUrl"] as string,
-          message["videoId"] as string,
-          message["title"] as string,
-        );
+        void transcribeFile(message.blobUrl, message.videoId, message.title);
         break;
 
       case "media-playback-state": {
-        const state = message["state"];
-        if (typeof state !== "object" || state === null) break;
-        const playback = state as {
-          currentTime?: unknown;
-          paused?: unknown;
-          ended?: unknown;
-          muted?: unknown;
-        };
-        if (typeof playback.currentTime === "number") {
-          playbackPosition = playback.currentTime;
-        }
-        const suspended = playback.paused === true || playback.muted === true;
+        const playback = message.state;
+        playbackPosition = playback.currentTime;
+        const suspended = playback.paused || playback.muted;
         playbackSuspended = suspended;
         suspendActiveAudioPump?.(suspended);
-        if (playback.ended === true && isCapturing) stopCapture(true);
+        if (playback.ended && isCapturing) stopCapture(true);
         break;
       }
     }

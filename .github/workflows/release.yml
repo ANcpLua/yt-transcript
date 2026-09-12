@@ -46,20 +46,19 @@ jobs:
           echo "version=$PKG" >> "$GITHUB_OUTPUT"
           echo "notes=v$PKG automated release" >> "$GITHUB_OUTPUT"
 
+      - run: npm run lint
       - run: npm test
+      - run: npx store-publish lint
+      - run: npx store-publish readme --check
       - name: Build and pack store zips
         run: npm run zip
-
-      - name: Pack source archive for AMO
-        run: git archive --format=zip -o "video-transcript-source-${{ steps.v.outputs.version }}.zip" HEAD
 
       - name: Publish to Edge Add-ons
         if: ${{ contains(fromJSON('["all","edge"]'), inputs.stores || 'all') }}
         env:
-          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
           EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
           EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
-        run: node scripts/publish/publish-edge.mjs release --notes "${{ steps.v.outputs.notes }}"
+        run: npx store-publish edge release --notes "${{ steps.v.outputs.notes }}"
 
       - name: Publish to Chrome Web Store
         if: ${{ !cancelled() && contains(fromJSON('["all","chrome"]'), inputs.stores || 'all') }}
@@ -68,24 +67,19 @@ jobs:
           CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
           CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
           CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
-          CWS_ITEM_ID: ${{ secrets.CWS_ITEM_ID }}
-        run: node scripts/publish/publish-chrome.mjs release
+        run: npx store-publish chrome release
 
       - name: Publish to Firefox Add-ons
         if: ${{ !cancelled() && contains(fromJSON('["all","firefox"]'), inputs.stores || 'all') }}
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
-        run: |
-          node scripts/publish/publish-firefox.mjs release \
-            --notes "${{ steps.v.outputs.notes }}" \
-            --source "video-transcript-source-${{ steps.v.outputs.version }}.zip"
+        run: npx store-publish firefox release --notes "${{ steps.v.outputs.notes }}" --source
 
       - name: Create GitHub release with store zips
         if: ${{ !cancelled() && github.ref_type == 'tag' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            yt-transcript-chrome.zip video-transcript-firefox.zip video-transcript-source-*.zip \
+          gh release create "$GITHUB_REF_NAME" video-transcript-*.zip \
             --title "$GITHUB_REF_NAME" --generate-notes

@@ -1,0 +1,38 @@
+{
+  "name": "Video Transcript",
+  "zipPrefix": "video-transcript",
+  "zipDir": ".",
+  "versionFrom": "manifest.json",
+  "listing": "store/listing.md",
+  "readme": "README.md",
+  "lint": { "forbidden": [] },
+  "stores": {
+    "chrome": {
+      "id": "ahddbfbjafmbceehebpeanpnlbaimepk",
+      "url": "https://chromewebstore.google.com/detail/ahddbfbjafmbceehebpeanpnlbaimepk",
+      "dashboard": "https://chrome.google.com/webstore/devconsole",
+      "apiDocs": "https://developer.chrome.com/docs/webstore/using-api",
+      "env": ["CWS_CLIENT_ID", "CWS_CLIENT_SECRET", "CWS_REFRESH_TOKEN", "CWS_PUBLISHER_ID"],
+      "notes": "Listing text, screenshots and privacy answers are edited in the dashboard; answers are kept in store/privacy-fields.md"
+    },
+    "edge": {
+      "id": "069ca91d-a7cd-4bac-8224-1ee38a2d2a06",
+      "crxId": "jkcfajddmmeapfabpoekfiemnbdaofeo",
+      "url": "https://microsoftedge.microsoft.com/addons/detail/video-transcript/jkcfajddmmeapfabpoekfiemnbdaofeo",
+      "dashboard": "https://partner.microsoft.com/en-us/dashboard/microsoftedge/069ca91d-a7cd-4bac-8224-1ee38a2d2a06/packages/dashboard",
+      "apiDocs": "https://learn.microsoft.com/microsoft-edge/extensions/update/api/using-addons-api",
+      "env": ["EDGE_API_KEY", "EDGE_CLIENT_ID"],
+      "expires": "2026-11-21",
+      "notes": "Ships the Chromium build verbatim. Renew the key at https://partner.microsoft.com/en-us/dashboard/microsoftedge/publishapi and update it in both extension repos"
+    },
+    "firefox": {
+      "id": "video-transcript@qyl.at",
+      "slug": "video-transcript",
+      "url": "https://addons.mozilla.org/firefox/addon/video-transcript/",
+      "dashboard": "https://addons.mozilla.org/developers/addon/video-transcript/edit",
+      "apiDocs": "https://mozilla.github.io/addons-server/topics/api/addons.html",
+      "env": ["AMO_JWT_ISSUER", "AMO_JWT_SECRET"],
+      "notes": "One API key pair per Mozilla account, shared with the other extension repo; a new key invalidates the old one everywhere. The listing text is applied from store/listing.md"
+    }
+  }
+}

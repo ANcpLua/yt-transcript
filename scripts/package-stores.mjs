@@ -1,40 +1,45 @@
 /**
- * Package the extension for the Chrome Web Store and Firefox Add-ons.
- * Run after `npm run build` — expects dist/ to exist.
+ * Package the extension for the stores. Run after `npm run build`.
  *
- * Outputs:
- *   yt-transcript-chrome.zip  — Chrome Web Store.
- *   video-transcript-firefox.zip — Firefox Add-ons.
+ * Names follow store.config.json (`<zipPrefix>-<store>-<version>.zip`), which
+ * is what the store-publish tool expects:
+ *   video-transcript-chrome-<version>.zip   Chrome Web Store
+ *   video-transcript-edge-<version>.zip     Edge Add-ons (the Chromium build, verbatim)
+ *   video-transcript-firefox-<version>.zip  Firefox Add-ons
+ *   video-transcript-source-<version>.zip   source archive AMO requires for bundled builds
  */
-import {execSync} from "child_process";
-import {existsSync, rmSync} from "fs";
-import {resolve, dirname} from "path";
-import {fileURLToPath} from "url";
+import {execFileSync} from "node:child_process";
+import {copyFileSync, existsSync, readFileSync, rmSync} from "node:fs";
+import {resolve, dirname} from "node:path";
+import {fileURLToPath} from "node:url";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = resolve(__dirname, "..");
-const dist = resolve(root, "dist");
-const chromeZip = resolve(root, "yt-transcript-chrome.zip");
-const firefoxDist = resolve(root, "packages/extension/dist-firefox");
-const firefoxZip = resolve(root, "video-transcript-firefox.zip");
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const config = JSON.parse(readFileSync(resolve(root, "store.config.json"), "utf8"));
+const version = JSON.parse(readFileSync(resolve(root, config.versionFrom), "utf8")).version;
+const name = (kind) => `${config.zipPrefix}-${kind}-${version}.zip`;
 
-if (!existsSync(resolve(dist, "manifest.json"))) {
-    console.error("dist/manifest.json not found. Run `npm run build` first.");
-    process.exit(1);
+const targets = [
+    {kind: "chrome", dir: resolve(root, "dist")},
+    {kind: "firefox", dir: resolve(root, "packages/extension/dist-firefox")},
+];
+
+for (const {kind, dir} of targets) {
+    if (!existsSync(resolve(dir, "manifest.json"))) {
+        console.error(`${dir}/manifest.json not found. Run \`npm run build\` first.`);
+        process.exit(1);
+    }
+    const zip = resolve(root, name(kind));
+    rmSync(zip, {force: true});
+    execFileSync("zip", ["-qr", zip, "."], {cwd: dir, stdio: "inherit"});
+    console.log(`✓ ${name(kind)}`);
 }
 
-if (existsSync(chromeZip)) rmSync(chromeZip);
-execSync("zip -r ../yt-transcript-chrome.zip .", {cwd: dist, stdio: "inherit"});
-console.log("✅ yt-transcript-chrome.zip");
+const edgeZip = resolve(root, name("edge"));
+rmSync(edgeZip, {force: true});
+copyFileSync(resolve(root, name("chrome")), edgeZip);
+console.log(`✓ ${name("edge")}`);
 
-if (!existsSync(resolve(firefoxDist, "manifest.json"))) {
-    console.error("packages/extension/dist-firefox/manifest.json not found. Run `npm run build` first.");
-    process.exit(1);
-}
-if (existsSync(firefoxZip)) rmSync(firefoxZip);
-execSync("zip -r ../../../video-transcript-firefox.zip .", {cwd: firefoxDist, stdio: "inherit"});
-console.log("✅ video-transcript-firefox.zip");
-
-console.log("\nDone. Upload to:");
-console.log("  https://chrome.google.com/webstore/devconsole");
-console.log("  https://addons.mozilla.org/developers/");
+const sourceZip = resolve(root, name("source"));
+rmSync(sourceZip, {force: true});
+execFileSync("git", ["archive", "--format=zip", "-o", sourceZip, "HEAD"], {cwd: root, stdio: "inherit"});
+console.log(`✓ ${name("source")}`);

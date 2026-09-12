@@ -17,6 +17,7 @@ import type {
 } from "../../types/discovery";
 import type { TranscriptResponse } from "../../types/transcript";
 import { recordBroadcast } from "../../lib/intercept/correlator";
+import { enablePanelForTab, openExtensionPanel } from "@extension-panel";
 
 const PENDING_PREFIX = "pending-page-discovery:";
 const SESSION_PREFIX = "page-discovery-session:";
@@ -422,6 +423,11 @@ async function pendingTarget(tabId: number): Promise<DiscoveryTarget | undefined
 async function arm(target: DiscoveryTarget): Promise<DiscoveryResponse> {
   await chrome.storage.session.set({ [pendingKey(target.tabId)]: target });
   await setPendingBadge(target.tabId);
+  // The panel follows the armed tab so the user sees the pending state there.
+  // Opening needs a user gesture; when the one behind this message has
+  // expired, the SCAN badge and the enabled panel remain for the action click.
+  await enablePanelForTab(target.tabId).catch(() => undefined);
+  await openExtensionPanel(target.tabId).catch(() => undefined);
   send({ type: "discovery-awaiting-action", ...target });
   return { status: "awaiting-action", ...target };
 }

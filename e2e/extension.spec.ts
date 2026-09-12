@@ -16,6 +16,13 @@ test("built extension registers the declared MV3 service worker", async ({
         return new URL(candidate.url()).host === extensionId;
     });
     expect(worker?.url()).toBe(`chrome-extension://${extensionId}/background/service-worker.js`);
+
+    // Update hygiene and the tab-specific panel are wired at worker start.
+    const wiring = await worker?.evaluate(async () => ({
+        installListener: chrome.runtime.onInstalled.hasListeners(),
+        defaultPanelEnabled: (await chrome.sidePanel.getOptions({})).enabled,
+    }));
+    expect(wiring).toEqual({installListener: true, defaultPanelEnabled: false});
 });
 
 test("toolbar action opens the declared side-panel entry point", async ({

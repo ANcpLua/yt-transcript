@@ -64,6 +64,7 @@ the page only after you invoke it.
 • Work through a list of pages in one run
 • Keeps what you save on your machine and available offline
 
-No account, analytics, advertising, remote code, or developer-operated
-backend. Your transcripts and preferences stay in Firefox. The extension asks
-for page access only for the media page or caption origin you select.
+There is no account, no analytics or advertising, no remote code, and no
+backend run by the developer. Your transcripts and preferences stay in
+Firefox. The extension asks for page access only for the media page or caption
+origin you select.

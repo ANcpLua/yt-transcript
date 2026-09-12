@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- The side panel is now enabled per tab instead of everywhere. It opens on the
+  tab where the toolbar action was clicked and follows a pasted URL to its new
+  tab, which is the tab that carries the SCAN badge.
+- On update, permissions the current manifest no longer declares are removed.
+  Users coming from 1.4.0 still carried `webNavigation` and permanent host
+  access to two media sites that 3.x never asks for.
+- Messages arriving at the service worker, the offscreen document, and the side
+  panel are validated with zod; the TypeScript message types are inferred from
+  those schemas. Content scripts keep their hand-written checks so the zod
+  runtime never ships into page frames.
+- Store publishing moved to the shared store-publish tool. Ids, listing URLs,
+  dashboards, and credential names for all three stores live in
+  `store.config.json`, and the README store table is rendered from it.
+- Verified on-device transcription on real hardware (Apple silicon, Chrome 152):
+  the extension's prompt returns the spoken words of a 6-second and a 20-second
+  sample; words cut by an 8-second window boundary come back garbled, and the
+  first inference after a cold start takes about 20 seconds.
+
 ## 3.1.0 — 2026-09-12
 
 - Added a Firefox build with sidebar support, so the extension ships from one

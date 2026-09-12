@@ -1,4 +1,5 @@
 import {strToU8, zipSync} from "fflate";
+import {transcriptReplySchema} from "../messages/schema";
 import type {TranscriptResponse} from "../../types/transcript";
 import {sanitizeFilename} from "../sanitizeFilename";
 
@@ -60,19 +61,20 @@ async function fetchTranscript(videoId: string): Promise<TranscriptResponse> {
     return new Promise<TranscriptResponse>((resolve, reject) => {
         chrome.runtime.sendMessage(
             {type: "fetch-transcript", videoId, platform: "youtube"},
-            (response: { type: string; data?: TranscriptResponse; error?: { message: string } } | undefined) => {
+            (raw: unknown) => {
                 if (chrome.runtime.lastError) {
                     reject(new Error(chrome.runtime.lastError.message ?? "Extension error"));
                     return;
                 }
-                if (!response) {
+                const response = transcriptReplySchema.safeParse(raw);
+                if (!response.success) {
                     reject(new Error("No response from background worker"));
                     return;
                 }
-                if (response.type === "transcript-result" && response.data) {
-                    resolve(response.data);
+                if (response.data.type === "transcript-result") {
+                    resolve(response.data.data);
                 } else {
-                    reject(new Error(response.error?.message ?? "Failed to fetch transcript"));
+                    reject(new Error(response.data.error.message));
                 }
             },
         );

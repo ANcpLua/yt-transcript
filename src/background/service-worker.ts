@@ -2,7 +2,8 @@ import { fetchPlaylist, fetchChannel } from "./innertube-browse";
 import { YouTubeProvider } from "./providers/youtube";
 import { isApiError } from "./providers/types";
 import type { TranscriptProvider } from "./providers/types";
-import type { ExtensionMessage } from "../types/messages";
+import { parseExtensionMessage } from "../lib/messages/schema";
+import { registerInstallHandler } from "./install";
 import {
   cancelPendingTranscription,
   finishTabTranscription,
@@ -13,7 +14,7 @@ import {
   startFileTranscription,
   stopTranscription,
 } from "@extension-transcription";
-import {openExtensionPanel} from "@extension-panel";
+import { initializeExtensionPanel, openExtensionPanel } from "@extension-panel";
 import {
   cancelPendingDiscovery,
   clearDiscoveryTab,
@@ -39,6 +40,9 @@ import {
 
 const youtubeProvider: TranscriptProvider = new YouTubeProvider();
 
+registerInstallHandler();
+initializeExtensionPanel();
+
 function sendPanelMessage(message: object): void {
   chrome.runtime.sendMessage(message, () => {
     void chrome.runtime.lastError;
@@ -52,7 +56,9 @@ function sendTabMessage(tabId: number, message: object): void {
 }
 
 chrome.runtime.onMessage.addListener(
-  (message: ExtensionMessage, sender, sendResponse) => {
+  (raw: unknown, sender, sendResponse) => {
+    const message = parseExtensionMessage(raw);
+    if (!message) return false;
     switch (message.type) {
       case "player-time":
         sendPanelMessage(message);

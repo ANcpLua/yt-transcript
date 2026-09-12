@@ -13,9 +13,7 @@ packages/extension/dist-chrome/
 .DS_Store
 
 # Build artifacts
-yt-transcript-*.zip
-video-transcript-firefox*.zip
-yt-transcript-chrome*/
+video-transcript-*.zip
 test-results/
 playwright-report/
 e2e/.tmp-profile*/

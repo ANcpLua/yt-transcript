@@ -62,21 +62,24 @@ export const TIMED_TEXT_MIME_TYPES = [
   "image/vnd.dvb.subtitle",
 ] as const;
 
-export type TimedTextFormat =
-  | "webvtt"
-  | "srt"
-  | "ttml"
-  | "ass"
-  | "ssa"
-  | "sami"
-  | "sbv"
-  | "lrc"
-  | "json"
-  | "hls"
-  | "dash"
-  | "mp4"
-  | "bitmap"
-  | "unknown";
+export const TIMED_TEXT_FORMATS = [
+  "webvtt",
+  "srt",
+  "ttml",
+  "ass",
+  "ssa",
+  "sami",
+  "sbv",
+  "lrc",
+  "json",
+  "hls",
+  "dash",
+  "mp4",
+  "bitmap",
+  "unknown",
+] as const;
+
+export type TimedTextFormat = (typeof TIMED_TEXT_FORMATS)[number];
 
 export interface TimedTextCandidateClassification {
   matched: boolean;

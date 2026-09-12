@@ -1,4 +1,5 @@
 import {type FormEvent, useCallback, useRef, useState} from "react";
+import {channelReplySchema, playlistReplySchema} from "../lib/messages/schema";
 import {parseUrl, parseVideoId} from "../lib/parseUrl";
 import type {Platform} from "../types/transcript";
 
@@ -93,10 +94,10 @@ export function UrlInput({
                 const data = await new Promise<{playlistTitle: string; videos: {videoId: string; title: string}[]}>((resolve, reject) => {
                     chrome.runtime.sendMessage({type: "fetch-playlist", playlistId: parsed.playlistId}, (response: unknown) => {
                         if (chrome.runtime.lastError) { reject(new Error(chrome.runtime.lastError.message)); return; }
-                        const res = response as {playlistTitle?: string; videos?: {videoId: string; title: string}[]; error?: string};
-                        if (res?.error) { reject(new Error(res.error)); return; }
-                        if (res?.playlistTitle && res?.videos) { resolve(res as {playlistTitle: string; videos: {videoId: string; title: string}[]}); return; }
-                        reject(new Error("Invalid response"));
+                        const res = playlistReplySchema.safeParse(response);
+                        if (!res.success) { reject(new Error("Invalid response")); return; }
+                        if ("error" in res.data) { reject(new Error(res.data.error)); return; }
+                        resolve(res.data);
                     });
                 });
                 setVideoList(data.videos.map(v => ({...v, selected: true})));
@@ -115,10 +116,10 @@ export function UrlInput({
                 const data = await new Promise<{channelTitle: string; videos: {videoId: string; title: string}[]}>((resolve, reject) => {
                     chrome.runtime.sendMessage({type: "fetch-channel", identifier: parsed.handle}, (response: unknown) => {
                         if (chrome.runtime.lastError) { reject(new Error(chrome.runtime.lastError.message)); return; }
-                        const res = response as {channelTitle?: string; videos?: {videoId: string; title: string}[]; error?: string};
-                        if (res?.error) { reject(new Error(res.error)); return; }
-                        if (res?.channelTitle && res?.videos) { resolve(res as {channelTitle: string; videos: {videoId: string; title: string}[]}); return; }
-                        reject(new Error("Invalid response"));
+                        const res = channelReplySchema.safeParse(response);
+                        if (!res.success) { reject(new Error("Invalid response")); return; }
+                        if ("error" in res.data) { reject(new Error(res.data.error)); return; }
+                        resolve(res.data);
                     });
                 });
                 setVideoList(data.videos.map(v => ({...v, selected: true})));

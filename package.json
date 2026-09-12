@@ -8,18 +8,19 @@
     "dev": "vite dev",
     "build": "tsc -b && node scripts/build.mjs",
     "zip": "npm run build && node scripts/package-stores.mjs",
-    "zip:chrome": "npm run build && cd dist && zip -r ../yt-transcript-chrome.zip .",
-    "zip:firefox": "npm run build && rm -f video-transcript-firefox.zip && cd packages/extension/dist-firefox && zip -r ../../../video-transcript-firefox.zip .",
     "test": "node --test tests/unit/*.test.mjs",
-    "lint": "tsc --noEmit -p tsconfig.app.json"
+    "lint": "tsc --noEmit -p tsconfig.app.json",
+    "store": "store-publish"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.6",
     "fflate": "^0.8.2",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "zod": "^4.6.2"
   },
   "devDependencies": {
+    "@ancplua/store-publish": "github:ANcpLua/store-publish#v1.0.1",
     "@playwright/test": "1.62.1",
     "@tailwindcss/vite": "4.3.3",
     "@types/chrome": "0.2.7",

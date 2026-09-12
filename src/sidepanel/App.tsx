@@ -1,5 +1,5 @@
 import {lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState} from "react";
-import type {ApiError, NoteEntry, Platform, SavedTranscript, Segment, TranscriptResponse} from "../types/transcript";
+import type {ApiError, NoteEntry, Platform, SavedTranscript, TranscriptResponse} from "../types/transcript";
 import {UrlInput} from "../components/UrlInput";
 import {TranscriptView, countTranscriptWords, transcriptDurationSeconds} from "../components/TranscriptView";
 import {formatTimestamp} from "../lib/formatTime";
@@ -12,11 +12,17 @@ import {getSavedTranscript, saveTranscript, updateHighlights, updateNotes, updat
 import {BatchProcessor, type BatchState, type BatchItem} from "../lib/batch/queue";
 import {BatchResultsNav} from "../components/BatchResultsNav";
 import type {
-    BackgroundToPanelMessage,
     DiscoveryResponse,
     TabTranscriptionResponse,
     TabTranscriptionTarget,
 } from "../types/messages";
+import {
+    discoveryResponseSchema,
+    parseBackgroundMessage,
+    parseReply,
+    tabTranscriptionResponseSchema,
+    transcriptReplySchema,
+} from "../lib/messages/schema";
 import type {
     DiscoveryDiagnostics,
     DiscoveryTarget,
@@ -323,13 +329,12 @@ export function App() {
     useEffect(() => {
         if (!canTranscribeOnDevice) return;
         let cancelled = false;
-        chrome.runtime.sendMessage(
-            {type: "get-tab-transcription-state"},
-            (response: TabTranscriptionResponse | undefined) => {
-                if (chrome.runtime.lastError || cancelled || !response || response.status === "idle") return;
-                applyTabTranscriptionResponse(response);
-            },
-        );
+        chrome.runtime.sendMessage({type: "get-tab-transcription-state"}, (raw: unknown) => {
+            if (chrome.runtime.lastError || cancelled) return;
+            const response = tabTranscriptionResponseSchema.safeParse(raw);
+            if (!response.success || response.data.status === "idle") return;
+            applyTabTranscriptionResponse(response.data);
+        });
         return () => {
             cancelled = true;
         };
@@ -337,21 +342,21 @@ export function App() {
 
     useEffect(() => {
         let cancelled = false;
-        chrome.runtime.sendMessage(
-            {type: "get-discovery-state"},
-            (response: DiscoveryResponse | undefined) => {
-                if (chrome.runtime.lastError || cancelled || !response || response.status === "idle") return;
-                applyDiscoveryResponse(response);
-            },
-        );
+        chrome.runtime.sendMessage({type: "get-discovery-state"}, (raw: unknown) => {
+            if (chrome.runtime.lastError || cancelled) return;
+            const response = discoveryResponseSchema.safeParse(raw);
+            if (!response.success || response.data.status === "idle") return;
+            applyDiscoveryResponse(response.data);
+        });
         return () => {
             cancelled = true;
         };
     }, [applyDiscoveryResponse]);
 
     useEffect(() => {
-        const listener = (message: { type: string; data?: TranscriptData }) => {
-            if (message.type !== "intercepted-transcript" || !message.data) return;
+        const listener = (raw: unknown) => {
+            const message = parseBackgroundMessage(raw);
+            if (message?.type !== "intercepted-transcript") return;
             applyTranscript(message.data, "youtube", true);
         };
         chrome.runtime.onMessage.addListener(listener);
@@ -359,7 +364,9 @@ export function App() {
     }, [applyTranscript]);
 
     useEffect(() => {
-        const listener = (message: BackgroundToPanelMessage) => {
+        const listener = (raw: unknown) => {
+            const message = parseBackgroundMessage(raw);
+            if (!message) return;
             switch (message.type) {
                 case "discovery-started":
                     applyDiscoveryResponse({status: "discovering", ...message});
@@ -406,82 +413,66 @@ export function App() {
 
     // Listen for player-time and transcription messages
     useEffect(() => {
-        const listener = (message: {
-            type: string;
-            currentTime?: number;
-            progress?: number;
-            segments?: Segment[];
-            videoId?: string;
-            title?: string;
-            error?: string;
-            tabId?: number;
-            url?: string;
-        }) => {
+        const listener = (raw: unknown) => {
+            const message = parseBackgroundMessage(raw);
+            if (!message) return;
             switch (message.type) {
                 case "player-time":
-                    if (message.currentTime !== undefined) {
-                        lastPlayerTimeRef.current = Date.now();
-                        setCurrentTime(message.currentTime);
-                    }
+                    lastPlayerTimeRef.current = Date.now();
+                    setCurrentTime(message.currentTime);
                     break;
                 case "transcription-started":
-                    if (message.videoId && message.title && message.tabId !== undefined &&
-                        typeof message.url === "string") {
-                        applyTabTranscriptionResponse({
-                            status: "started",
-                            tabId: message.tabId,
-                            videoId: message.videoId,
-                            title: message.title,
-                            url: message.url,
-                        });
-                    }
+                    applyTabTranscriptionResponse({
+                        status: "started",
+                        tabId: message.tabId,
+                        videoId: message.videoId,
+                        title: message.title,
+                        url: message.url,
+                    });
                     break;
                 case "transcription-awaiting-action":
-                    if (message.videoId && message.title && message.tabId !== undefined &&
-                        typeof message.url === "string") {
-                        applyTabTranscriptionResponse({
-                            status: "awaiting-action",
-                            tabId: message.tabId,
-                            videoId: message.videoId,
-                            title: message.title,
-                            url: message.url,
-                        });
-                    }
+                    applyTabTranscriptionResponse({
+                        status: "awaiting-action",
+                        tabId: message.tabId,
+                        videoId: message.videoId,
+                        title: message.title,
+                        url: message.url,
+                    });
                     break;
-                case "transcription-progress":
-                    setTranscriptionProgress(message.progress ?? 0);
-                    if (message.segments && message.segments.length > 0) {
-                        setTranscript((prev) => prev ? {...prev, segments: message.segments!} : {
-                            videoId: message.videoId ?? "",
+                case "transcription-progress": {
+                    setTranscriptionProgress(message.progress);
+                    const segments = message.segments;
+                    if (segments.length > 0) {
+                        setTranscript((prev) => prev ? {...prev, segments} : {
+                            videoId: message.videoId,
                             title: pendingTitle,
                             language: "en",
                             isAutoGenerated: true,
                             tracks: [],
-                            segments: message.segments!,
+                            segments,
                         });
                     }
                     break;
+                }
                 case "transcription-complete":
-                    if (message.segments) {
-                        releaseFileBlob();
-                        setTranscript({
-                            videoId: message.videoId ?? pendingVideoId ?? "",
-                            title: message.title ?? pendingTitle,
-                            language: "en",
-                            isAutoGenerated: true,
-                            tracks: [],
-                            segments: message.segments,
-                        });
-                        setState("loaded");
-                        setTranscriptionProgress(0);
-                        setCaptureTarget(null);
-                        setTranscriptionSource(null);
-                        setIsStoppingTranscription(false);
-                    }
+                    releaseFileBlob();
+                    setTranscript({
+                        videoId: message.videoId,
+                        title: message.title,
+                        language: "en",
+                        isAutoGenerated: true,
+                        tracks: [],
+                        segments: message.segments,
+                    });
+                    setState("loaded");
+                    setTranscriptionProgress(0);
+                    setCaptureTarget(null);
+                    setTranscriptionSource(null);
+                    setIsStoppingTranscription(false);
                     break;
                 case "transcription-error":
                     releaseFileBlob();
-                    setError({error: "transcription_failed", message: message.error ?? "Transcription failed"});
+                    setError({error: "transcription_failed", message: message.error});
                     setState("error");
                     setTranscriptionProgress(0);
                     setCaptureTarget(null);
@@ -492,7 +483,7 @@ export function App() {
         };
         chrome.runtime.onMessage.addListener(listener);
         return () => chrome.runtime.onMessage.removeListener(listener);
-    }, [applyTabTranscriptionResponse, pendingVideoId, pendingTitle, releaseFileBlob]);
+    }, [applyTabTranscriptionResponse, pendingTitle, releaseFileBlob]);
 
     // Hash-based routing
     useEffect(() => {
@@ -532,23 +523,21 @@ export function App() {
         setPendingVideoId(videoId);
 
         try {
-            const response = await chrome.runtime.sendMessage({
+            const response = parseReply(transcriptReplySchema, await chrome.runtime.sendMessage({
                 type: "fetch-transcript",
                 videoId,
                 platform,
                 ...(lang ? {lang} : {}),
                 ...(translateTo ? {translateTo} : {}),
-            }) as { type: string; data?: TranscriptData; error?: ApiError };
+            }), "transcript");
 
-            if (response.type === "transcript-error" && response.error) {
+            if (response.type === "transcript-error") {
                 setError(response.error);
                 setState("error");
                 return;
             }
 
-            if (response.type === "transcript-result" && response.data) {
-                applyTranscript(response.data, platform, false);
-            }
+            applyTranscript(response.data, platform, false);
         } catch (fetchError) {
             setError({
                 error: "fetch_failed",
@@ -633,11 +622,11 @@ export function App() {
     const requestTabTranscription = useCallback(async (videoId?: string, title?: string) => {
         setCaptureRequestPending(true);
         try {
-            const response = await chrome.runtime.sendMessage({
+            const response = parseReply(tabTranscriptionResponseSchema, await chrome.runtime.sendMessage({
                 type: "start-transcription",
                 ...(videoId ? {videoId} : {}),
                 ...(title ? {title} : {}),
-            }) as TabTranscriptionResponse;
+            }), "transcription");
             applyTabTranscriptionResponse(response);
         } catch (requestError) {
             applyTabTranscriptionResponse({
@@ -654,9 +643,9 @@ export function App() {
     const requestCurrentTabDiscovery = useCallback(async () => {
         setCaptureRequestPending(true);
         try {
-            const response = await chrome.runtime.sendMessage({
+            const response = parseReply(discoveryResponseSchema, await chrome.runtime.sendMessage({
                 type: "discover-current-tab",
-            }) as DiscoveryResponse;
+            }), "discovery");
             applyDiscoveryResponse(response);
         } catch (discoveryError) {
             applyDiscoveryResponse({
@@ -671,20 +660,20 @@ export function App() {
     }, [applyDiscoveryResponse]);
 
     const handlePrepareUrlDiscovery = useCallback(async (url: string) => {
-        const response = await chrome.runtime.sendMessage({
+        const response = parseReply(discoveryResponseSchema, await chrome.runtime.sendMessage({
             type: "prepare-url-discovery",
             url,
-        }) as DiscoveryResponse;
+        }), "discovery");
         if (response.status === "error") throw new Error(response.error);
         applyDiscoveryResponse(response);
     }, [applyDiscoveryResponse]);
 
     const handleCancelPendingDiscovery = useCallback(async () => {
         if (discoveryTarget) {
-            const response = await chrome.runtime.sendMessage({
+            const response = parseReply(discoveryResponseSchema, await chrome.runtime.sendMessage({
                 type: "cancel-pending-discovery",
                 tabId: discoveryTarget.tabId,
-            }) as DiscoveryResponse;
+            }), "discovery");
             if (response.status === "error") throw new Error(response.error);
         }
         setDiscoveryTarget(null);
@@ -706,10 +695,10 @@ export function App() {
         }
         setCaptureRequestPending(true);
         try {
-            const response = await chrome.runtime.sendMessage({
+            const response = parseReply(discoveryResponseSchema, await chrome.runtime.sendMessage({
                 type: "rediscover-tab",
                 tabId: discoveryTarget.tabId,
-            }) as DiscoveryResponse;
+            }), "discovery");
             applyDiscoveryResponse(response);
         } finally {
             setCaptureRequestPending(false);
@@ -719,10 +708,10 @@ export function App() {
     const handleCancelPendingTranscription = useCallback(async () => {
         try {
             if (captureTarget) {
-                const response = await chrome.runtime.sendMessage({
+                const response = parseReply(tabTranscriptionResponseSchema, await chrome.runtime.sendMessage({
                     type: "cancel-pending-transcription",
                     tabId: captureTarget.tabId,
-                }) as TabTranscriptionResponse;
+                }), "transcription");
                 if (response.status === "error") throw new Error(response.error);
             }
             setCaptureTarget(null);
@@ -776,9 +765,10 @@ export function App() {
                 type: "select-discovered-track",
                 videoId: transcript.videoId,
                 trackId: track.id,
-            }).then((response: {type?: string; data?: TranscriptData}) => {
-                if (response.type === "transcript-result" && response.data) {
-                    applyTranscript(response.data, "web", true);
+            }).then((raw: unknown) => {
+                const response = transcriptReplySchema.safeParse(raw);
+                if (response.success && response.data.type === "transcript-result") {
+                    applyTranscript(response.data.data, "web", true);
                 }
             });
             return;
