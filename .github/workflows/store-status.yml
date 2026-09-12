@@ -7,7 +7,7 @@ on:
         description: Which store to query (read-only, publishes nothing)
         type: choice
         default: chrome
-        options: [chrome, firefox, amo-listing-diff, amo-listing-apply]
+        options: [chrome, firefox, edge, amo-listing-diff, amo-listing-apply]
 
 permissions: {}
 
@@ -37,6 +37,28 @@ jobs:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: node scripts/publish/publish-firefox.mjs status
+
+      # The Edge Update API has no read-only endpoint, so this asks for an
+      # operation that cannot exist. A 401 means the credentials are rejected;
+      # any other status means they were accepted and Edge simply has no such
+      # operation. Nothing is uploaded or published either way.
+      - name: Edge credential probe (read-only)
+        if: ${{ inputs.store == 'edge' }}
+        env:
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+          EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
+          EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: ApiKey $EDGE_API_KEY" \
+            -H "X-ClientID: $EDGE_CLIENT_ID" \
+            "https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions/operations/00000000-0000-0000-0000-000000000000")
+          echo "probe returned HTTP $code"
+          if [ "$code" = 401 ]; then
+            echo "::error::Edge rejected the credentials (401). EDGE_API_KEY or EDGE_CLIENT_ID is wrong or expired."
+            exit 1
+          fi
+          echo "Credentials accepted."
 
       - name: AMO listing diff (read-only)
         if: ${{ inputs.store == 'amo-listing-diff' }}
