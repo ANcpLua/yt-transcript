@@ -13,6 +13,48 @@
   "lint": {
     "forbidden": []
   },
+  "manifests": [
+    "manifest.json",
+    "manifest.firefox.json"
+  ],
+  "images": [
+    {
+      "path": "store/images/icon-128x128.png",
+      "size": "128x128"
+    },
+    {
+      "path": "store/images/logo-300x300.png",
+      "size": "300x300"
+    },
+    {
+      "path": "store/images/screenshot-01-transcript.png",
+      "size": "1280x800"
+    },
+    {
+      "path": "store/images/screenshot-02-search.png",
+      "size": "1280x800"
+    },
+    {
+      "path": "store/images/screenshot-03-export.png",
+      "size": "1280x800"
+    },
+    {
+      "path": "store/images/screenshot-04-pasted-url.png",
+      "size": "1280x800"
+    },
+    {
+      "path": "store/images/screenshot-05-settings.png",
+      "size": "1280x800"
+    },
+    {
+      "path": "store/images/tile-440x280.png",
+      "size": "440x280"
+    },
+    {
+      "path": "store/images/marquee-1400x560.png",
+      "size": "1400x560"
+    }
+  ],
   "stores": {
     "chrome": {
       "id": "ahddbfbjafmbceehebpeanpnlbaimepk",
