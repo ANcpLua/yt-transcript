@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "tsc -b && node scripts/build.mjs",
-    "zip": "npm run build && node scripts/package-stores.mjs",
+    "zip": "bun run build && node scripts/package-stores.mjs",
     "test": "node --test tests/unit/*.test.mjs",
     "lint": "tsc --noEmit -p tsconfig.app.json",
     "store": "store-publish"
@@ -34,5 +34,10 @@
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
     "vite": "6.4.3"
+  },
+  "packageManager": "bun@1.4.2",
+  "engines": {
+    "node": ">=22.11.0",
+    "bun": ">=1.4.0"
   }
 }

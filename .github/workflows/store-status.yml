@@ -20,11 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          node-version: 22.11.0
-          cache: npm
-      - run: npm ci
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
 
       - name: Chrome Web Store status
         if: ${{ inputs.store == 'chrome' }}
@@ -33,32 +32,32 @@ jobs:
           CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
           CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
           CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
-        run: npx store-publish chrome status
+        run: bunx store-publish chrome status
 
       - name: Firefox Add-ons status
         if: ${{ inputs.store == 'firefox' }}
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
-        run: npx store-publish firefox status
+        run: bunx store-publish firefox status
 
       - name: Edge credential probe and key expiry
         if: ${{ inputs.store == 'edge' }}
         env:
           EDGE_API_KEY: ${{ secrets.EDGE_API_KEY }}
           EDGE_CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
-        run: npx store-publish edge status
+        run: bunx store-publish edge status
 
       - name: AMO listing diff
         if: ${{ inputs.store == 'amo-listing-diff' }}
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
-        run: npx store-publish amo-listing diff
+        run: bunx store-publish amo-listing diff
 
       - name: AMO listing apply
         if: ${{ inputs.store == 'amo-listing-apply' }}
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
-        run: npx store-publish amo-listing apply
+        run: bunx store-publish amo-listing apply

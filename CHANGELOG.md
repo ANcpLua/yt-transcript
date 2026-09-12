@@ -12,6 +12,9 @@
   panel are validated with zod; the TypeScript message types are inferred from
   those schemas. Content scripts keep their hand-written checks so the zod
   runtime never ships into page frames.
+- bun replaces npm as the package manager; `bun.lock` is the only lockfile and
+  CI installs with `bun install --frozen-lockfile`. Unit tests still run on
+  `node --test`.
 - Store publishing moved to the shared store-publish tool. Ids, listing URLs,
   dashboards, and credential names for all three stores live in
   `store.config.json`, and the README store table is rendered from it.

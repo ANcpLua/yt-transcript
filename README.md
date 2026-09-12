@@ -20,9 +20,10 @@ needs is here or linked from here.
 <!-- store-config:end -->
 
 The table is rendered from [`store.config.json`](store.config.json) by the
-shared [store-publish](https://github.com/ANcpLua/store-publish) tool. Change
-the config, then run `npx store-publish readme --write`; CI fails when the two
-drift. A new extension copies that file and changes the ids.
+shared [store-publish](https://github.com/ANcpLua/store-publish) tool, which
+save-media owns; this repository only consumes it and files issues there.
+Change the config, then run `bunx store-publish readme --write`; CI fails when
+the two drift. A new extension copies that file and changes the ids.
 
 Credentials are GitHub Actions secrets in this repository. GitHub never
 returns their values, so a credential can only be tested in an Actions run,
@@ -110,6 +111,9 @@ Store facts that shape this:
 - Chrome refuses every upload while a review is open ("You may not edit or
   publish an item that is in review"). A review cannot be cancelled. Wait for
   the decision, then dispatch `stores=chrome`.
+- Edge can refuse a package upload while its certification is running. Do not
+  tag a release while either store has a review open, or the tag ends half
+  delivered; check `store-status` for both first.
 - Chrome rejected 3.0.0 once as keyword spam ("Yellow Argon") for a run of
   file-format acronyms in the description. `store-publish lint` rejects such
   comma chains and the words bypass, unlock, circumvent. Keep any one keyword
@@ -137,25 +141,32 @@ Store facts that shape this:
 
 ## Development
 
-Requirements: Node 22.11 or newer, Chrome with side-panel support. Audio
-transcription additionally needs Chrome 138 or newer with the on-device model
-available on the machine; caption discovery does not.
+Requirements: Bun 1.4 or newer as the package manager, Node 22.11 or newer as
+the runtime for Vite, esbuild, and the unit tests, Chrome with side-panel
+support. Audio transcription additionally needs Chrome 138 or newer with the
+on-device model available on the machine; caption discovery does not.
 
 ```sh
-npm install
-npm run lint        # tsc, strict
-npm test            # unit tests, node --test
-npm run build       # dist/ (Chrome, Edge) and packages/extension/dist-firefox/
-npx playwright test # browser suite against the unpacked build
-npm run zip         # build plus the four store zips
+bun install --frozen-lockfile
+bun run lint         # tsc, strict
+bun run test         # unit tests, node --test
+bun run build        # dist/ (Chrome, Edge) and packages/extension/dist-firefox/
+bunx playwright test # browser suite against the unpacked build
+bun run zip          # build plus the four store zips
 ```
 
 Load `dist/` as an unpacked extension for manual checks.
 
-Test runners: unit tests use `node --test`; the browser suite is Playwright.
-The move to bun as package manager and Vitest as the unit runner is agreed
-with save-media so a third extension can copy either repo; see the changelog
-for the state.
+Toolchain decision, shared with save-media so a third extension can copy
+either repository: bun installs packages (`bun.lock` is the only lockfile),
+Vite and esbuild bundle, Playwright runs the browser suite. Bun is not the
+bundler: MV3 needs Vite's and esbuild's output. Unit tests run with
+`node --test` for now; they move to Vitest, the runner save-media already uses,
+once Chrome has finished reviewing 3.1.0. `bun test` is not used: it is a
+third runner that is neither a drop-in for `node:test` nor able to run
+save-media's jsdom tests, and one runner across both repositories is worth
+more than the dependency Vitest adds. Run tests with `bun run test`, never
+`bun test`.
 
 ### Constraints
 

@@ -1,4 +1,4 @@
-import {readFileSync} from "node:fs";
+import {existsSync, readFileSync} from "node:fs";
 import {resolve} from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -7,7 +7,7 @@ const root = resolve(import.meta.dirname, "../..");
 const manifest = JSON.parse(readFileSync(resolve(root, "manifest.json"), "utf8"));
 const firefoxManifest = JSON.parse(readFileSync(resolve(root, "manifest.firefox.json"), "utf8"));
 const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
-const packageLock = JSON.parse(readFileSync(resolve(root, "package-lock.json"), "utf8"));
+const bunLock = readFileSync(resolve(root, "bun.lock"), "utf8");
 
 test("manifest is Chrome MV3 and declares the extension UI entry points", () => {
   assert.equal(manifest.manifest_version, 3);
@@ -25,8 +25,14 @@ test("manifest is Chrome MV3 and declares the extension UI entry points", () => 
 
 test("release versions stay in lockstep", () => {
   assert.equal(manifest.version, packageJson.version);
-  assert.equal(packageLock.version, packageJson.version);
-  assert.equal(packageLock.packages?.[""]?.version, packageJson.version);
+  assert.equal(firefoxManifest.version, packageJson.version);
+});
+
+test("bun is the only package manager", () => {
+  assert.equal(existsSync(resolve(root, "package-lock.json")), false);
+  assert.equal(existsSync(resolve(root, "pnpm-lock.yaml")), false);
+  assert.match(bunLock, /"lockfileVersion"/);
+  assert.match(bunLock, /"@ancplua\/store-publish": "github:ANcpLua\/store-publish#v\d+\.\d+\.\d+"/);
 });
 
 test("Chrome and Firefox manifests keep browser-specific UI and background boundaries", () => {
