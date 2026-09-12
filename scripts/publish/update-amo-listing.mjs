@@ -26,7 +26,12 @@ import { createHmac, randomUUID } from "node:crypto";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const API_ROOT = "https://addons.mozilla.org/api/v5";
 const ADDON_ID = "video-transcript";
-const LOCALE = "en-US";
+// The add-on stores its text under whatever locale it was first created with,
+// which for both of these is "de" even though the prose is English. Writing to
+// a hardcoded locale would add a second translation and leave the one users
+// actually see untouched, so the locale is read from the add-on itself.
+let localeCache = null;
+const LISTING = "store/listing.md";
 
 main().catch((err) => {
   console.error(`\n✘ ${err.message}`);
@@ -56,10 +61,12 @@ async function main() {
   }
 
   if (command === "apply") {
+    const locale = await addonLocale();
+    console.log(`writing description for locale ${locale}`);
     await api(`/addons/addon/${ADDON_ID}/`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ description: { [LOCALE]: local } }),
+      body: JSON.stringify({ description: { [locale]: local } }),
     });
     const live = await liveDescription();
     if (normalize(live) !== normalize(local)) {
@@ -72,24 +79,37 @@ async function main() {
   usage(`unknown command: ${command}`);
 }
 
-/** The "## AMO description" section of store/listing.md, prose only. */
+/** The "## AMO description" section, prose only, up to the next heading. */
 function localDescription() {
-  const md = readFileSync(resolve(root, "store/listing.md"), "utf8");
-  const section = md.split(/^## AMO description$/m)[1];
-  if (!section) throw new Error("store/listing.md has no '## AMO description' section");
-  const lines = section.split("\n");
-  // Drop the editorial note: it ends at the line naming this script.
-  const start = lines.findIndex((l) => l.startsWith("Applied with"));
-  if (start === -1) throw new Error("expected an 'Applied with' line to end the note");
-  const body = lines.slice(start + 1).join("\n").trim();
-  if (!body) throw new Error("no description text found after the note");
+  const md = readFileSync(resolve(root, LISTING), "utf8");
+  const after = md.split(/^## AMO description$/m)[1];
+  if (after === undefined) throw new Error(`${LISTING} has no '## AMO description' section`);
+  // Stop at the next heading so neighbouring sections are not swept in.
+  const section = after.split(/^## /m)[0];
+  const lines = section.split(String.fromCharCode(10));
+  // An optional editorial note ends at the line naming this script.
+  const noteEnd = lines.findIndex((l) => l.startsWith("Applied with"));
+  const body = lines.slice(noteEnd + 1).join(String.fromCharCode(10)).trim();
+  if (!body) throw new Error("no description text found");
   return body;
 }
 
+async function addonLocale() {
+  if (localeCache) return localeCache;
+  const json = await api(`/addons/addon/${ADDON_ID}/`);
+  localeCache = json.default_locale ?? "en-US";
+  return localeCache;
+}
+
 async function liveDescription() {
-  const json = await api(`/addons/addon/${ADDON_ID}/?lang=${LOCALE}`);
-  const raw = json.description?.[LOCALE] ?? json.description ?? "";
-  return String(raw).replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").trim();
+  const locale = await addonLocale();
+  const json = await api(`/addons/addon/${ADDON_ID}/`);
+  const field = json.description;
+  const raw = typeof field === "string" ? field : field?.[locale];
+  if (typeof raw !== "string") {
+    throw new Error(`no description for locale ${locale}; found ${JSON.stringify(Object.keys(field ?? {}))}`);
+  }
+  return raw.replace(/<br\s*\/?>/gi, String.fromCharCode(10)).replace(/<[^>]+>/g, "").trim();
 }
 
 /** Compare ignoring whitespace-only differences AMO introduces on render. */
