@@ -34,3 +34,7 @@ e2e/.tmp-profile*/
 # local tooling (auto-dropped MCP config, not part of the extension)
 .mcp.json
 .github/instructions/maf-doctor.instructions.md
+
+# Fixture certificate is generated on first test run, never committed.
+e2e/fixtures/certs/*.crt
+e2e/fixtures/certs/*.key

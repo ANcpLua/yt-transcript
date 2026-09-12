@@ -1,11 +1,9 @@
-import {readFileSync} from "node:fs";
-import {createServer, type IncomingMessage, type Server, type ServerResponse} from "node:https";
+import type {IncomingMessage, ServerResponse} from "node:http";
+import {createServer, type Server} from "node:https";
 import type {AddressInfo} from "node:net";
-import path from "node:path";
-import {fileURLToPath} from "node:url";
+import {fixtureCertificate} from "./certs/generate";
 
 export const FIXTURE_VIDEO_ID = "dQw4w9WgXcQ";
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const FIXTURE_SEGMENTS = [
     "We begin with a local transcript fixture.",
@@ -160,10 +158,7 @@ async function handleRequest(
 export async function startYouTubeFixtureServer(): Promise<YouTubeFixtureServer> {
     let activePort = 0;
     const server: Server = createServer(
-        {
-            cert: readFileSync(path.join(__dirname, "certs/youtube-fixture.crt")),
-            key: readFileSync(path.join(__dirname, "certs/youtube-fixture.key")),
-        },
+        fixtureCertificate(),
         (request, response) => {
             void handleRequest(request, response, activePort).catch((error: unknown) => {
                 response.writeHead(500, {"content-type": "text/plain; charset=utf-8"});
