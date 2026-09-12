@@ -149,7 +149,7 @@ on-device model available on the machine; caption discovery does not.
 ```sh
 bun install --frozen-lockfile
 bun run lint         # tsc, strict
-bun run test         # unit tests, node --test
+bun run test         # unit tests, Vitest
 bun run build        # dist/ (Chrome, Edge) and packages/extension/dist-firefox/
 bunx playwright test # browser suite against the unpacked build
 bun run zip          # build plus the four store zips
@@ -159,14 +159,14 @@ Load `dist/` as an unpacked extension for manual checks.
 
 Toolchain decision, shared with save-media so a third extension can copy
 either repository: bun installs packages (`bun.lock` is the only lockfile),
-Vite and esbuild bundle, Playwright runs the browser suite. Bun is not the
-bundler: MV3 needs Vite's and esbuild's output. Unit tests run with
-`node --test` for now; they move to Vitest, the runner save-media already uses,
-once Chrome has finished reviewing 3.1.0. `bun test` is not used: it is a
-third runner that is neither a drop-in for `node:test` nor able to run
-save-media's jsdom tests, and one runner across both repositories is worth
-more than the dependency Vitest adds. Run tests with `bun run test`, never
-`bun test`.
+Vitest runs the unit tests, Vite and esbuild bundle, Playwright runs the
+browser suite. Bun is not the bundler: MV3 needs Vite's and esbuild's output.
+`bun test` is not used: it is a third runner that is neither a drop-in for
+`node:test` nor able to run save-media's jsdom tests, and one runner across
+both repositories is worth more than the dependency Vitest adds. Run tests
+with `bun run test`, never `bun test`. CI (`ci.yml`) runs lint, unit tests,
+build, listing lint, README check, and the Playwright suite on every push and
+pull request.
 
 ### Constraints
 
