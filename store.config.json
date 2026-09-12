@@ -85,7 +85,7 @@
     "firefox": {
       "id": "video-transcript@qyl.at",
       "slug": "video-transcript",
-      "icon": "store/images/icon-128x128.png",
+      "icon": "store/images/logo-300x300.png",
       "previews": [
         "store/images/screenshot-01-transcript.png",
         "store/images/screenshot-02-search.png",
