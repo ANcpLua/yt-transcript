@@ -12,7 +12,11 @@
   "listing": "store/listing.md",
   "readme": "README.md",
   "lint": {
-    "forbidden": []
+    "forbidden": [],
+    "textFiles": [
+      "scripts/store-images/screenshots.ts",
+      "scripts/store-images/promo.mjs"
+    ]
   },
   "manifests": [
     "manifest.json",
