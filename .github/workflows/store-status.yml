@@ -53,6 +53,7 @@ jobs:
             -H "Authorization: ApiKey $EDGE_API_KEY" \
             -H "X-ClientID: $EDGE_CLIENT_ID" \
             "https://api.addons.microsoftedge.microsoft.com/v1/products/$EDGE_PRODUCT_ID/submissions/operations/00000000-0000-0000-0000-000000000000")
+          echo "key length: ${#EDGE_API_KEY}  client id length: ${#EDGE_CLIENT_ID}  product id length: ${#EDGE_PRODUCT_ID}"
           echo "probe returned HTTP $code"
           if [ "$code" = 401 ]; then
             echo "::error::Edge rejected the credentials (401). EDGE_API_KEY or EDGE_CLIENT_ID is wrong or expired."
