@@ -20,7 +20,7 @@
     "zod": "^4.6.2"
   },
   "devDependencies": {
-    "@ancplua/store-publish": "github:ANcpLua/store-publish#v1.0.1",
+    "@ancplua/store-publish": "github:ANcpLua/store-publish#v1.1.0",
     "@playwright/test": "1.62.1",
     "@tailwindcss/vite": "4.3.3",
     "@types/chrome": "0.2.7",

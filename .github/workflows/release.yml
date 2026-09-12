@@ -28,22 +28,13 @@ jobs:
       - name: Resolve version
         id: v
         run: |
-          PKG=$(node -p "require('./package.json').version")
-          MANIFEST=$(node -p "require('./manifest.json').version")
-          FIREFOX=$(node -p "require('./manifest.firefox.json').version")
-          if [ "$PKG" != "$MANIFEST" ] || [ "$PKG" != "$FIREFOX" ]; then
-            echo "::error::version mismatch: package.json=$PKG manifest.json=$MANIFEST manifest.firefox.json=$FIREFOX"
-            exit 1
-          fi
           if [ "$GITHUB_REF_TYPE" = tag ]; then
-            TAG="${GITHUB_REF_NAME#v}"
-            if [ "$TAG" != "$PKG" ]; then
-              echo "::error::tag v$TAG does not match version $PKG"
-              exit 1
-            fi
+            VERSION=$(bunx store-publish version --tag "$GITHUB_REF_NAME")
+          else
+            VERSION=$(bunx store-publish version)
           fi
-          echo "version=$PKG" >> "$GITHUB_OUTPUT"
-          echo "notes=v$PKG automated release" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "notes=v$VERSION automated release" >> "$GITHUB_OUTPUT"
 
       - run: bun run lint
       - run: bun run test
