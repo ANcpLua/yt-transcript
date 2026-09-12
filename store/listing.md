@@ -17,7 +17,7 @@ Open Video Transcript on a page with a video and it looks for captions the
 page already offers. It inspects the page only after you invoke it.
 
 When a page has none, you can transcribe the current tab or a local audio or
-video file using Chrome's built-in on-device AI. No account, no API key, no
+video file using the browser's built-in on-device AI. No account, no API key, no
 tracking, and no server behind it.
 
 - Finds captions a media page already provides, when you ask it to
@@ -51,9 +51,9 @@ on-device AI, so this text promises neither.
 Applied with `node scripts/publish/update-amo-listing.mjs`.
 
 Video Transcript turns the captions and subtitle tracks a video page already
-offers into searchable text in Firefox's sidebar.
+offers into searchable text in the browser's sidebar.
 
-Open it from Firefox's Extensions menu while you are on a video page. It reads
+Open it from the extensions menu while you are on a video page. It reads
 the page only after you invoke it.
 
 • Finds captions a media page already provides, when you ask it to
@@ -66,5 +66,5 @@ the page only after you invoke it.
 
 There is no account, no analytics or advertising, no remote code, and no
 backend run by the developer. Your transcripts and preferences stay in
-Firefox. The extension asks for page access only for the media page or caption
+your browser. The extension asks for page access only for the media page or caption
 origin you select.
