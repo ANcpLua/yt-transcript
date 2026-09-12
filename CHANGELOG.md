@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Unit tests run on Vitest, the runner save-media uses, so both repositories
+  share one toolchain. A `ci.yml` runs lint, tests, build, listing checks, and
+  the Playwright suite on every push and pull request.
+
 ## 3.2.0 — 2026-09-12
 
 - The side panel is now enabled per tab instead of everywhere. It opens on the

@@ -1,9 +1,10 @@
 import {existsSync, readFileSync} from "node:fs";
 import {resolve} from "node:path";
-import test from "node:test";
+import {fileURLToPath} from "node:url";
+import {test} from "vitest";
 import assert from "node:assert/strict";
 
-const root = resolve(import.meta.dirname, "../..");
+const root = fileURLToPath(new URL("../..", import.meta.url));
 const manifest = JSON.parse(readFileSync(resolve(root, "manifest.json"), "utf8"));
 const firefoxManifest = JSON.parse(readFileSync(resolve(root, "manifest.firefox.json"), "utf8"));
 const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));

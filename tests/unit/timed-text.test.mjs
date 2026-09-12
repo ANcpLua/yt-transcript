@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import {test} from "vitest";
 import {build} from "esbuild";
 import {resolve} from "node:path";
+import {fileURLToPath} from "node:url";
 
-const root = resolve(import.meta.dirname, "../..");
+const root = fileURLToPath(new URL("../..", import.meta.url));
 
 async function importBundled(entryPoint) {
   const result = await build({
