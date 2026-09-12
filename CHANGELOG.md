@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The default transcript track no longer depends on which caption resource
+  arrived first; equal ranks now sort by language and label.
+
 ## 3.2.1 (2026-09-12)
 
 - New store graphics: five real side-panel screenshots, a tile and a marquee

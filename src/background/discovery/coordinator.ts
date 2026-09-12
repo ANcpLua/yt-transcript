@@ -292,8 +292,12 @@ function transcriptFor(
       uniqueTracks.set(key, track);
     }
   }
+  // Equal ranks fall back to the semantic key so the default track does not
+  // depend on which resource happened to arrive first.
   const tracks = [...uniqueTracks.values()]
-    .sort((left, right) => rankTrack(right) - rankTrack(left));
+    .sort((left, right) =>
+      rankTrack(right) - rankTrack(left)
+      || semanticTrackKey(left).localeCompare(semanticTrackKey(right)));
   const selected = tracks.find((track) => selectionId(track) === selectedTrackId) ?? tracks[0];
   if (!selected) return null;
   return {

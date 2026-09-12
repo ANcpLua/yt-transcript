@@ -2,8 +2,9 @@ name: store-status
 
 # Read-only: nothing here uploads or publishes, except `amo-listing-apply`,
 # which writes the description from store/listing.md to Firefox Add-ons, and
-# `amo-previews-apply`, which replaces the Firefox Add-ons preview images with
-# store/images/screenshot-*.png. AMO accepts both outside a version review.
+# `amo-icon-apply` and `amo-previews-apply`, which set the Firefox Add-ons
+# listing icon and screenshots from store.config.json. AMO accepts all three
+# outside a version review.
 
 on:
   workflow_dispatch:
@@ -12,7 +13,7 @@ on:
         description: Which store to query (read-only unless amo-listing-apply)
         type: choice
         default: chrome
-        options: [chrome, firefox, edge, amo-listing-diff, amo-listing-apply, amo-previews-list, amo-previews-apply]
+        options: [chrome, firefox, edge, amo-listing-diff, amo-listing-apply, amo-icon-diff, amo-icon-apply, amo-previews-list, amo-previews-apply]
 
 permissions: {}
 
@@ -64,16 +65,30 @@ jobs:
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: bunx store-publish amo-listing apply
 
+      - name: AMO icon diff (read-only)
+        if: ${{ inputs.store == 'amo-icon-diff' }}
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: bunx store-publish firefox icon --diff
+
+      - name: AMO icon apply
+        if: ${{ inputs.store == 'amo-icon-apply' }}
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: bunx store-publish firefox icon
+
       - name: AMO previews list (read-only)
         if: ${{ inputs.store == 'amo-previews-list' }}
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
-        run: node scripts/amo-previews.mjs list
+        run: bunx store-publish firefox previews list
 
       - name: AMO previews apply
         if: ${{ inputs.store == 'amo-previews-apply' }}
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
-        run: node scripts/amo-previews.mjs apply
+        run: bunx store-publish firefox previews set

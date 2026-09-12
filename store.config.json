@@ -85,6 +85,14 @@
     "firefox": {
       "id": "video-transcript@qyl.at",
       "slug": "video-transcript",
+      "icon": "store/images/icon-128x128.png",
+      "previews": [
+        "store/images/screenshot-01-transcript.png",
+        "store/images/screenshot-02-search.png",
+        "store/images/screenshot-03-export.png",
+        "store/images/screenshot-04-pasted-url.png",
+        "store/images/screenshot-05-settings.png"
+      ],
       "url": "https://addons.mozilla.org/firefox/addon/video-transcript/",
       "dashboard": "https://addons.mozilla.org/developers/addon/video-transcript/edit",
       "apiDocs": "https://mozilla.github.io/addons-server/topics/api/addons.html",

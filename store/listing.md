@@ -43,10 +43,10 @@ English
 
 ## AMO description
 
-Firefox has no keyword-spam rule of Chrome's kind, but the same copy was
-carrying the same acronym run, so it is kept in step here. Wording differs
-only where the browser does: Firefox uses a sidebar and has no built-in
-on-device AI, so this text promises neither.
+The add-on store has no keyword-spam rule of the kind described above, but
+the same copy was carrying the same acronym run, so it is kept in step here.
+Wording differs only where the browser does: this build uses a sidebar and
+has no built-in on-device AI, so this text promises neither.
 
 Applied with `node scripts/publish/update-amo-listing.mjs`.
 

@@ -115,7 +115,9 @@ Store images live in `store/images` and are generated:
 renders the five 1280x800 side-panel screenshots from a local fixture, and
 `node scripts/store-images/promo.mjs` renders the tile and marquee. Chrome and
 Edge take them in their dashboards; Firefox takes them through
-`store-status` with `amo-previews-list` (read) and `amo-previews-apply`.
+`store-status` with `amo-icon-diff`/`amo-icon-apply` for the listing icon and
+`amo-previews-list`/`amo-previews-apply` for the screenshots, outside any
+version review.
 Dashboard slots: store icon `icon-128x128.png`, screenshots 1 to 5, small
 promo tile `tile-440x280.png`, marquee `marquee-1400x560.png`; Edge Partner
 Center additionally takes `logo-300x300.png`.
