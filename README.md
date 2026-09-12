@@ -82,29 +82,43 @@ gh run view <run id> -R ANcpLua/yt-transcript --log
 ## Release
 
 Versions live in `manifest.json`, `manifest.firefox.json`, and
-`package.json`, and must match. The release workflow refuses a mismatch.
+`package.json`, and must match. `store-publish version` refuses a mismatch
+and, on a tag, a tag that differs from them.
 
 ```sh
-# 1. bump the three versions, add a CHANGELOG entry, commit
-# 2. tag and push; the tag runs release.yml against all three stores
-git tag v3.2.0
-git push origin main v3.2.0
-# 3. watch it; cancel on the first red job
+# 1. bump the three versions, add a CHANGELOG entry, commit, wait for ci.yml
+# 2. tag and push; the tag builds, checks, and creates the GitHub release with the four zips
+git tag v3.2.1
+git push origin main v3.2.1
+# 3. submit to the stores explicitly; each store reviews on its own schedule
+gh workflow run release.yml -R ANcpLua/yt-transcript --ref main -f stores=all
+# 4. watch it; cancel on the first red job
 gh run watch -R ANcpLua/yt-transcript --exit-status $(gh run list -R ANcpLua/yt-transcript --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
 ```
 
-To publish to one store only, for example after Chrome finished a review that
-blocked an earlier upload:
+`stores` takes `all`, `chrome`, `edge`, or `firefox`. `chrome` takes `release`
+(upload and submit for review) or `update` (upload only), for example when
+the listing images change with the version: upload, swap the images in the
+dashboard, then click Submit for review there.
 
 ```sh
-gh workflow run release.yml -R ANcpLua/yt-transcript --ref main -f stores=chrome
+gh workflow run release.yml -R ANcpLua/yt-transcript --ref main -f stores=chrome -f chrome=update
 ```
 
-What the workflow does: lint, unit tests, listing lint, README table check,
-build, zip, then for each selected store `store-publish <store> release`, and
-on a tag a GitHub release with the four zips (`chrome`, `edge`, `firefox`,
-`source`; Edge ships the Chromium build verbatim, `source` is the archive AMO
-requires for bundled builds).
+What the dispatch does: lint, unit tests, listing lint, README table check,
+build, zip, then for each selected store `store-publish <store> release`
+(or `chrome update`). Edge ships the Chromium build verbatim; `source` is the
+archive AMO requires for bundled builds.
+
+Store images live in `store/images` and are generated:
+`bunx playwright test --config scripts/store-images/playwright.config.ts`
+renders the five 1280x800 side-panel screenshots from a local fixture, and
+`node scripts/store-images/promo.mjs` renders the tile and marquee. Chrome and
+Edge take them in their dashboards; Firefox takes them through
+`store-status` with `amo-previews-list` (read) and `amo-previews-apply`.
+Dashboard slots: store icon `icon-128x128.png`, screenshots 1 to 5, small
+promo tile `tile-440x280.png`, marquee `marquee-1400x560.png`; Edge Partner
+Center additionally takes `logo-300x300.png`.
 
 Store facts that shape this:
 

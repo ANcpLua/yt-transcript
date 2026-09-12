@@ -1,7 +1,12 @@
 # Changelog
 
-## Unreleased
+## 3.2.1 (2026-09-12)
 
+- New store graphics: five real side-panel screenshots, a tile and a marquee
+  without arrows, buttons, or browser names, generated from the repository.
+- A tag now builds and publishes the GitHub release only; store submissions
+  are an explicit dispatch with a per-store choice, and Chrome can be uploaded
+  without submitting so listing images can be swapped before the review.
 - Public text no longer uses em dashes, the "Free." tagline, or browser names:
   both manifest descriptions, the AI settings and panel strings, and the error
   messages for unavailable built-in AI.
