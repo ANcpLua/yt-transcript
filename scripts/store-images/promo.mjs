@@ -1,7 +1,7 @@
 /**
  * Render the promo tile (440x280) and marquee (1400x560) for the store
  * listings from HTML: the extension icon, the name, and one sentence from
- * store/listing.md. No arrows, no buttons, no browser names.
+ * store/listing.md. Flat background, no arrows, no buttons, no browser names.
  *
  *   node scripts/store-images/promo.mjs
  */
@@ -19,7 +19,7 @@ function html({width, height, iconSize, titleSize, textSize, gap}) {
     return `<!doctype html><html><head><style>
       html,body{margin:0;width:${width}px;height:${height}px;overflow:hidden}
       body{display:flex;align-items:center;justify-content:center;gap:${gap}px;
-           background:linear-gradient(135deg,#eff6ff 0%,#ffffff 60%,#f8fafc 100%);
+           background:#f8fafc;
            font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#0f172a}
       img{width:${iconSize}px;height:${iconSize}px;flex:none}
       .text{max-width:${width - iconSize - gap * 3}px}
