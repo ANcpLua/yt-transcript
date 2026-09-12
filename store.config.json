@@ -16,7 +16,8 @@
     "textFiles": [
       "scripts/store-images/screenshots.ts",
       "scripts/store-images/promo.mjs"
-    ]
+    ],
+    "packageScript": "scripts/package-stores.mjs"
   },
   "manifests": [
     "manifest.json",
