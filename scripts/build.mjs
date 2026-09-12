@@ -7,6 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 const dist = resolve(root, "dist");
 const chromeDist = resolve(root, "packages/extension/dist-chrome");
+const edgeDist = resolve(root, "packages/extension/dist-edge");
 const firefoxDist = resolve(root, "packages/extension/dist-firefox");
 
 function bin(name) {
@@ -21,6 +22,7 @@ function runBin(name, args) {
 // Clean
 if (existsSync(dist)) rmSync(dist, { recursive: true });
 if (existsSync(chromeDist)) rmSync(chromeDist, { recursive: true });
+if (existsSync(edgeDist)) rmSync(edgeDist, { recursive: true });
 if (existsSync(firefoxDist)) rmSync(firefoxDist, { recursive: true });
 mkdirSync(dist, { recursive: true });
 
@@ -98,6 +100,13 @@ if (existsSync(resolve(root, "public/fonts"))) {
 mkdirSync(dirname(chromeDist), { recursive: true });
 cpSync(dist, chromeDist, { recursive: true });
 
+// Edge does not expose the built-in model with audio input, so its package
+// omits the tab-audio permissions and the offscreen document entirely. The
+// code detects the missing APIs and never offers transcription there.
+cpSync(dist, edgeDist, { recursive: true });
+cpSync(resolve(root, "manifest.edge.json"), resolve(edgeDist, "manifest.json"));
+rmSync(resolve(edgeDist, "offscreen"), { recursive: true, force: true });
+
 // Firefox uses an event-page background script and sidebar_action. Its build
 // intentionally omits Chromium-only tab audio/offscreen transcription files.
 cpSync(dist, firefoxDist, { recursive: true });
@@ -115,4 +124,4 @@ runBin("esbuild", [
   "--outfile=packages/extension/dist-firefox/background/service-worker.js",
 ]);
 
-console.log("\nExtension built to dist/, packages/extension/dist-chrome/, and packages/extension/dist-firefox/");
+console.log("\nExtension built to dist/, packages/extension/dist-chrome/, dist-edge/, and dist-firefox/");

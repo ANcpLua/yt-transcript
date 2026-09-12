@@ -4,12 +4,12 @@
  * Names follow store.config.json (`<zipPrefix>-<store>-<version>.zip`), which
  * is what the store-publish tool expects:
  *   video-transcript-chrome-<version>.zip   Chrome Web Store
- *   video-transcript-edge-<version>.zip     Edge Add-ons (the Chromium build, verbatim)
+ *   video-transcript-edge-<version>.zip     Edge Add-ons (Chromium build with manifest.edge.json, no tab audio)
  *   video-transcript-firefox-<version>.zip  Firefox Add-ons
  *   video-transcript-source-<version>.zip   source archive AMO requires for bundled builds
  */
 import {execFileSync} from "node:child_process";
-import {copyFileSync, existsSync, readFileSync, rmSync} from "node:fs";
+import {existsSync, readFileSync, rmSync} from "node:fs";
 import {resolve, dirname} from "node:path";
 import {fileURLToPath} from "node:url";
 
@@ -20,6 +20,7 @@ const name = (kind) => `${config.zipPrefix}-${kind}-${version}.zip`;
 
 const targets = [
     {kind: "chrome", dir: resolve(root, "dist")},
+    {kind: "edge", dir: resolve(root, "packages/extension/dist-edge")},
     {kind: "firefox", dir: resolve(root, "packages/extension/dist-firefox")},
 ];
 
@@ -33,11 +34,6 @@ for (const {kind, dir} of targets) {
     execFileSync("zip", ["-qr", zip, "."], {cwd: dir, stdio: "inherit"});
     console.log(`✓ ${name(kind)}`);
 }
-
-const edgeZip = resolve(root, name("edge"));
-rmSync(edgeZip, {force: true});
-copyFileSync(resolve(root, name("chrome")), edgeZip);
-console.log(`✓ ${name("edge")}`);
 
 const sourceZip = resolve(root, name("source"));
 rmSync(sourceZip, {force: true});

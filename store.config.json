@@ -5,6 +5,7 @@
   "versionFrom": "manifest.json",
   "versionFiles": [
     "manifest.json",
+    "manifest.edge.json",
     "manifest.firefox.json",
     "package.json"
   ],
@@ -15,6 +16,7 @@
   },
   "manifests": [
     "manifest.json",
+    "manifest.edge.json",
     "manifest.firefox.json"
   ],
   "images": [
@@ -80,7 +82,7 @@
         "EDGE_CLIENT_ID"
       ],
       "expires": "2026-11-21",
-      "notes": "Ships the Chromium build verbatim. Renew the key at https://partner.microsoft.com/en-us/dashboard/microsoftedge/publishapi and update it in both extension repos"
+      "notes": "Chromium build with manifest.edge.json: no tabCapture or offscreen, the built-in model has no audio input there. Renew the key at https://partner.microsoft.com/en-us/dashboard/microsoftedge/publishapi and update it in both extension repos"
     },
     "firefox": {
       "id": "video-transcript@qyl.at",

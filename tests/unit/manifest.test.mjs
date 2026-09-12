@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const manifest = JSON.parse(readFileSync(resolve(root, "manifest.json"), "utf8"));
 const firefoxManifest = JSON.parse(readFileSync(resolve(root, "manifest.firefox.json"), "utf8"));
+const edgeManifest = JSON.parse(readFileSync(resolve(root, "manifest.edge.json"), "utf8"));
 const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
 const bunLock = readFileSync(resolve(root, "bun.lock"), "utf8");
 
@@ -26,7 +27,17 @@ test("manifest is Chrome MV3 and declares the extension UI entry points", () => 
 
 test("release versions stay in lockstep", () => {
   assert.equal(manifest.version, packageJson.version);
+  assert.equal(edgeManifest.version, packageJson.version);
   assert.equal(firefoxManifest.version, packageJson.version);
+});
+
+test("Edge manifest is the Chrome manifest without tab audio", () => {
+  const {permissions: chromePermissions, description: chromeDescription, ...chromeRest} = manifest;
+  const {permissions: edgePermissions, description: edgeDescription, ...edgeRest} = edgeManifest;
+  assert.deepEqual(edgeRest, chromeRest);
+  assert.deepEqual(edgePermissions, chromePermissions.filter((p) => p !== "tabCapture" && p !== "offscreen"));
+  assert.notEqual(edgeDescription, chromeDescription);
+  assert.doesNotMatch(edgeDescription, /transcrib/i);
 });
 
 test("bun is the only package manager", () => {

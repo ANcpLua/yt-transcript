@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-firefox/
 packages/extension/dist-chrome/
+packages/extension/dist-edge/
 .wrangler/
 .superpowers/
 .playwright-mcp/

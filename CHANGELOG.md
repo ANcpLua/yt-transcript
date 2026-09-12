@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The Edge package now has its own manifest without `tabCapture` and
+  `offscreen`, and without the offscreen document. Edge does not expose the
+  built-in model with audio input, so those permissions were declared but
+  unused there.
 - The default transcript track no longer depends on which caption resource
   arrived first; equal ranks now sort by language and label.
 

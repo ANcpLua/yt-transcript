@@ -33,6 +33,29 @@ Captions may be fetched from the page you selected or from the host that
 delivers them. Your text, notes, history, and AI processing stay in your
 browser and are never sent to the developer.
 
+## Edge description
+
+Same copy as above without the on-device transcription paragraph and bullet:
+this build does not ship tab audio. Entered by hand in Partner Center.
+
+Turn media into searchable text, privately and on your own machine.
+
+Open Video Transcript on a page with a video and it looks for captions the
+page already offers. It inspects the page only after you invoke it. No
+account, no API key, no tracking, and no server behind it.
+
+- Finds captions a media page already provides, when you ask it to
+- Reads the subtitle formats browsers already understand
+- Summarizes, pulls out key points, and answers questions about what was said
+- Saves the result to a file
+- Search within the text, and keep highlights and notes
+- Works through a list of pages in one run
+- Keeps what you save on your machine and available offline
+
+Captions may be fetched from the page you selected or from the host that
+delivers them. Your text, notes, history, and AI processing stay in your
+browser and are never sent to the developer.
+
 ## Category
 
 Tools

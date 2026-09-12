@@ -15,7 +15,7 @@ needs is here or linked from here.
 | Store | Listing | Dashboard | API docs | Credentials (GitHub Actions secrets) | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Chrome Web Store | [ahddbfbjafmbceehebpeanpnlbaimepk](https://chromewebstore.google.com/detail/ahddbfbjafmbceehebpeanpnlbaimepk) | [dashboard](https://chrome.google.com/webstore/devconsole) | [docs](https://developer.chrome.com/docs/webstore/using-api) | `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`, `CWS_PUBLISHER_ID` | Listing text, screenshots and privacy answers are edited in the dashboard; answers are kept in store/privacy-fields.md |
-| Microsoft Edge Add-ons | [069ca91d-a7cd-4bac-8224-1ee38a2d2a06](https://microsoftedge.microsoft.com/addons/detail/video-transcript/jkcfajddmmeapfabpoekfiemnbdaofeo) | [dashboard](https://partner.microsoft.com/en-us/dashboard/microsoftedge/069ca91d-a7cd-4bac-8224-1ee38a2d2a06/packages/dashboard) | [docs](https://learn.microsoft.com/microsoft-edge/extensions/update/api/using-addons-api) | `EDGE_API_KEY`, `EDGE_CLIENT_ID` | API key expires 2026-11-21 (70 days from 2026-09-12). Ships the Chromium build verbatim. Renew the key at https://partner.microsoft.com/en-us/dashboard/microsoftedge/publishapi and update it in both extension repos |
+| Microsoft Edge Add-ons | [069ca91d-a7cd-4bac-8224-1ee38a2d2a06](https://microsoftedge.microsoft.com/addons/detail/video-transcript/jkcfajddmmeapfabpoekfiemnbdaofeo) | [dashboard](https://partner.microsoft.com/en-us/dashboard/microsoftedge/069ca91d-a7cd-4bac-8224-1ee38a2d2a06/packages/dashboard) | [docs](https://learn.microsoft.com/microsoft-edge/extensions/update/api/using-addons-api) | `EDGE_API_KEY`, `EDGE_CLIENT_ID` | API key expires 2026-11-21 (70 days from 2026-09-12). Chromium build with manifest.edge.json: no tabCapture or offscreen, the built-in model has no audio input there. Renew the key at https://partner.microsoft.com/en-us/dashboard/microsoftedge/publishapi and update it in both extension repos |
 | Firefox Add-ons (AMO) | [video-transcript@qyl.at](https://addons.mozilla.org/firefox/addon/video-transcript/) | [dashboard](https://addons.mozilla.org/developers/addon/video-transcript/edit) | [docs](https://mozilla.github.io/addons-server/topics/api/addons.html) | `AMO_JWT_ISSUER`, `AMO_JWT_SECRET` | One API key pair per Mozilla account, shared with the other extension repo; a new key invalidates the old one everywhere. The listing text is applied from store/listing.md |
 <!-- store-config:end -->
 
@@ -81,8 +81,8 @@ gh run view <run id> -R ANcpLua/yt-transcript --log
 
 ## Release
 
-Versions live in `manifest.json`, `manifest.firefox.json`, and
-`package.json`, and must match. `store-publish version` refuses a mismatch
+Versions live in `manifest.json`, `manifest.edge.json`,
+`manifest.firefox.json`, and `package.json`, and must match. `store-publish version` refuses a mismatch
 and, on a tag, a tag that differs from them.
 
 ```sh
@@ -107,7 +107,8 @@ gh workflow run release.yml -R ANcpLua/yt-transcript --ref main -f stores=chrome
 
 What the dispatch does: lint, unit tests, listing lint, README table check,
 build, zip, then for each selected store `store-publish <store> release`
-(or `chrome update`). Edge ships the Chromium build verbatim; `source` is the
+(or `chrome update`). Edge ships the Chromium build with `manifest.edge.json`
+(no tab audio, Edge has no built-in model with audio input); `source` is the
 archive AMO requires for bundled builds.
 
 Store images live in `store/images` and are generated:

@@ -83,10 +83,11 @@ https://gist.github.com/ANcpLua/8fb1ab3a839d008ef8fb4bd3a8a48adb
 
 ## Edge Partner Center
 
-The Edge package is the Chromium build verbatim (`scripts/package-stores.mjs`
-copies the Chrome zip), so the permission list is the same. Partner Center
-asks the same questions under "Privacy"; the answers below were checked
-against 3.2.1. Short on purpose: reviewers skim, and comparable extensions
+The Edge package is the Chromium build with `manifest.edge.json`, which
+drops `tabCapture` and `offscreen` (from 3.2.2 on; 3.2.1 still declared them
+and its justifications said the option is hidden). Partner Center asks the
+same questions under "Privacy"; the answers below were checked against the
+current manifest. Short on purpose: reviewers skim, and comparable extensions
 with five-figure installs on the Edge store declare "no personal data
 collected" with one-line justifications.
 
@@ -94,9 +95,8 @@ On-device transcription in Edge: the feature is offered only when the
 browser's built-in model reports audio input as available
 (`src/lib/ai/chrome-ai.ts` `isOnDeviceAudioAvailable`, gated again in
 `src/sidepanel/App.tsx` `canTranscribeOnDevice`). Edge does not expose that
-model with audio input, so the transcription entry points stay hidden there
-and the `tabCapture` and `offscreen` permissions are declared but unused.
-The justifications say so.
+model with audio input, so the transcription entry points stay hidden there,
+and the Edge manifest does not declare the two permissions at all.
 
 ### SINGLE PURPOSE DESCRIPTION
 
@@ -123,18 +123,6 @@ content script runs on any site without that click.
 
 Saves settings, recent transcripts, highlights and notes locally. Nothing is
 synced or uploaded.
-
-### TABCAPTURE JUSTIFICATION
-
-Only when the user starts "Transcribe live audio" on a video without
-captions. Captures that tab's audio for the browser's built-in on-device
-model. Audio never leaves the device. The option is shown only when the
-browser reports that model as available.
-
-### OFFSCREEN JUSTIFICATION
-
-Audio decoding and the on-device model cannot run in a service worker, so
-transcription runs in an offscreen document. Used for nothing else.
 
 ### REMOTE CODE
 
