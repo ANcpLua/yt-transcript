@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.2.0 — 2026-09-12
 
 - The side panel is now enabled per tab instead of everywhere. It opens on the
   tab where the toolbar action was clicked and follows a pasted URL to its new

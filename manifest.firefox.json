@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Video Transcript",
   "description": "Turn video captions into searchable text — discover, save, and export transcripts from the Firefox sidebar. Free.",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "permissions": [
     "activeTab",
     "scripting",
