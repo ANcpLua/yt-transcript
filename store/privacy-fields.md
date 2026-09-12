@@ -1,4 +1,4 @@
-# Chrome Web Store privacy fields
+# Store privacy fields (Chrome Web Store and Edge Partner Center)
 
 The dashboard asks these on every submission and does not carry the answers
 forward reliably. Kept here so they are reviewed and versioned like the rest
@@ -80,3 +80,77 @@ Keep all three Limited Use certifications checked.
 ### PRIVACY-POLICY URL
 
 https://gist.github.com/ANcpLua/8fb1ab3a839d008ef8fb4bd3a8a48adb
+
+## Edge Partner Center
+
+The Edge package is the Chromium build verbatim (`scripts/package-stores.mjs`
+copies the Chrome zip), so the permission list is the same. Partner Center
+asks the same questions under "Privacy"; the answers below were checked
+against 3.2.1. Short on purpose: reviewers skim, and comparable extensions
+with five-figure installs on the Edge store declare "no personal data
+collected" with one-line justifications.
+
+On-device transcription in Edge: the feature is offered only when the
+browser's built-in model reports audio input as available
+(`src/lib/ai/chrome-ai.ts` `isOnDeviceAudioAvailable`, gated again in
+`src/sidepanel/App.tsx` `canTranscribeOnDevice`). Edge does not expose that
+model with audio input, so the transcription entry points stay hidden there
+and the `tabCapture` and `offscreen` permissions are declared but unused.
+The justifications say so.
+
+### SINGLE PURPOSE DESCRIPTION
+
+Show, search, and export the transcript of the video on the current page.
+Uses captions the page already has; if there are none, transcribes the audio
+on the device.
+
+### SIDEPANEL JUSTIFICATION
+
+The side panel is the extension's only UI. It shows the transcript next to
+the video.
+
+### ACTIVETAB JUSTIFICATION
+
+Read the current tab's video captions after the user clicks the toolbar
+button. One tab, one click, nothing stored or sent.
+
+### SCRIPTING JUSTIFICATION
+
+Injects the caption reader into the current tab after the toolbar click. No
+content script runs on any site without that click.
+
+### STORAGE JUSTIFICATION
+
+Saves settings, recent transcripts, highlights and notes locally. Nothing is
+synced or uploaded.
+
+### TABCAPTURE JUSTIFICATION
+
+Only when the user starts "Transcribe live audio" on a video without
+captions. Captures that tab's audio for the browser's built-in on-device
+model. Audio never leaves the device. The option is shown only when the
+browser reports that model as available.
+
+### OFFSCREEN JUSTIFICATION
+
+Audio decoding and the on-device model cannot run in a service worker, so
+transcription runs in an offscreen document. Used for nothing else.
+
+### REMOTE CODE
+
+Select: No, I am not using remote code. Justification empty.
+
+### DATA USAGE
+
+Leave every category unchecked. Nothing is transmitted to the developer or a
+third party; captions are fetched from the page's own caption host. This
+matches the privacy policy and the declaration of comparable extensions on
+the Edge store, which show "No personal data collected".
+
+### PRIVACY POLICY URL
+
+https://gist.github.com/ANcpLua/8fb1ab3a839d008ef8fb4bd3a8a48adb
+
+### CERTIFICATIONS
+
+Check all three.
