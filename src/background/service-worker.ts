@@ -14,7 +14,7 @@ import {
   startFileTranscription,
   stopTranscription,
 } from "@extension-transcription";
-import { initializeExtensionPanel, openExtensionPanel } from "@extension-panel";
+import { openExtensionPanel } from "@extension-panel";
 import {
   cancelPendingDiscovery,
   clearDiscoveryTab,
@@ -41,7 +41,6 @@ import {
 const youtubeProvider: TranscriptProvider = new YouTubeProvider();
 
 registerInstallHandler();
-initializeExtensionPanel();
 
 function sendPanelMessage(message: object): void {
   chrome.runtime.sendMessage(message, () => {
