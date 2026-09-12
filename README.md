@@ -27,7 +27,7 @@ the two drift. A new extension copies that file and changes the ids.
 
 Credentials are GitHub Actions secrets in this repository. GitHub never
 returns their values, so a credential can only be tested in an Actions run,
-never locally. The same ten values are also set on
+never locally. The same eight values are also set on
 [save-media](https://github.com/ANcpLua/save-media), which shares the Chrome
 OAuth client, the Edge Publish API key, and the AMO key pair.
 
