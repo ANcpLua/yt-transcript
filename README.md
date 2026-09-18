@@ -15,7 +15,7 @@ needs is here or linked from here.
 | Store | Listing | Dashboard | API docs | Credentials (GitHub Actions secrets) | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Chrome Web Store | [ahddbfbjafmbceehebpeanpnlbaimepk](https://chromewebstore.google.com/detail/ahddbfbjafmbceehebpeanpnlbaimepk) | [dashboard](https://chrome.google.com/webstore/devconsole) | [docs](https://developer.chrome.com/docs/webstore/using-api) | `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`, `CWS_PUBLISHER_ID` | Listing text, screenshots and privacy answers are edited in the dashboard; answers are kept in store/privacy-fields.md |
-| Microsoft Edge Add-ons | [069ca91d-a7cd-4bac-8224-1ee38a2d2a06](https://microsoftedge.microsoft.com/addons/detail/video-transcript/jkcfajddmmeapfabpoekfiemnbdaofeo) | [dashboard](https://partner.microsoft.com/en-us/dashboard/microsoftedge/069ca91d-a7cd-4bac-8224-1ee38a2d2a06/packages/dashboard) | [docs](https://learn.microsoft.com/microsoft-edge/extensions/update/api/using-addons-api) | `EDGE_API_KEY`, `EDGE_CLIENT_ID` | API key expires 2026-11-21. Chromium build with manifest.edge.json: no tabCapture or offscreen, the built-in model has no audio input there. Renew the key at https://partner.microsoft.com/en-us/dashboard/microsoftedge/publishapi and update it in both extension repos |
+| Microsoft Edge Add-ons | [069ca91d-a7cd-4bac-8224-1ee38a2d2a06](https://microsoftedge.microsoft.com/addons/detail/video-transcript/jkcfajddmmeapfabpoekfiemnbdaofeo) | [dashboard](https://partner.microsoft.com/en-us/dashboard/microsoftedge/069ca91d-a7cd-4bac-8224-1ee38a2d2a06/packages/dashboard) | [docs](https://learn.microsoft.com/microsoft-edge/extensions/update/api/using-addons-api) | `EDGE_API_KEY`, `EDGE_CLIENT_ID` | API key expires 2026-11-29. Chromium build with manifest.edge.json: no tabCapture or offscreen, the built-in model has no audio input there. Renew the key at https://partner.microsoft.com/en-us/dashboard/microsoftedge/publishapi and update it in both extension repos |
 | Firefox Add-ons (AMO) | [video-transcript@qyl.at](https://addons.mozilla.org/firefox/addon/video-transcript/) | [dashboard](https://addons.mozilla.org/developers/addon/video-transcript/edit) | [docs](https://mozilla.github.io/addons-server/topics/api/addons.html) | `AMO_JWT_ISSUER`, `AMO_JWT_SECRET` | One API key pair per Mozilla account, shared with the other extension repo; a new key invalidates the old one everywhere. The listing text is applied from store/listing.md |
 <!-- store-config:end -->
 
@@ -26,8 +26,9 @@ Change the config, then run `bunx store-publish readme --write`; CI fails when
 the two drift. A new extension copies that file and changes the ids.
 
 Credentials are GitHub Actions secrets in this repository. GitHub never
-returns their values, so a credential can only be tested in an Actions run,
-never locally. The same eight values are also set on
+returns their values; test those stored copies in an Actions run. The readable
+local copies listed below can also be used with the CLI. The same eight
+values are set on
 [save-media](https://github.com/ANcpLua/save-media), which shares the Chrome
 OAuth client, the Edge Publish API key, and the AMO key pair.
 
@@ -52,6 +53,10 @@ print values):
 | Edge client id and API key | `~/.config/vitals/store-secrets.env`, mode 600 |
 | Register of all secret locations | `~/.config/vitals/keys.json` |
 | Script that writes the values into both repositories | `~/.config/vitals/set-store-secrets.sh` |
+
+Before using `set-store-secrets.sh`, populate all eight values from their
+documented sources; the environment file alone does not supply the AMO pair.
+For an Edge-only renewal, update only the two Edge secrets in each repository.
 
 The Chrome OAuth client is "Desktop client 2" in Google Cloud project `server`
 (`uplifted-nuance-408417`); its consent screen is in production.
@@ -84,22 +89,48 @@ gh run view <run id> -R ANcpLua/yt-transcript --log
 Versions live in `manifest.json`, `manifest.edge.json`,
 `manifest.firefox.json`, and `package.json`, and must match. `store-publish version` refuses a mismatch
 and, on a tag, a tag that differs from them.
+One dispatch with `stores=all` attempts all three stores as sequential steps
+in one job. This is not a parallel job matrix. Store acceptance and review
+remain independent, so a successful submission is not proof that it is live.
 
 ```sh
-# 1. bump the three versions, add a CHANGELOG entry, commit, wait for ci.yml
-# 2. tag and push; the tag builds, checks, and creates the GitHub release with the four zips
-git tag v3.3.0
-git push origin main v3.3.0
-# 3. submit to the stores explicitly; each store reviews on its own schedule
-gh workflow run release.yml -R ANcpLua/yt-transcript --ref main -f stores=all
-# 4. watch it; cancel on the first red job
-gh run watch -R ANcpLua/yt-transcript --exit-status $(gh run list -R ANcpLua/yt-transcript --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+# 1. bump all four version fields and add a CHANGELOG entry
+bun install                       # refresh bun.lock after the version bump
+bun run lint
+bun run test
+bun run build
+bunx playwright test
+bunx store-publish lint
+bunx store-publish readme --check
+release_version=$(bunx store-publish version)
+# 2. stage the reviewed release changes, commit, push main, and wait for ci.yml
+git add -p
+git commit -m "Release $release_version"
+git push origin main
+# 3. after CI succeeds for this commit, create a new tag and push it
+git tag "v$release_version"
+git push origin "v$release_version"
+```
+
+The tag run checks and builds the four zips and creates a GitHub release. It
+does not submit to stores. Wait for that run to succeed. Before uploading,
+run the status checks above and inspect Edge's dashboard for certification
+state; its API probe checks credentials only. Resolve pending listing or
+privacy fields and wait for existing reviews that block uploads. Confirm
+`main` still contains the tested release code and version, then dispatch once:
+
+```sh
+gh workflow run release.yml -R ANcpLua/yt-transcript --ref main -f stores=all -f chrome=release
+gh run list -R ANcpLua/yt-transcript --workflow=release.yml --limit 5
+# Replace RUN_ID with the ID of the dispatch just started.
+gh run watch RUN_ID -R ANcpLua/yt-transcript --exit-status
 ```
 
 `stores` takes `all`, `chrome`, `edge`, or `firefox`. `chrome` takes `release`
 (upload and submit for review) or `update` (upload only), for example when
 the listing images change with the version: upload, swap the images in the
-dashboard, then click Submit for review there.
+dashboard, then click Submit for review there. The Edge workflow step always
+uses `release`; it has no upload-only input.
 
 ```sh
 gh workflow run release.yml -R ANcpLua/yt-transcript --ref main -f stores=chrome -f chrome=update
@@ -110,6 +141,35 @@ build, zip, then for each selected store `store-publish <store> release`
 (or `chrome update`). Edge ships the Chromium build with `manifest.edge.json`
 (no tab audio, Edge has no built-in model with audio input); `source` is the
 archive AMO requires for bundled builds.
+
+### Retrying a partial release
+
+Let the run finish: later store steps still run when an earlier store fails.
+Inspect each store's log and dashboard before retrying; do not rerun all stores
+or reuse an existing version blindly.
+
+- If the upload was rejected before a package was accepted, resolve the cause
+  and dispatch only that store.
+- If Chrome or Edge already accepted the upload but submission failed, finish
+  the listing/privacy fields and submit the existing draft in its dashboard,
+  or run `bunx store-publish chrome publish` / `bunx store-publish edge publish`
+  from this repository with that store's credentials. These commands skip upload.
+- If Firefox already has the version, complete any missing source upload or
+  review information on that version instead of creating it again.
+- If a submission is in review, wait for its decision. Cancel it only when
+  intentionally replacing that submission, not as an automatic retry.
+
+On the owner's machine, `~/.config/vitals/edge-publish status` checks the local
+Edge credentials and `~/.config/vitals/edge-publish publish` submits the existing
+draft. Run the helper from the intended repository root; it reads that repo's
+product ID from `store.config.json`.
+
+Completion means recording the version and result for each store separately:
+upload failed, uploaded draft, submitted/in review, or live. A green workflow
+confirms its API operations, not eventual review approval. Expired credentials,
+store outages, review locks, and dashboard requirements can still interrupt a run.
+
+### Listing changes
 
 Store images live in `store/images` and are generated:
 `bunx playwright test --config scripts/store-images/playwright.config.ts`
@@ -125,12 +185,11 @@ Center additionally takes `logo-300x300.png`.
 
 Store facts that shape this:
 
-- Chrome refuses every upload while a review is open ("You may not edit or
-  publish an item that is in review"). A review cannot be cancelled. Wait for
-  the decision, then dispatch `stores=chrome`.
-- Edge can refuse a package upload while its certification is running. Do not
-  tag a release while either store has a review open, or the tag ends half
-  delivered; check `store-status` for both first.
+- Chrome and Edge can block new uploads during review or certification.
+  Wait before submitting another package. Tagging is separate and only creates
+  the GitHub release. Chrome supports intentional
+  [review cancellation](https://developer.chrome.com/docs/webstore/publish),
+  but a retry should preserve the existing submission unless replacing it.
 - Chrome rejected 3.0.0 once as keyword spam ("Yellow Argon") for a run of
   file-format acronyms in the description. `store-publish lint` rejects such
   comma chains and the words bypass, unlock, circumvent. Keep any one keyword
@@ -143,8 +202,8 @@ Store facts that shape this:
   is `de` even though the text is English. The tool reads that locale from the
   add-on; never hardcode one, or a second translation appears and the served
   one stays stale.
-- The Chrome Web Store privacy form does not carry answers forward. They are
-  kept in [`store/privacy-fields.md`](store/privacy-fields.md).
+- Check the Chrome Web Store privacy form before submission. The intended
+  answers are kept in [`store/privacy-fields.md`](store/privacy-fields.md).
 - Firefox reviewers rebuild from the source zip using
   [`AMO_BUILD.md`](AMO_BUILD.md).
 
@@ -152,7 +211,7 @@ Store facts that shape this:
 
 | What | Expires | Renew at |
 | --- | --- | --- |
-| Edge Publish API key | 2026-11-21 | https://partner.microsoft.com/en-us/dashboard/microsoftedge/publishapi, then update `EDGE_API_KEY` in both repositories and `stores.edge.expires` in `store.config.json` |
+| Edge Publish API key | See the generated store table above | https://partner.microsoft.com/en-us/dashboard/microsoftedge/publishapi, then update the local copy and the two Edge secrets in both repositories, update `stores.edge.expires` in both configs, regenerate their README tables, and run `store-publish edge status` |
 | Chrome refresh token | none, but Google revokes it after six months without use or on a consent-screen change | https://developers.google.com/oauthplayground with the same client, then `CWS_REFRESH_TOKEN` in both repositories |
 | AMO key pair | none | do not regenerate, see above |
 

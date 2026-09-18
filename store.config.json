@@ -86,7 +86,7 @@
         "EDGE_API_KEY",
         "EDGE_CLIENT_ID"
       ],
-      "expires": "2026-11-21",
+      "expires": "2026-11-29",
       "notes": "Chromium build with manifest.edge.json: no tabCapture or offscreen, the built-in model has no audio input there. Renew the key at https://partner.microsoft.com/en-us/dashboard/microsoftedge/publishapi and update it in both extension repos"
     },
     "firefox": {
